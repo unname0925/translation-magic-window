@@ -12,3 +12,6 @@
 *.ico binary
 *.onnx binary
 *.zip binary
+
+# 第三方原始碼：原封不動保存（不轉換換行），才能用上游的 SHA-256 驗證
+third_party/** -text
