@@ -47,6 +47,7 @@
 - ✅ M0-06：整合測試（`tests/integration/`）已提前完成 IT-01 的擷取部分、IT-05、IT-06，Debug 和 ASan 版都通過。你也手動確認過：沒有黃色擷取邊框、PNG 內容正確、PNG 中沒有游標（IT-07 的自動化會移動你的滑鼠，所以留到 M0-08 再決定做法）
 - ✅ M0-07：UT-01（狀態機）、UT-02（變化偵測）和 AutoTrigger 的情境測試都通過；新增 GPU 縮圖的整合測試；實際啟動程式，模擬拖動後會自動存出 PNG。你也手動確認過邊框顏色的變化和自動存檔
 - ✅ M0-08：IT-01～IT-07 加上 M0 的端到端測試，都能用 `cmake --workflow --preset integration` 一次執行，Debug 和 ASan 版都通過，連續 3 輪也都通過（螢幕縮放 150%）。也用突變測試確認過每個測試真的抓得到它要抓的 bug（見 5.4）。你也自己執行過整合測試，並確認正常啟動時擷取資料夾的位置不變
+- ✅ M0-13：下載腳本和 17 個測試完成（用本機伺服器模擬下載，不需要網路，會和單元測試一起執行）。`models.json` 列出 13 個模型、共 923 MB，每個檔案都固定版本並記錄 SHA-256。調查時發現 PP-OCRv6 已經發布，已列入候選模型（見 design.md 4.4）。經你同意後，從空的 `models/` 下載全部模型，31 個檔案都驗證通過；重新執行時不會重複下載。你也確認過驗證通過
 
 ### M0：技術驗證
 
@@ -62,10 +63,10 @@
 | M0-08 | 整合測試工具：測試目標視窗（顯示已知的圖案和文字，並記錄收到的點擊），以及自動化測試程式 | M | Claude | IT-01～IT-07 可以用一個指令執行 |
 | M0-09 | 收集測試截圖：建議共 47 張，最少 30 張，各分類的張數見 [testdata/README.md](../testdata/README.md) | M | 你 | 9 類都達到建議張數，或至少達到最低張數 |
 | M0-10 | 標註正確答案：Claude 先用模型產生草稿，你再逐張校對 | M | Claude＋你 | 每張截圖都有校對過的正確文字 |
-| M0-11 | Python 評測環境與 OCR 評測：比較 PP-OCRv5、韓文模型、manga-ocr、Windows OCR 的字元錯誤率，並驗證直排處理和韓文判斷策略 | M | Claude | 產出評測報告，選定每種情境的模型 |
+| M0-11 | Python 評測環境與 OCR 評測：比較 PP-OCRv6（medium、small、tiny）、PP-OCRv5（server、mobile）、韓文模型、manga-ocr、Windows OCR 的字元錯誤率，並驗證直排處理和韓文判斷策略 | M | Claude | 產出評測報告，選定每種情境的模型 |
 | M0-12 | 翻譯評測：同一批原文，比較 Google 非官方端點、雲端 LLM、本機 LLM（都經過 OpenCC 轉換） | M | Claude 準備，你評分 | 你用盲評（不知道是哪個引擎）打分，選定預設引擎 |
 | M0-13 | 模型下載腳本：下載固定版本的模型並驗證 SHA-256 | S | Claude | 在乾淨的資料夾執行後，所有模型都能取得 |
-| M0-14 | C++ 推論整合：ONNX Runtime（DirectML）在 C++ 跑 PP-OCRv5 偵測和辨識，並實作 DB 後處理和 CTC 解碼 | L | Claude | 同一張圖片，C++ 的文字和 Python 版完全一致、框座標誤差在 2px 內；記錄 GPU 和 CPU 的耗時 |
+| M0-14 | C++ 推論整合：ONNX Runtime（DirectML）在 C++ 跑 PP-OCRv6 和 PP-OCRv5 的偵測和辨識，並實作 DB 後處理和 CTC 解碼 | L | Claude | 同一張圖片，C++ 的文字和 Python 版完全一致、框座標誤差在 2px 內；確認 PP-OCRv6 能在 DirectML 上執行；記錄 GPU 和 CPU 的耗時 |
 | M0-15 | manga-ocr 可行性：匯出成 ONNX，用 Python 的 ONNX Runtime 自己寫逐字解碼 | M | Claude | 在漫畫測試集上，結果和原模型完全一致 |
 | M0-16 | M0 結論：把選定的模型、參數和新發現的風險更新到 design.md | S | Claude | 你看過並同意 |
 
@@ -79,7 +80,7 @@
 |---|---|---|---|
 | M1-01 | vcpkg manifest 與相依套件：Qt 6、cpr、nlohmann-json、spdlog、OpenCV（core、imgproc）、Clipper2、OpenCC，並設定 vcpkg 的建置快取 | M | 從乾淨的狀態可以一次建置成功；CI 使用快取 |
 | M1-02 | 記錄系統、設定檔（`schemaVersion`、遷移、預設值）、DPAPI 金鑰加密 | M | UT-09；檢查記錄檔中沒有金鑰和擷取到的文字 |
-| M1-03 | OCR 服務：PP-OCRv5 橫排、DirectML／CPU 自動選擇、輸入尺寸級距 | L | 在合成測試集上的字元錯誤率低於 M0 評測時設定的門檻 |
+| M1-03 | OCR 服務：PP-OCR（M0-11 選定的版本）橫排、DirectML／CPU 自動選擇、輸入尺寸級距 | L | 在合成測試集上的字元錯誤率低於 M0 評測時設定的門檻 |
 | M1-04 | core：合併段落、橫排閱讀順序、忽略被邊緣切到的文字、英文斷字接回 | M | UT-03 |
 | M1-05 | core：語言判斷（日文、英文） | S | UT-04 |
 | M1-06 | core：翻譯框架，包含 `ITranslator`、快取、引擎鏈、對齊檢查、OpenCC | M | UT-05～UT-07 |
@@ -309,6 +310,6 @@ DPI 相關的測試，要在 100%、150% 和多螢幕混合縮放的環境下各
 
 ## 6. 下一步
 
-1. **Claude**：M0-13～M0-15。模型下載腳本、C++ 推論整合（ONNX Runtime 跑 PP-OCRv5）、manga-ocr 可行性。這三項用開源字型合成的圖片驗證，不需要等真實截圖；下載模型前會先告訴你檔案來源和大小。
+1. **Claude**：M0-13～M0-15。模型下載腳本、C++ 推論整合（ONNX Runtime 跑 PP-OCR）、manga-ocr 可行性。這三項用開源字型合成的圖片驗證，不需要等真實截圖；下載模型前會先告訴你檔案來源和大小。
 2. **你**：M0-09。收集測試截圖，放在 `testdata/private/` 底下的 9 個分類資料夾（說明見 [testdata/README.md](../testdata/README.md)）。
 3. **你**：M0-03。有空時建立 GitHub 公開倉庫，之後才能做 M0-04（CI）。

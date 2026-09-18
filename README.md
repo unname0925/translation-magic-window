@@ -53,6 +53,19 @@ cmake --workflow --preset debug
   - 測試結束後，游標會回到原來的位置。
 - 主程式使用暫存資料夾（`--data-dir`），不會在你的擷取資料夾中留下檔案。
 
+## 下載模型
+
+OCR 等模型不放在倉庫中，用腳本下載到 `models/`（需要 Python 3.10 以上，只用標準函式庫）：
+
+```powershell
+python tools/fetch_models/fetch_models.py --list          # 列出模型和大小
+python tools/fetch_models/fetch_models.py                 # 下載全部（約 920 MB）
+python tools/fetch_models/fetch_models.py --group ocr     # 只下載 OCR 模型（約 380 MB）
+python tools/fetch_models/fetch_models.py --verify-only   # 只檢查已下載的檔案
+```
+
+每個檔案都固定在特定的版本，下載後會用大小和 SHA-256 驗證。已經下載而且驗證通過的檔案不會重新下載。
+
 ## 授權
 
 [GPL-3.0](LICENSE)

@@ -185,10 +185,14 @@
 
 | 情境／語言 | 偵測 | 辨識 |
 |---|---|---|
-| 一般（日文、英文） | PP-OCRv5 偵測 | PP-OCRv5 辨識（一個模型涵蓋日文和英文） |
-| 韓文 | PP-OCRv5 偵測 | PaddleOCR 韓文辨識模型（M0 確認 ONNX 版本可用） |
+| 一般（日文、英文） | PP-OCRv6 medium 或 PP-OCRv5 server（M0-11 評測決定） | 同左（一個模型涵蓋日文和英文） |
+| 韓文 | 同上 | `korean_PP-OCRv5_mobile_rec`（PP-OCRv6 不支援韓文） |
 | 漫畫（日文） | comic-text-detector | manga-ocr（原生支援直排、多行） |
-| 沒有 GPU 的備案 | PP-OCRv5 mobile 版 | PP-OCRv5 mobile 版 |
+| 沒有 GPU 的備案 | PP-OCRv6 small 或 PP-OCRv5 mobile（M0-11 評測決定） | 同左 |
+
+**PP-OCRv6**（2026 年 6 月發布，設計初版時還沒有）：tiny／small／medium 三種大小，一個模型涵蓋中、英、日文和 46 種拉丁語系語言。官方數據中 medium 的偵測和辨識都比 PP-OCRv5 server 準確約 5 個百分點；tiny 不支援日文；**三種都不支援韓文**。它換了新的骨幹網路（PPLCNetV4），在 DirectML 上能不能跑、跑多快，在 M0-14 確認。PP-OCRv6、PP-OCRv5 和韓文模型的前後處理相同（偵測都用 DB 後處理，辨識都用 CTC 解碼），C++ 可以共用同一套程式，換版本只要換模型檔和字元表。
+
+**模型來源**：PP-OCRv5、PP-OCRv6 和韓文模型都有 PaddlePaddle 官方在 Hugging Face 上提供的 ONNX 版本，不需要自己轉換。辨識模型的字元表放在同一個資料夾的 `inference.yml` 中。所有模型的下載網址（固定版本）、大小和 SHA-256 列在 `tools/fetch_models/models.json`。
 
 所有模型都以 ONNX 格式透過 ONNX Runtime 執行。執行方式依序嘗試 DirectML，失敗則改用 CPU。
 
@@ -198,7 +202,7 @@
 
 **manga-ocr 的實作風險**
 
-manga-ocr 是「編碼器＋解碼器」模型，要在 C++ 裡自己寫逐字產生的解碼迴圈和詞表對照，工作量比 PP-OCR 大。M0 先確認匯出成 ONNX 後的結果和原模型一致；如果不可行，備案是用 PP-OCRv5 處理直排。
+manga-ocr 是「編碼器＋解碼器」模型，要在 C++ 裡自己寫逐字產生的解碼迴圈和詞表對照，工作量比 PP-OCR 大。M0 先確認匯出成 ONNX 後的結果和原模型一致；如果不可行，備案是用 PP-OCR 處理直排。
 
 #### 橫直排判斷
 - **自動**：逐個文字框判斷。如果是 CJK 文字，而且框的高度大於寬度的 1.5 倍，就視為直排。直排區塊會先旋轉圖片再辨識（manga-ocr 不需要旋轉）。
@@ -437,9 +441,9 @@ public:
 | 擷取 | Windows.Graphics.Capture（C++/WinRT）、D3D11 | 系統內建 |
 | 模型推論 | ONNX Runtime（DirectML 版）。這個版本不在 vcpkg 中，由 CMake 下載固定版本的官方套件並驗證 SHA-256 | MIT |
 | 影像處理 | OpenCV（只用 core 和 imgproc）、Clipper2 | Apache-2.0 / BSL-1.0 |
-| OCR 模型 | PP-OCRv5、PaddleOCR 韓文模型 | Apache-2.0 |
+| OCR 模型 | PP-OCRv6、PP-OCRv5、PaddleOCR 韓文模型 | Apache-2.0 |
 | 漫畫 OCR | manga-ocr | Apache-2.0 |
-| 漫畫文字偵測 | comic-text-detector | GPL-3.0（M0 再確認） |
+| 漫畫文字偵測 | comic-text-detector | GPL-3.0（程式和模型檔都是，已確認） |
 | 背景修補 | LaMa | Apache-2.0 |
 | 簡轉繁 | OpenCC | Apache-2.0 |
 | HTTP | libcurl（透過 cpr） | MIT / curl |
@@ -475,8 +479,7 @@ translation-magic-window/
 ├─ tests/
 │  ├─ unit/                # GoogleTest：core 和不需要桌面的 platform 工具，CI 每次都跑
 │  ├─ support/             # 測試輔助工具（例如 FakeClock）
-│  ├─ integration/         # 需要桌面環境：視窗、擷取、點擊穿透
-│  ├─ testtarget/          # 整合測試用的目標視窗程式
+│  ├─ integration/         # 需要桌面環境：啟動主程式，測試視窗、擷取、點擊穿透
 │  └─ fixtures/            # 合成圖片、OCR 框座標、錄製下來的 HTTP 回應
 ├─ testdata/
 │  └─ private/             # 你收集的真實截圖（有版權，放在 .gitignore 裡）
@@ -484,7 +487,7 @@ translation-magic-window/
 └─ tools/
    ├─ eval/                # Python：OCR 與翻譯評測
    ├─ bench/               # 各步驟效能量測
-   └─ fetch_models/        # 下載模型並驗證 SHA-256
+   └─ fetch_models/        # 下載模型並驗證 SHA-256（models.json 列出固定版本的網址）
 ```
 
 ---
@@ -521,7 +524,7 @@ translation-magic-window/
 |---|---|
 | 非官方端點失效或被限流 | 引擎鏈自動備援、暫停失敗的引擎、主動限流、快速更新 |
 | OCR 讀不好特殊字型 | 在 M0 用實際截圖評測；依情境模式選擇模型 |
-| manga-ocr 在 C++ 中實作困難 | M0 驗證 ONNX 匯出和自寫解碼的正確性；備案是用 PP-OCRv5 處理直排 |
+| manga-ocr 在 C++ 中實作困難 | M0 驗證 ONNX 匯出和自寫解碼的正確性；備案是用 PP-OCR 處理直排 |
 | C++ 的 OCR 前後處理和 Python 版結果不一致 | M0 就在 C++ 跑一次，並和 Python 的輸出逐項比對 |
 | 遊戲畫面永遠不會靜止 | 「只看文字區域」的兩層偵測，加上快捷鍵手動觸發 |
 | 分層視窗縮放時閃爍 | M0 驗證；備案是自己處理滑鼠拖動和縮放 |
@@ -550,6 +553,7 @@ translation-magic-window/
 | 日期 | 內容 |
 |---|---|
 | 2026-09-18 | 初版 |
+| 2026-09-18 | M0-13：PP-OCRv6 已發布，列為一般情境和沒有 GPU 時的候選模型，由 M0-11 評測決定；韓文模型確認有官方 ONNX 版本；comic-text-detector 的授權確認為 GPL-3.0；目錄結構移除 `tests/testtarget/`（整合測試改為直接啟動主程式） |
 | 2026-09-18 | M0-08：新增命令列參數 `--data-dir`（4.10），讓整合測試用暫存資料夾啟動真正的主程式；擷取服務新增只給測試用的 `captureCursor` 選項（4.2） |
 | 2026-09-18 | M0-06 實作時修正：擷取回呼不再自行丟棄畫面（會造成畫面靜止後停在過時的內容），節流完全交給系統的 `MinUpdateInterval` |
 | 2026-09-18 | 設計審查：新增 core／platform 分層、系統匣、單一執行個體、抓取區、擷取節流與重建、開始拖動時也遞增流水號、DirectML 限制、manga-ocr 實作風險、韓文判斷策略的驗證、記錄與除錯機制、設定檔版本；M0 新增 C++ 推論整合與 manga-ocr 可行性驗證；新增測試截圖版權的風險 |
