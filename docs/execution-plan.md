@@ -48,6 +48,7 @@
 - ✅ M0-07：UT-01（狀態機）、UT-02（變化偵測）和 AutoTrigger 的情境測試都通過；新增 GPU 縮圖的整合測試；實際啟動程式，模擬拖動後會自動存出 PNG。你也手動確認過邊框顏色的變化和自動存檔
 - ✅ M0-08：IT-01～IT-07 加上 M0 的端到端測試，都能用 `cmake --workflow --preset integration` 一次執行，Debug 和 ASan 版都通過，連續 3 輪也都通過（螢幕縮放 150%）。也用突變測試確認過每個測試真的抓得到它要抓的 bug（見 5.4）。你也自己執行過整合測試，並確認正常啟動時擷取資料夾的位置不變
 - ✅ M0-13：下載腳本和 17 個測試完成（用本機伺服器模擬下載，不需要網路，會和單元測試一起執行）。`models.json` 列出 13 個模型、共 923 MB，每個檔案都固定版本並記錄 SHA-256。調查時發現 PP-OCRv6 已經發布，已列入候選模型（見 design.md 4.4）。經你同意後，從空的 `models/` 下載全部模型，31 個檔案都驗證通過；重新執行時不會重複下載。你也確認過驗證通過
+- ✅ M0-14：C++ 的 OCR（`src/ocr/`）完成。6 個模型組合在 CPU 和 DirectML 上，文字都和 PaddleOCR 官方版完全相同、文字框誤差 0 像素；字元表逐字相同；34 個新的單元測試（ASan 版也通過）。實測透鏡大小的畫面，PP-OCRv6 medium 在 DirectML 上要 283 ms，超過 150 ms 的預算，瓶頸在逐行辨識（見 design.md 第 5 節），M1-03 處理。你也確認過 GPU 上的辨識結果、整合測試和一致性比對
 
 ### M0：技術驗證
 
@@ -63,7 +64,7 @@
 | M0-08 | 整合測試工具：測試目標視窗（顯示已知的圖案和文字，並記錄收到的點擊），以及自動化測試程式 | M | Claude | IT-01～IT-07 可以用一個指令執行 |
 | M0-09 | 收集測試截圖：建議共 47 張，最少 30 張，各分類的張數見 [testdata/README.md](../testdata/README.md) | M | 你 | 9 類都達到建議張數，或至少達到最低張數 |
 | M0-10 | 標註正確答案：Claude 先用模型產生草稿，你再逐張校對 | M | Claude＋你 | 每張截圖都有校對過的正確文字 |
-| M0-11 | Python 評測環境與 OCR 評測：比較 PP-OCRv6（medium、small、tiny）、PP-OCRv5（server、mobile）、韓文模型、manga-ocr、Windows OCR 的字元錯誤率，並驗證直排處理和韓文判斷策略 | M | Claude | 產出評測報告，選定每種情境的模型 |
+| M0-11 | Python 評測環境與 OCR 評測：比較 PP-OCRv6（medium、small、tiny）、PP-OCRv5（server、mobile）、英文專用的 `en_PP-OCRv5_mobile_rec`（PaddleOCR 在 PP-OCRv5 下處理英文時的預設）、韓文模型、manga-ocr、Windows OCR 的字元錯誤率，並驗證直排處理和韓文判斷策略。評測環境已在 M0-14 建立（`tools/eval`） | M | Claude | 產出評測報告，選定每種情境的模型 |
 | M0-12 | 翻譯評測：同一批原文，比較 Google 非官方端點、雲端 LLM、本機 LLM（都經過 OpenCC 轉換） | M | Claude 準備，你評分 | 你用盲評（不知道是哪個引擎）打分，選定預設引擎 |
 | M0-13 | 模型下載腳本：下載固定版本的模型並驗證 SHA-256 | S | Claude | 在乾淨的資料夾執行後，所有模型都能取得 |
 | M0-14 | C++ 推論整合：ONNX Runtime（DirectML）在 C++ 跑 PP-OCRv6 和 PP-OCRv5 的偵測和辨識，並實作 DB 後處理和 CTC 解碼 | L | Claude | 同一張圖片，C++ 的文字和 Python 版完全一致、框座標誤差在 2px 內；確認 PP-OCRv6 能在 DirectML 上執行；記錄 GPU 和 CPU 的耗時 |
@@ -78,9 +79,9 @@
 
 | ID | 任務 | 大小 | 驗收方式 |
 |---|---|---|---|
-| M1-01 | vcpkg manifest 與相依套件：Qt 6、cpr、nlohmann-json、spdlog、OpenCV（core、imgproc）、Clipper2、OpenCC，並設定 vcpkg 的建置快取 | M | 從乾淨的狀態可以一次建置成功；CI 使用快取 |
+| M1-01 | vcpkg manifest 與相依套件：Qt 6、cpr、spdlog、OpenCC，並設定 CI 的 vcpkg 建置快取（OpenCV、nlohmann-json、yaml-cpp 已在 M0-14 加入） | M | 從乾淨的狀態可以一次建置成功；CI 使用快取 |
 | M1-02 | 記錄系統、設定檔（`schemaVersion`、遷移、預設值）、DPAPI 金鑰加密 | M | UT-09；檢查記錄檔中沒有金鑰和擷取到的文字 |
-| M1-03 | OCR 服務：PP-OCR（M0-11 選定的版本）橫排、DirectML／CPU 自動選擇、輸入尺寸級距 | L | 在合成測試集上的字元錯誤率低於 M0 評測時設定的門檻 |
+| M1-03 | OCR 服務：PP-OCR（M0-11 選定的版本）橫排、DirectML／CPU 自動選擇、輸入尺寸級距，以及同一張畫面的多行合成一批辨識（M0-14 實測逐行辨識太慢） | L | 在合成測試集上的字元錯誤率低於 M0 評測時設定的門檻；透鏡大小的畫面在 RTX 4070 上 < 150 ms；批次處理和官方版（逐行）的結果差異用一致性檢查量測並記錄 |
 | M1-04 | core：合併段落、橫排閱讀順序、忽略被邊緣切到的文字、英文斷字接回 | M | UT-03 |
 | M1-05 | core：語言判斷（日文、英文） | S | UT-04 |
 | M1-06 | core：翻譯框架，包含 `ITranslator`、快取、引擎鏈、對齊檢查、OpenCC | M | UT-05～UT-07 |
@@ -238,6 +239,7 @@ DPI 相關的測試，要在 100%、150% 和多螢幕混合縮放的環境下各
 - **合成測試集（公開，放在倉庫中）**：用開源字型，在不同背景上產生日文、英文、韓文的橫排和直排文字圖片。正確答案是已知的，CI 每次都跑。
 - **私有測試集（只放在本機）**：你收集的真實截圖。因為有版權，不能放進公開倉庫。改到 OCR 相關程式碼時在本機跑。
 - **判定標準**：記錄每種情境的字元錯誤率作為基準線。新的結果比基準線差超過 1 個百分點就判定失敗；確實變好時才更新基準線。
+- **C++ 和官方版的一致性**（M0-14 建立）：`tools/eval/check_ocr_equivalence.py` 用 PaddleOCR 官方實作（Python）當參考答案，檢查 C++ 在 CPU 和 DirectML 上的結果：文字完全相同、文字框誤差不超過 2px，並逐字比對字元表。改到 `src/ocr/` 時都要跑一次。這樣「準確度」只需要在 Python 評測，C++ 只要證明和 Python 一致。
 
 ### 5.6 翻譯引擎契約測試
 

@@ -12,8 +12,9 @@
 ## 開發環境
 
 - Windows 11
-- [Build Tools for Visual Studio 2026](https://visualstudio.microsoft.com/downloads/)，安裝時勾選「使用 C++ 的桌面開發」
+- [Build Tools for Visual Studio 2026](https://visualstudio.microsoft.com/downloads/)，安裝時勾選「使用 C++ 的桌面開發」，並確認有勾選其中的「vcpkg 套件管理員」
 - CMake 3.28 以上
+- Python 3.10 以上（選用：下載模型、OCR 評測）
 - VS Code 搭配 C/C++ Extension Pack（選用）
 
 ## 建置與測試
@@ -32,6 +33,8 @@
 ```bash
 cmake --workflow --preset debug
 ```
+
+第一次設定時，vcpkg 會下載並建置 OpenCV 等相依套件（列在 `vcpkg.json`），約需 5 分鐘；之後會使用快取。ONNX Runtime 和 DirectML 則從 NuGet 下載固定版本（約 215 MB），存放在 `.cache/downloads`，所有建置資料夾共用。
 
 其他流程：
 

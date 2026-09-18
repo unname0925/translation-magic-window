@@ -7,6 +7,9 @@ add_executable(tmw_unit_tests
     core/geometry_test.cpp
     core/lens_layout_test.cpp
     core/trigger_state_machine_test.cpp
+    ocr/model_config_test.cpp
+    ocr/text_detector_test.cpp
+    ocr/text_recognizer_test.cpp
     platform/png_file_test.cpp
     platform/single_instance_test.cpp
     platform/text_encoding_test.cpp
@@ -15,6 +18,7 @@ add_executable(tmw_unit_tests
 target_include_directories(tmw_unit_tests PRIVATE "${PROJECT_SOURCE_DIR}/tests")
 target_link_libraries(tmw_unit_tests PRIVATE
     tmw_core
+    tmw_ocr
     tmw_platform
     tmw_options
     GTest::gtest_main)
@@ -23,6 +27,7 @@ if(TMW_ENABLE_ASAN)
     target_compile_definitions(tmw_unit_tests PRIVATE TMW_EXPECT_ASAN)
 endif()
 tmw_copy_asan_runtime(tmw_unit_tests)
+tmw_copy_onnxruntime(tmw_unit_tests)
 
 # PRE_TEST：在執行測試時才列出測試案例，避免建置時就需要 ASan DLL。
 # DISCOVERY_TIMEOUT：防毒軟體（例如 Norton）第一次執行新建置的執行檔時，

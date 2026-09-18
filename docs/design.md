@@ -196,9 +196,24 @@
 
 所有模型都以 ONNX 格式透過 ONNX Runtime 執行。執行方式依序嘗試 DirectML，失敗則改用 CPU。
 
+**執行環境**：ONNX Runtime 1.24.4（DirectML 版）加上 DirectML 1.15.4，從 NuGet 下載固定版本。DirectML 已進入持續維護，ONNX Runtime 的 DirectML 版停在 1.24.x，新功能移到 Windows ML。Windows ML 使用相同的 ONNX Runtime API，之後要改用它（例如 NVIDIA 顯卡改用 TensorRT RTX）時，只需要改建立工作階段的部分。
+
 **DirectML 的限制**
 - 必須關閉 memory pattern，並使用循序執行模式。
 - 輸入尺寸一直變動時效率很差。所以偵測模型的輸入要對齊到少數幾種固定尺寸，辨識模型的寬度也要補齊到固定的級距。
+- 補齊到固定級距後，右邊補的 0 會比官方版多，結果可能和官方版略有不同。M1 實作時要用同一套比對工具（見下方）量測差異。
+
+#### C++ 實作和 PaddleOCR 的一致性
+
+C++ 的前後處理（`src/ocr/`）逐步照著 PaddleOCR 官方實作（PaddleX 3.7）寫，同一張圖片的文字和文字框必須和官方版相同，用 `tools/eval/check_ocr_equivalence.py` 檢查（說明見 `tools/eval/README.md`）。幾個容易出錯的細節：
+
+- **參數**用 PaddleOCR OCR 管線的預設值（`limit_side_len` 64、`limit_type` min、`thresh` 0.3、`box_thresh` 0.6、`unclip_ratio` 1.5），不是模型 `inference.yml` 裡的值。
+- **numpy 的型別規則**：二值化門檻以 float32 比較；正規化是 float32 的先乘後加（不能合併成 FMA）；文字框座標換算用 float64；Python 的 `round` 是四捨六入五成雙。
+- **文字框擴張**用和 pyclipper 相同的 Clipper 6.4.2（浮點座標往 0 的方向截斷成整數），不用 Clipper2。兩者擴張出來的頂點不同，文字框會差 1 個像素，連帶影響辨識結果。
+- **辨識一次一張**：批次中的圖片會補齊成相同寬度，影響結果。
+- **字元表**是 blank、`inference.yml` 的字元、空白字元，依序排列。
+
+**M0-14 的結果**：6 個模型組合（PP-OCRv6 medium／small／tiny、PP-OCRv5 server／mobile、韓文）、9 張合成圖片（每組 32～45 行文字），C++ 在 CPU 和 DirectML 上辨識出的文字都和官方版完全相同，文字框誤差 0 像素。6 個辨識模型的完整字元表（合計約 9.3 萬個字元）也逐字相同。
 
 **manga-ocr 的實作風險**
 
@@ -406,7 +421,7 @@ public:
 
 | 元件 | 有獨立顯卡 | 只有內顯 | 純 CPU |
 |---|---|---|---|
-| OCR | server 版模型、DirectML | mobile 版模型、DirectML | mobile 版模型，約 0.1～0.3 秒 |
+| OCR | PP-OCRv6 medium 或 PP-OCRv5 server，DirectML | PP-OCRv6 small 或 PP-OCRv5 mobile，DirectML | PP-OCRv6 small 或 PP-OCRv5 mobile，透鏡大小約 0.3～0.35 秒（server 版在 CPU 上要數秒到十幾秒，不能用） |
 | 漫畫 OCR | 很快 | 可用 | 每個對話框約 0.2～1 秒（粗估） |
 | 翻譯 | 本機 LLM 或雲端 | 雲端 | 雲端 |
 | 背景修補 | LaMa | 視效能而定 | 純色填補 |
@@ -417,10 +432,26 @@ public:
 |---|---|
 | 擷取、裁切、變化偵測 | < 5 ms |
 | 等待穩定 | 300～600 ms（刻意等待） |
-| OCR | < 150 ms |
+| OCR | < 150 ms（M0-14 實測 283 ms，見下方） |
 | 翻譯（網路） | 200～1000 ms |
 | 翻譯（本機 8B LLM） | 0.5～3 s（逐組串流顯示） |
 | **從停止移動到出現結果** | **約 1～2 s** |
+
+**OCR 實測**（M0-14，Release 版，RTX 4070＋i5-13600KF；透鏡大小的畫面 720×405、7 行文字；括號內是偵測＋辨識）
+
+| 模型 | CPU | DirectML |
+|---|---|---|
+| PP-OCRv6 medium | 1095 ms（509＋586） | 283 ms（59＋224） |
+| PP-OCRv6 small | 317 ms（162＋155） | 207 ms（27＋180） |
+| PP-OCRv6 tiny（不支援日文） | 59 ms（36＋24） | 96 ms（23＋73） |
+| PP-OCRv5 server | 10.7 s（1.8 s＋8.9 s） | 377 ms（95＋282） |
+| PP-OCRv5 mobile | 351 ms（128＋223） | 218 ms（27＋192） |
+| 韓文（v5 server 偵測＋韓文辨識） | 1.9 s（1.8 s＋142） | 356 ms（94＋262） |
+
+- DirectML 的偵測很快（23～95 ms），但**辨識每行約 25～40 ms，而且和模型大小幾乎無關**：瓶頸是「一行呼叫一次、每行寬度都不同」的固定成本，不是運算量。所以目前超過 150 ms 的預算。M1-03 要把同一張畫面的多行合成一批，寬度補齊到固定級距（見 4.4 的 DirectML 限制）。
+- tiny 在 DirectML 上反而比 CPU 慢：模型太小，呼叫 GPU 的成本比運算還大。
+- 模型載入：CPU 0.1～0.6 秒，DirectML 0.3～0.8 秒，只在啟動時發生一次。
+- 量測方式：`tools/eval/check_ocr_equivalence.py` 產生的 `build/ocr_eval/report.md`；每張圖片跑 5 次（CPU 2 次），第一次暖機不計。
 
 **閒置時的資源預算**：透鏡開著但畫面沒有變化時，CPU 使用率應低於 1%。
 
@@ -432,15 +463,16 @@ public:
 
 ## 6. 技術棧與授權
 
-專案以 GPL-3.0 授權。以下元件的授權都能和 GPL-3.0 相容。
+專案以 GPL-3.0 授權。以下元件除了 DirectML.dll（見第 11 節）以外，授權都能和 GPL-3.0 相容。
 
 | 用途 | 選擇 | 授權 |
 |---|---|---|
 | 編譯與建置 | MSVC、C++20、CMake、vcpkg（manifest 模式），只建置 x64 | — |
 | 透鏡與覆蓋層 | Win32、Direct2D、DirectWrite | 系統內建 |
 | 擷取 | Windows.Graphics.Capture（C++/WinRT）、D3D11 | 系統內建 |
-| 模型推論 | ONNX Runtime（DirectML 版）。這個版本不在 vcpkg 中，由 CMake 下載固定版本的官方套件並驗證 SHA-256 | MIT |
-| 影像處理 | OpenCV（只用 core 和 imgproc）、Clipper2 | Apache-2.0 / BSL-1.0 |
+| 模型推論 | ONNX Runtime 1.24.4（DirectML 版）和 DirectML 1.15.4。不在 vcpkg 中，由 CMake 從 NuGet 下載固定版本，並用 NuGet 公布的 SHA-512 驗證 | MIT；DirectML.dll 是微軟的專有可再散布元件 |
+| 影像處理 | OpenCV（只用 core 和 imgproc，透過 vcpkg）、Clipper 6.4.2（和 pyclipper 相同的原始碼，放在 `third_party/clipper`） | Apache-2.0 / BSL-1.0 |
+| 讀取模型設定 | yaml-cpp（讀 `inference.yml`） | MIT |
 | OCR 模型 | PP-OCRv6、PP-OCRv5、PaddleOCR 韓文模型 | Apache-2.0 |
 | 漫畫 OCR | manga-ocr | Apache-2.0 |
 | 漫畫文字偵測 | comic-text-detector | GPL-3.0（程式和模型檔都是，已確認） |
@@ -484,8 +516,11 @@ translation-magic-window/
 ├─ testdata/
 │  └─ private/             # 你收集的真實截圖（有版權，放在 .gitignore 裡）
 ├─ models/                 # 放在 .gitignore 裡；由腳本下載
+├─ third_party/
+│  └─ clipper/             # Clipper 6.4.2（和 pyclipper 相同的原始碼）
 └─ tools/
-   ├─ eval/                # Python：OCR 與翻譯評測
+   ├─ eval/                # Python：OCR 與翻譯評測、C++／Python 一致性檢查
+   ├─ ocr_cli/             # C++：對圖片跑 OCR，輸出 JSON 和各步驟耗時
    ├─ bench/               # 各步驟效能量測
    └─ fetch_models/        # 下載模型並驗證 SHA-256（models.json 列出固定版本的網址）
 ```
@@ -525,14 +560,16 @@ translation-magic-window/
 | 非官方端點失效或被限流 | 引擎鏈自動備援、暫停失敗的引擎、主動限流、快速更新 |
 | OCR 讀不好特殊字型 | 在 M0 用實際截圖評測；依情境模式選擇模型 |
 | manga-ocr 在 C++ 中實作困難 | M0 驗證 ONNX 匯出和自寫解碼的正確性；備案是用 PP-OCR 處理直排 |
-| C++ 的 OCR 前後處理和 Python 版結果不一致 | M0 就在 C++ 跑一次，並和 Python 的輸出逐項比對 |
+| C++ 的 OCR 前後處理和 Python 版結果不一致 | M0-14 已逐項比對並確認一致（見 4.4）；之後修改 OCR 程式碼時都要重新跑一致性檢查 |
+| OCR 速度超過預算（M0-14：透鏡大小 283 ms，預算 150 ms） | M1-03 多行批次處理＋固定寬度級距；還是不夠時，預設改用 small 模型 |
+| DirectML 進入持續維護，ONNX Runtime 的 DirectML 版不再更新 | Windows ML 的 API 相同，需要時改用；M0 先用 DirectML，因為它支援所有 DirectX 12 顯示卡 |
 | 遊戲畫面永遠不會靜止 | 「只看文字區域」的兩層偵測，加上快捷鍵手動觸發 |
 | 分層視窗縮放時閃爍 | M0 驗證；備案是自己處理滑鼠拖動和縮放 |
 | 高更新率螢幕造成 CPU 負擔 | 擷取節流、在 GPU 上縮圖後才讀回 |
 | 本機 LLM 和遊戲搶顯示卡記憶體 | 遊戲模式預設使用雲端引擎 |
 | 防毒軟體誤判 | 程式碼簽章、不注入其他程式、開源透明 |
 | DPI 或多螢幕座標錯誤 | 在 M0 就測試不同縮放比例和多螢幕 |
-| 模型無法轉成 ONNX 或無法在 DirectML 上執行 | 在 M0 先確認；改用替代模型 |
+| 模型無法轉成 ONNX 或無法在 DirectML 上執行 | PP-OCRv5、v6 和韓文模型都有官方 ONNX 版本，也都能在 DirectML 上執行（M0-14 確認）；manga-ocr 在 M0-15 確認 |
 | 測試用的漫畫和遊戲截圖有版權，不能放進公開倉庫 | 真實截圖只放在本機（加入 .gitignore）；CI 使用開源字型合成的測試圖 |
 | C++ 開發速度較慢 | 評測用 Python；UI 用 Qt；先完成 MVP 再擴充 |
 
@@ -545,6 +582,7 @@ translation-magic-window/
 - 最低支援的 Windows 11 版本（M0 確認 WGC 各項功能在哪個版本開始可用）。
 - 安裝程式要用什麼技術（Inno Setup、WiX 或 MSIX）。
 - 觸發參數的預設值（在 M1 實測後調整）。
+- **DirectML.dll 的授權**：它是微軟的專有元件（允許再散布），和 GPL-3.0 的程式一起發布時，需要在授權中加上額外許可（GPLv3 第 7 條），或改用 Windows 內建的 DirectML（可能比 ONNX Runtime 需要的版本舊）。M5 發布前由你決定。
 
 ---
 
@@ -553,6 +591,7 @@ translation-magic-window/
 | 日期 | 內容 |
 |---|---|
 | 2026-09-18 | 初版 |
+| 2026-09-19 | M0-14：C++ 的 OCR（PP-OCRv6、v5、韓文）和 PaddleOCR 官方版逐項比對一致（4.4）；ONNX Runtime 1.24.4＋DirectML 1.15.4，DirectML 版不再更新，記錄改用 Windows ML 的方向；文字框擴張改用和 pyclipper 相同的 Clipper 6.4.2；加入 yaml-cpp；第 5 節加入 OCR 實測，辨識速度超過預算；待決事項加入 DirectML.dll 的授權 |
 | 2026-09-18 | M0-13：PP-OCRv6 已發布，列為一般情境和沒有 GPU 時的候選模型，由 M0-11 評測決定；韓文模型確認有官方 ONNX 版本；comic-text-detector 的授權確認為 GPL-3.0；目錄結構移除 `tests/testtarget/`（整合測試改為直接啟動主程式） |
 | 2026-09-18 | M0-08：新增命令列參數 `--data-dir`（4.10），讓整合測試用暫存資料夾啟動真正的主程式；擷取服務新增只給測試用的 `captureCursor` 選項（4.2） |
 | 2026-09-18 | M0-06 實作時修正：擷取回呼不再自行丟棄畫面（會造成畫面靜止後停在過時的內容），節流完全交給系統的 `MinUpdateInterval` |

@@ -2,6 +2,9 @@
 /build/
 /out/
 
+# 下載的第三方套件（ONNX Runtime 等），所有建置資料夾共用
+/.cache/
+
 # 模型：由 tools/fetch_models 下載，不放進倉庫
 /models/
 

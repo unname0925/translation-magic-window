@@ -1,0 +1,7 @@
+# Python 評測與參考實作環境（tools/eval/.venv）。建立方式見 tools/eval/README.md。
+# 只列出直接使用的套件並固定版本；安裝後完整的版本清單記錄在 requirements.lock.txt。
+
+# PaddleOCR 官方實作，用 ONNX Runtime 執行（engine="onnxruntime"），不需要 PaddlePaddle
+paddleocr==3.7.0
+# 和 C++ 使用相同版本的 ONNX Runtime（DirectML 版包含 CPU 和 DirectML）
+onnxruntime-directml==1.24.4
