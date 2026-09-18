@@ -27,6 +27,7 @@ CMakeUserPresets.json
 __pycache__/
 *.pyc
 .venv/
+.venv-*/
 
 # 當機傾印、系統檔
 *.dmp

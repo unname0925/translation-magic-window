@@ -1,0 +1,14 @@
+# manga-ocr 的參考實作與 ONNX 匯出環境（tools/eval/.venv-manga）。建立方式見 tools/eval/README.md。
+# 和 PaddleOCR 的環境分開：transformers 4.x 需要 huggingface-hub < 1.0，會和 PaddleX 的環境衝突。
+# 安裝後完整的版本清單記錄在 requirements-manga.lock.txt。
+
+# manga-ocr 官方實作（參考答案）
+manga-ocr==0.1.16
+# 4.x 最後一版：檔案中的權重都能照原本的名稱載入，不經過 5.x 的名稱轉換
+transformers==4.57.6
+torch==2.14.0
+# 匯出 ONNX
+onnx
+onnxscript
+# 和 C++ 使用相同版本的 ONNX Runtime
+onnxruntime-directml==1.24.4

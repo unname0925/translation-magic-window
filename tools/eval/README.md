@@ -32,6 +32,25 @@ tools/eval/.venv/Scripts/python tools/eval/check_ocr_equivalence.py
 4. 用 `compare_ocr.py` 比對：文字完全相同，文字框每個角的誤差不超過 2px。
 5. 把 C++ 的耗時整理成 `build/ocr_eval/report.md`。
 
+## manga-ocr 的 ONNX 版本（M0-15）
+
+manga-ocr 用另一個環境 `tools/eval/.venv-manga`：它需要 transformers 4.x，而 transformers 4.x 要求 huggingface-hub < 1.0，會和 PaddleOCR 的環境衝突。
+
+```powershell
+python -m venv tools/eval/.venv-manga
+tools/eval/.venv-manga/Scripts/python -m pip install -r tools/eval/requirements-manga.lock.txt
+python tools/fetch_models/fetch_models.py --only manga-ocr-base
+tools/eval/.venv-manga/Scripts/python tools/eval/check_manga_ocr.py
+```
+
+`check_manga_ocr.py` 會：
+
+1. 產生合成的漫畫對話框（`make_manga_crops.py`，只放在 `build/manga_ocr/crops`）。
+2. 第一次執行時把模型匯出成 `build/manga_ocr_onnx/encoder.onnx`、`decoder.onnx`。
+3. 用官方 manga-ocr（PyTorch）產生參考答案。
+4. 用 ONNX Runtime（CPU、DirectML）加上 `manga_onnx.py` 自己寫的 beam search，檢查產生的 token 和文字是否和官方完全相同。
+5. 另外跑逐字解碼，記錄結果和速度；報告寫在 `build/manga_ocr/report.md`。
+
 ## 各檔案
 
 | 檔案 | 用途 |
@@ -40,6 +59,9 @@ tools/eval/.venv/Scripts/python tools/eval/check_ocr_equivalence.py
 | `ocr_reference.py` | PaddleOCR 官方實作的結果（參考答案） |
 | `compare_ocr.py` | 比對兩份結果（只用標準函式庫） |
 | `check_ocr_equivalence.py` | 上面全部串起來，所有模型組合一次跑完 |
+| `manga_onnx.py` | manga-ocr 的 ONNX 匯出、前處理、beam search 和逐字解碼、轉成文字 |
+| `make_manga_crops.py` | 產生合成的漫畫對話框（直排、橫排、重複的狀聲詞、網點、小字） |
+| `check_manga_ocr.py` | manga-ocr 的 ONNX 版本和官方版的一致性檢查 |
 
 C++ 的命令列工具 `tmw_ocr_cli`（`tools/ocr_cli/`）也可以單獨使用：
 
