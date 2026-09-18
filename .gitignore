@@ -1,0 +1,31 @@
+# 建置輸出
+/build/
+/out/
+
+# 模型：由 tools/fetch_models 下載，不放進倉庫
+/models/
+
+# 真實的測試截圖有版權，只放在本機
+/testdata/private/
+
+# VS Code：只保留專案共用的設定
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+
+# Visual Studio
+.vs/
+*.user
+
+# CMake
+CMakeUserPresets.json
+
+# Python（評測腳本）
+__pycache__/
+*.pyc
+.venv/
+
+# 當機傾印、系統檔
+*.dmp
+Thumbs.db
+desktop.ini

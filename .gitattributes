@@ -1,0 +1,14 @@
+* text=auto eol=lf
+
+# Windows 指令檔必須是 CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# 二進位檔
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.onnx binary
+*.zip binary
