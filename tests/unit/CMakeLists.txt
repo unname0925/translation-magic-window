@@ -2,7 +2,10 @@
 add_executable(tmw_unit_tests
     core/clock_test.cpp
     core/geometry_test.cpp
+    core/lens_layout_test.cpp
+    platform/single_instance_test.cpp
     platform/text_encoding_test.cpp
+    platform/win_error_test.cpp
     sanitizer_canary_test.cpp)
 target_include_directories(tmw_unit_tests PRIVATE "${PROJECT_SOURCE_DIR}/tests")
 target_link_libraries(tmw_unit_tests PRIVATE

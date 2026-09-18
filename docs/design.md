@@ -112,7 +112,7 @@
 | 外觀 | `WS_EX_LAYERED` 搭配 `UpdateLayeredWindow`，逐像素設定透明度。邊框不透明，中間完全透明 |
 | 點擊穿透 | 中間像素完全透明，系統會自動讓滑鼠事件穿透到底下的程式（跨程式也有效） |
 | 抓取區 | 邊框外側加寬約 8～12px（依 DPI 縮放），透明度設為 1/255：肉眼幾乎看不到，但可以點擊，這樣細邊框也容易抓 |
-| 拖動與縮放 | 邊框處理 `WM_NCHITTEST`，回傳 `HTCAPTION`、`HTLEFT`、`HTBOTTOMRIGHT` 等 |
+| 拖動與縮放 | 左上方的把手用來拖動（`WM_NCHITTEST` 回傳 `HTCAPTION`），四邊和四角用來縮放（`HTLEFT`、`HTBOTTOMRIGHT` 等）。版面配置和點擊判定都放在 `core/lens_layout`，並有單元測試保證「看得到的像素」和「點得到的位置」完全一致 |
 | 不搶焦點 | `WS_EX_NOACTIVATE`、`WS_EX_TOOLWINDOW`、`WS_EX_TOPMOST` |
 | 排除擷取 | `SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE)` |
 | DPI | 程式宣告 Per-Monitor V2，所有座標一律使用實體像素；處理 `WM_DPICHANGED`，讓邊框粗細跟著縮放 |

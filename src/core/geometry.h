@@ -9,6 +9,13 @@ struct PointI {
     friend constexpr bool operator==(const PointI&, const PointI&) = default;
 };
 
+struct SizeI {
+    int width = 0;
+    int height = 0;
+
+    friend constexpr bool operator==(const SizeI&, const SizeI&) = default;
+};
+
 // 採用和 Win32 RECT 相同的慣例：left、top 包含在內，right、bottom 不包含。
 // 座標一律是實體像素。
 struct RectI {

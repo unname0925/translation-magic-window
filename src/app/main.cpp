@@ -1,9 +1,38 @@
 #include <windows.h>
 
-// 目前只是專案骨架：確認建置、manifest 和 UTF-8 都正常。
-// M0-05 會在這裡建立透鏡視窗和系統匣圖示。
-int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
-    MessageBoxW(nullptr, L"專案骨架建置成功。\n透鏡視窗會在 M0-05 實作。",
-                L"Translation Magic Window", MB_OK | MB_ICONINFORMATION);
-    return 0;
+#include <exception>
+#include <string>
+
+#include "app/app_controller.h"
+#include "platform/single_instance.h"
+#include "platform/text_encoding.h"
+
+namespace {
+
+constexpr wchar_t kAppTitle[] = L"Translation Magic Window";
+
+void showFatalError(const std::wstring& message) {
+    MessageBoxW(nullptr, message.c_str(), kAppTitle, MB_OK | MB_ICONERROR);
+}
+
+}  // namespace
+
+int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
+    try {
+        const tmw::platform::SingleInstance singleInstance(
+            L"Local\\TranslationMagicWindow.Instance");
+        if (!singleInstance.isFirst()) {
+            // 已經在執行：請它把透鏡顯示出來，自己直接結束
+            tmw::app::AppController::notifyRunningInstance();
+            return 0;
+        }
+
+        tmw::app::AppController controller(instance);
+        return controller.run();
+    } catch (const std::exception& error) {
+        showFatalError(tmw::platform::utf8ToWide(error.what()));
+    } catch (...) {
+        showFatalError(L"發生未知的錯誤。");
+    }
+    return 1;
 }
