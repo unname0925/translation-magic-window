@@ -42,6 +42,9 @@ public:
 
     static constexpr core::Rgba kDefaultAccent{59, 130, 246, 230};
 
+    // 視窗類別名稱。整合測試用它找到主程式的透鏡。
+    static constexpr wchar_t kClassName[] = L"TranslationMagicWindow.Lens";
+
 private:
     static void registerWindowClass(HINSTANCE instance);
     static LRESULT CALLBACK windowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);

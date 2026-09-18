@@ -2,6 +2,7 @@
 
 #include <windows.h>
 
+#include <filesystem>
 #include <memory>
 
 #include "core/auto_trigger.h"
@@ -17,7 +18,8 @@ namespace tmw::app {
 // 並把透鏡、螢幕擷取和自動觸發串起來。
 class AppController {
 public:
-    explicit AppController(HINSTANCE instance);
+    // dataDirectory：程式寫出的檔案（目前是擷取的 PNG）要放在哪裡
+    AppController(HINSTANCE instance, std::filesystem::path dataDirectory);
     ~AppController();
 
     AppController(const AppController&) = delete;
@@ -45,6 +47,7 @@ private:
     void updateAccent();
     void flashLens(core::Rgba accent);
 
+    std::filesystem::path dataDirectory_;
     HWND hwnd_ = nullptr;
     UINT taskbarCreatedMessage_ = 0;
     UINT showLensMessage_ = 0;

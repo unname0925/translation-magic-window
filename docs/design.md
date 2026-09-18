@@ -129,7 +129,7 @@
 ### 4.2 擷取服務
 
 - 使用 Windows.Graphics.Capture（C++/WinRT）擷取透鏡所在的整個螢幕，再用 `CopySubresourceRegion` 在 GPU 上裁切出透鏡範圍。
-- `IsCursorCaptureEnabled = false`：擷取時不包含滑鼠游標。否則游標在透鏡範圍內移動，就會被當成內容變化。
+- `IsCursorCaptureEnabled = false`：擷取時不包含滑鼠游標。否則游標在透鏡範圍內移動，就會被當成內容變化。（`ScreenCapture::Options::captureCursor` 只給整合測試 IT-07 做正向對照用，正式程式一律關閉）
 - `IsBorderRequired = false`：不顯示擷取時的黃色邊框。
 - **節流**：高更新率螢幕每秒可能送出 144 張以上的畫面。用 `MinUpdateInterval` 讓系統把頻率限制在約每秒 10 張（Windows 11 24H2 起支援）。
 - **回呼中不自行丟棄畫面**：如果在回呼裡丟掉畫面來節流，畫面之後靜止時系統就不會再送新畫面，程式會一直停在過時的內容。所以每張送來的畫面都在 GPU 內部複製一份（成本很低），比較昂貴的「讀回 CPU」只在需要時才做。系統不支援 `MinUpdateInterval` 時，改由使用端降低讀取頻率。
@@ -377,6 +377,9 @@ public:
 | 設定（JSON） | `%APPDATA%\TranslationMagicWindow\settings.json` |
 | 模型 | `%LOCALAPPDATA%\TranslationMagicWindow\models\` |
 | 記錄檔、傾印 | `%LOCALAPPDATA%\TranslationMagicWindow\logs\` |
+| 擷取的 PNG（開發用，M0） | `%LOCALAPPDATA%\TranslationMagicWindow\captures\` |
+
+**命令列參數 `--data-dir <資料夾>`**：把程式寫出的檔案（目前是擷取的 PNG，之後還有設定和記錄檔）改放到指定的資料夾。主要給自動化測試用，讓測試不會動到使用者的資料。模型的位置不受影響，M1 決定是否另外提供參數。參數不認得、缺少值或重複時，程式會顯示錯誤訊息並結束。
 
 設定檔帶有 `schemaVersion` 欄位。讀到舊版本時自動遷移；讀到壞掉的檔案時，先備份原檔，再改用預設值。
 
@@ -547,5 +550,6 @@ translation-magic-window/
 | 日期 | 內容 |
 |---|---|
 | 2026-09-18 | 初版 |
+| 2026-09-18 | M0-08：新增命令列參數 `--data-dir`（4.10），讓整合測試用暫存資料夾啟動真正的主程式；擷取服務新增只給測試用的 `captureCursor` 選項（4.2） |
 | 2026-09-18 | M0-06 實作時修正：擷取回呼不再自行丟棄畫面（會造成畫面靜止後停在過時的內容），節流完全交給系統的 `MinUpdateInterval` |
 | 2026-09-18 | 設計審查：新增 core／platform 分層、系統匣、單一執行個體、抓取區、擷取節流與重建、開始拖動時也遞增流水號、DirectML 限制、manga-ocr 實作風險、韓文判斷策略的驗證、記錄與除錯機制、設定檔版本；M0 新增 C++ 推論整合與 manga-ocr 可行性驗證；新增測試截圖版權的風險 |

@@ -6,6 +6,8 @@ add_library(tmw_core STATIC
     change_detection.cpp
     change_detection.h
     clock.h
+    command_line.cpp
+    command_line.h
     color.h
     frame_source.h
     geometry.cpp

@@ -2,6 +2,7 @@ add_executable(tmw_app WIN32
     app.manifest
     app_controller.cpp
     app_controller.h
+    app_identity.h
     main.cpp)
 set_target_properties(tmw_app PROPERTIES OUTPUT_NAME "TranslationMagicWindow")
 target_include_directories(tmw_app PRIVATE "${PROJECT_SOURCE_DIR}/src")

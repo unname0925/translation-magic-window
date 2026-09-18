@@ -8,6 +8,7 @@
 #include <string>
 #include <utility>
 
+#include "app/app_identity.h"
 #include "platform/app_paths.h"
 #include "platform/png_file.h"
 #include "platform/win_error.h"
@@ -15,15 +16,8 @@
 namespace tmw::app {
 namespace {
 
-constexpr wchar_t kClassName[] = L"TranslationMagicWindow.Controller";
 constexpr wchar_t kShowLensMessageName[] = L"TranslationMagicWindow.ShowLens";
 constexpr UINT kTrayCallbackMessage = WM_APP + 1;
-
-constexpr UINT kCommandToggleLens = 1;
-constexpr UINT kCommandExit = 2;
-constexpr UINT kCommandCapture = 3;
-constexpr UINT kCommandOpenCaptures = 4;
-constexpr UINT kCommandToggleAutoSave = 5;
 
 constexpr int kHotkeyCapture = 1;
 constexpr UINT_PTR kTimerRestoreAccent = 1;
@@ -67,7 +61,8 @@ std::wstring timestampedCaptureName() {
 
 }  // namespace
 
-AppController::AppController(HINSTANCE instance) {
+AppController::AppController(HINSTANCE instance, std::filesystem::path dataDirectory)
+    : dataDirectory_(std::move(dataDirectory)) {
     taskbarCreatedMessage_ = RegisterWindowMessageW(L"TaskbarCreated");
     showLensMessage_ = RegisterWindowMessageW(kShowLensMessageName);
 
@@ -75,15 +70,15 @@ AppController::AppController(HINSTANCE instance) {
     windowClass.cbSize = sizeof(windowClass);
     windowClass.lpfnWndProc = &AppController::windowProc;
     windowClass.hInstance = instance;
-    windowClass.lpszClassName = kClassName;
+    windowClass.lpszClassName = kControllerClassName;
     if (RegisterClassExW(&windowClass) == 0) {
         platform::throwLastError("RegisterClassExW failed for the controller window");
     }
 
     // 不顯示的一般頂層視窗。不用 HWND_MESSAGE（純訊息視窗），
     // 因為系統匣選單需要擁有者能成為前景視窗，而且 FindWindow 也找不到純訊息視窗。
-    CreateWindowExW(WS_EX_TOOLWINDOW, kClassName, L"Translation Magic Window", WS_OVERLAPPED, 0, 0,
-                    0, 0, nullptr, nullptr, instance, this);
+    CreateWindowExW(WS_EX_TOOLWINDOW, kControllerClassName, L"Translation Magic Window",
+                    WS_OVERLAPPED, 0, 0, 0, 0, nullptr, nullptr, instance, this);
     if (hwnd_ == nullptr) {
         platform::throwLastError("CreateWindowExW failed for the controller window");
     }
@@ -142,7 +137,7 @@ int AppController::run() {
 }
 
 void AppController::notifyRunningInstance() {
-    const HWND running = FindWindowW(kClassName, nullptr);
+    const HWND running = FindWindowW(kControllerClassName, nullptr);
     if (running != nullptr) {
         PostMessageW(running, RegisterWindowMessageW(kShowLensMessageName), 0, 0);
     }
@@ -209,7 +204,8 @@ LRESULT AppController::handleMessage(UINT message, WPARAM wParam, LPARAM lParam)
                     }
                     break;
                 case kCommandOpenCaptures:
-                    ShellExecuteW(nullptr, L"open", platform::capturesDirectory().c_str(), nullptr,
+                    ShellExecuteW(nullptr, L"open",
+                                  platform::capturesDirectory(dataDirectory_).c_str(), nullptr,
                                   nullptr, SW_SHOWNORMAL);
                     break;
                 case kCommandToggleAutoSave:
@@ -312,7 +308,8 @@ bool AppController::saveLensCapture() {
         return false;
     }
     try {
-        platform::savePng(*image, platform::capturesDirectory() / timestampedCaptureName());
+        platform::savePng(*image,
+                          platform::capturesDirectory(dataDirectory_) / timestampedCaptureName());
         return true;
     } catch (const std::exception& error) {
         OutputDebugStringA(error.what());

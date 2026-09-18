@@ -3,6 +3,7 @@ add_executable(tmw_unit_tests
     core/auto_trigger_test.cpp
     core/change_detection_test.cpp
     core/clock_test.cpp
+    core/command_line_test.cpp
     core/geometry_test.cpp
     core/lens_layout_test.cpp
     core/trigger_state_machine_test.cpp

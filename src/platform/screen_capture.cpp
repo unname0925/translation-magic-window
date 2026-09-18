@@ -187,7 +187,7 @@ void onFrameArrived(Shared& shared, std::uint64_t generation,
 
 struct ScreenCapture::Impl {
     std::shared_ptr<Shared> shared = std::make_shared<Shared>();
-    std::chrono::milliseconds minFrameInterval;
+    const Options options;
 
     HMONITOR monitor = nullptr;
     wgc::GraphicsCaptureItem item{nullptr};
@@ -196,7 +196,7 @@ struct ScreenCapture::Impl {
     wgc::Direct3D11CaptureFramePool::FrameArrived_revoker frameArrived;
     wgc::GraphicsCaptureItem::Closed_revoker itemClosed;
 
-    explicit Impl(std::chrono::milliseconds interval) : minFrameInterval(interval) {
+    explicit Impl(const Options& captureOptions) : options(captureOptions) {
         shared->d3d = createD3D();
     }
 
@@ -247,7 +247,7 @@ struct ScreenCapture::Impl {
         auto newPool = wgc::Direct3D11CaptureFramePool::CreateFreeThreaded(
             device, kPixelFormat, kFramePoolBuffers, newItem.Size());
         auto newSession = newPool.CreateCaptureSession(newItem);
-        newSession.IsCursorCaptureEnabled(false);
+        newSession.IsCursorCaptureEnabled(options.captureCursor);
         if (sessionHasProperty(L"IsBorderRequired")) {
             try {
                 newSession.IsBorderRequired(false);
@@ -258,7 +258,8 @@ struct ScreenCapture::Impl {
         const bool systemThrottling = sessionHasProperty(L"MinUpdateInterval");
         if (systemThrottling) {
             newSession.MinUpdateInterval(
-                std::chrono::duration_cast<winrt::Windows::Foundation::TimeSpan>(minFrameInterval));
+                std::chrono::duration_cast<winrt::Windows::Foundation::TimeSpan>(
+                    options.minFrameInterval));
         }
         {
             std::lock_guard lock(shared->mutex);
@@ -465,7 +466,7 @@ ScreenCapture::ScreenCapture(Options options) {
         throw std::runtime_error("Windows.Graphics.Capture is not supported on this system");
     }
     try {
-        impl_ = std::make_unique<Impl>(options.minFrameInterval);
+        impl_ = std::make_unique<Impl>(options);
     } catch (const winrt::hresult_error& error) {
         throw std::runtime_error("failed to create the Direct3D device (HRESULT " +
                                  std::to_string(static_cast<std::uint32_t>(error.code())) + ")");

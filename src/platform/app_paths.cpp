@@ -9,7 +9,7 @@
 
 namespace tmw::platform {
 
-std::filesystem::path localDataDirectory() {
+std::filesystem::path defaultDataDirectory() {
     PWSTR folder = nullptr;
     const HRESULT hr =
         SHGetKnownFolderPath(FOLDERID_LocalAppData, KF_FLAG_CREATE, nullptr, &folder);
@@ -23,8 +23,8 @@ std::filesystem::path localDataDirectory() {
     return path;
 }
 
-std::filesystem::path capturesDirectory() {
-    std::filesystem::path path = localDataDirectory() / L"captures";
+std::filesystem::path capturesDirectory(const std::filesystem::path& dataDirectory) {
+    std::filesystem::path path = dataDirectory / L"captures";
     std::filesystem::create_directories(path);
     return path;
 }

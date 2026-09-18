@@ -31,6 +31,9 @@ class ScreenCapture {
 public:
     struct Options {
         std::chrono::milliseconds minFrameInterval{100};
+        // 是否把滑鼠游標畫進擷取結果。正式程式一律是 false；
+        // 只有整合測試 IT-07 的正向對照會設成 true，證明測試抓得出游標。
+        bool captureCursor = false;
     };
 
     // 建立 D3D 裝置。系統不支援螢幕擷取或建立裝置失敗時丟出 std::runtime_error。

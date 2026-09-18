@@ -11,8 +11,6 @@
 namespace tmw::platform {
 namespace {
 
-constexpr wchar_t kClassName[] = L"TranslationMagicWindow.Lens";
-
 LRESULT toHitTestCode(core::LensHitZone zone) {
     switch (zone) {
         case core::LensHitZone::Move:

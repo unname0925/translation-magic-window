@@ -1,6 +1,7 @@
 #include "support/test_window.h"
 
 #include <dwmapi.h>
+#include <windowsx.h>
 
 #include <stdexcept>
 
@@ -19,6 +20,8 @@ void registerClassOnce() {
             return DefWindowProcW(hwnd, message, wParam, lParam);
         };
         windowClass.hInstance = GetModuleHandleW(nullptr);
+        // 游標測試（IT-07）需要一個看得見的游標
+        windowClass.hCursor = LoadCursorW(nullptr, IDC_ARROW);
         windowClass.lpszClassName = kClassName;
         return RegisterClassExW(&windowClass) != 0;
     }();
@@ -107,6 +110,15 @@ LRESULT CALLBACK TestWindow::windowProc(HWND hwnd, UINT message, WPARAM wParam, 
                 return 0;
             case WM_MOUSEACTIVATE:
                 return MA_NOACTIVATE;
+            case WM_LBUTTONDOWN:
+            case WM_LBUTTONUP:
+            case WM_RBUTTONDOWN:
+            case WM_RBUTTONUP:
+            case WM_MBUTTONDOWN:
+            case WM_MBUTTONUP:
+                self->mouseEvents_.push_back(
+                    {message, {GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)}});
+                return 0;
             case WM_NCDESTROY:
                 SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
                 self->hwnd_ = nullptr;
@@ -143,6 +155,20 @@ void TestWindow::paint(HDC dc) {
     DeleteObject(brush);
 }
 
+int patternMismatches(const core::ImageBgra& image, int offsetX, int offsetY) {
+    int mismatches = 0;
+    for (int y = 0; y < image.height; ++y) {
+        for (int x = 0; x < image.width; ++x) {
+            const std::uint8_t* p = image.pixel(x, y);
+            const auto expected = TestWindow::expectedPixel(x + offsetX, y + offsetY);
+            if (p[0] != expected[0] || p[1] != expected[1] || p[2] != expected[2]) {
+                ++mismatches;
+            }
+        }
+    }
+    return mismatches;
+}
+
 void pumpMessages(std::chrono::milliseconds duration) {
     const auto deadline = std::chrono::steady_clock::now() + duration;
     while (true) {
@@ -159,6 +185,17 @@ void pumpMessages(std::chrono::milliseconds duration) {
             std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now).count();
         MsgWaitForMultipleObjects(0, nullptr, FALSE, static_cast<DWORD>(remaining), QS_ALLINPUT);
     }
+}
+
+bool waitUntil(const std::function<bool()>& condition, std::chrono::milliseconds timeout) {
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    while (!condition()) {
+        if (std::chrono::steady_clock::now() >= deadline) {
+            return false;
+        }
+        pumpMessages(std::chrono::milliseconds{10});
+    }
+    return true;
 }
 
 void waitForComposition() {

@@ -7,12 +7,14 @@
 #include <chrono>
 #include <optional>
 
+#include "support/mouse_input.h"
 #include "support/test_window.h"
 
 namespace tmw::platform {
 namespace {
 
 using namespace std::chrono_literals;
+using test::patternMismatches;
 using test::TestWindow;
 
 // 等待第一張畫面的時間。正式程式是 1 秒；測試放寬到 5 秒，
@@ -25,22 +27,6 @@ core::RectI primaryMonitorRect() {
     info.cbSize = sizeof(info);
     GetMonitorInfoW(monitor, &info);
     return {info.rcMonitor.left, info.rcMonitor.top, info.rcMonitor.right, info.rcMonitor.bottom};
-}
-
-// 擷取結果中，和 Pattern 模式預期顏色不同的像素數。(offsetX, offsetY)
-// 是擷取範圍在測試視窗內的起點。
-int patternMismatches(const core::ImageBgra& image, int offsetX, int offsetY) {
-    int mismatches = 0;
-    for (int y = 0; y < image.height; ++y) {
-        for (int x = 0; x < image.width; ++x) {
-            const std::uint8_t* p = image.pixel(x, y);
-            const auto expected = TestWindow::expectedPixel(x + offsetX, y + offsetY);
-            if (p[0] != expected[0] || p[1] != expected[1] || p[2] != expected[2]) {
-                ++mismatches;
-            }
-        }
-    }
-    return mismatches;
 }
 
 int colorMismatches(const core::ImageBgra& image, COLORREF color) {
@@ -248,6 +234,43 @@ TEST_F(ScreenCaptureTest, ResetStartsNewSession) {
     ASSERT_TRUE(image.has_value());
     EXPECT_EQ(capture.stats().sessionsStarted, 2u);
     EXPECT_EQ(patternMismatches(*image, 0, 0), 0);
+}
+
+// IT-07：游標停在擷取範圍內時，擷取結果必須和圖案完全相同。
+// 正向對照：開啟游標擷取時，同一個位置必須看得到游標，
+// 證明游標真的在範圍內、而且是顯示中的，這個測試測得出差異。
+// 會移動你的滑鼠，結束後放回原位。
+TEST_F(ScreenCaptureTest, CursorIsNotCaptured) {
+    const TestWindow window(target_);
+    test::MouseSimulator mouse;
+    ASSERT_TRUE(mouse.moveTo(target_.center()));
+    test::waitForComposition();
+
+    CURSORINFO cursor{};
+    cursor.cbSize = sizeof(cursor);
+    ASSERT_TRUE(GetCursorInfo(&cursor));
+    ASSERT_TRUE(cursor.flags & CURSOR_SHOWING) << "游標目前是隱藏的（例如沒有接滑鼠），無法測試";
+
+    {
+        ScreenCapture::Options options;
+        options.captureCursor = true;
+        ScreenCapture withCursor(options);
+        int mismatches = 0;
+        // 游標要等下一張畫面才會畫上去
+        const bool cursorSeen = test::waitUntil(
+            [&] {
+                const auto image = withCursor.readRegion(target_, kTimeout);
+                mismatches = image ? patternMismatches(*image, 0, 0) : 0;
+                return mismatches > 0;
+            },
+            3000ms);
+        ASSERT_TRUE(cursorSeen) << "正向對照失敗：開啟游標擷取也看不到游標，這個測試測不出差異";
+    }
+
+    ScreenCapture capture;
+    const auto image = capture.readRegion(target_, kTimeout);
+    ASSERT_TRUE(image.has_value());
+    EXPECT_EQ(patternMismatches(*image, 0, 0), 0) << "擷取結果中出現了游標";
 }
 
 }  // namespace
