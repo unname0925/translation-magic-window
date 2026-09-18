@@ -49,6 +49,13 @@ public:
         const core::RectI& screenRect,
         std::chrono::milliseconds timeout = std::chrono::milliseconds{1000});
 
+    // 讀取 screenRect 範圍的縮圖：在 GPU 上逐級縮小一半（mipmap），
+    // 取第一個最長邊不超過 maxSide 的等級再讀回，讀回的資料量只有原圖的幾十分之一。
+    // 用於變化偵測。範圍本來就夠小時直接讀回原圖。
+    std::optional<core::ImageBgra> readThumbnail(
+        const core::RectI& screenRect, int maxSide,
+        std::chrono::milliseconds timeout = std::chrono::milliseconds{1000});
+
     // 丟掉目前的擷取工作階段，下次 readRegion 時重建。
     // 螢幕設定改變（WM_DISPLAYCHANGE）或從睡眠恢復時呼叫。
     void reset();

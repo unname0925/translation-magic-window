@@ -1,8 +1,11 @@
 # 單元測試：core，以及不需要桌面環境的 platform 工具函式。
 add_executable(tmw_unit_tests
+    core/auto_trigger_test.cpp
+    core/change_detection_test.cpp
     core/clock_test.cpp
     core/geometry_test.cpp
     core/lens_layout_test.cpp
+    core/trigger_state_machine_test.cpp
     platform/png_file_test.cpp
     platform/single_instance_test.cpp
     platform/text_encoding_test.cpp

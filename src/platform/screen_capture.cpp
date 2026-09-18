@@ -80,6 +80,16 @@ bool sessionHasProperty(const wchar_t* name) {
         L"Windows.Graphics.Capture.GraphicsCaptureSession", name);
 }
 
+struct StagingTexture {
+    winrt::com_ptr<ID3D11Texture2D> texture;
+    core::SizeI size;
+};
+
+D3D11_BOX toBox(const core::RectI& rect) {
+    return {static_cast<UINT>(rect.left),  static_cast<UINT>(rect.top),    0,
+            static_cast<UINT>(rect.right), static_cast<UINT>(rect.bottom), 1};
+}
+
 // 畫面回呼和呼叫端共用的狀態。回呼持有它的 shared_ptr，
 // 所以即使工作階段已經關閉，晚到的回呼也不會存取到已釋放的記憶體。
 struct Shared {
@@ -95,9 +105,13 @@ struct Shared {
     // 最新一張畫面的複本（整個螢幕），以及其中有效內容的大小
     winrt::com_ptr<ID3D11Texture2D> latest;
     core::SizeI latestSize;
-    // 讀回 CPU 用的暫存材質，依裁切大小重複使用
-    winrt::com_ptr<ID3D11Texture2D> staging;
-    core::SizeI stagingSize;
+    // 讀回 CPU 用的暫存材質，依大小重複使用
+    StagingTexture regionStaging;
+    StagingTexture thumbnailStaging;
+    // 產生縮圖用的 mipmap 材質：在 GPU 上逐級縮小一半，只讀回最小需要的那一級
+    winrt::com_ptr<ID3D11Texture2D> mipTexture;
+    winrt::com_ptr<ID3D11ShaderResourceView> mipView;
+    core::SizeI mipSize;
 
     CaptureStats stats;
 };
@@ -280,8 +294,11 @@ struct ScreenCapture::Impl {
         D3D fresh = createD3D();
         std::lock_guard lock(shared->mutex);
         shared->d3d = std::move(fresh);
-        shared->staging = nullptr;
-        shared->stagingSize = {};
+        shared->regionStaging = {};
+        shared->thumbnailStaging = {};
+        shared->mipTexture = nullptr;
+        shared->mipView = nullptr;
+        shared->mipSize = {};
         shared->deviceLost = false;
     }
 
@@ -295,8 +312,11 @@ struct ScreenCapture::Impl {
         return !session || monitor != target || shared->sessionClosed;
     }
 
-    std::optional<core::ImageBgra> readRegion(const core::RectI& screenRect,
-                                              std::chrono::milliseconds timeout) {
+    // 確認裝置和工作階段可用，並等到第一張畫面。
+    // 成功時 lock 會持有 shared->mutex，並回傳要裁切的範圍（螢幕擷取畫面內的座標）。
+    std::optional<core::RectI> prepare(const core::RectI& screenRect,
+                                       std::chrono::milliseconds timeout,
+                                       std::unique_lock<std::mutex>& lock) {
         if (screenRect.empty()) {
             return std::nullopt;
         }
@@ -317,7 +337,7 @@ struct ScreenCapture::Impl {
             startSession(target);
         }
 
-        std::unique_lock lock(shared->mutex);
+        lock = std::unique_lock(shared->mutex);
         if (!shared->frameReady.wait_for(lock, timeout,
                                          [this] { return shared->latest != nullptr; })) {
             return std::nullopt;
@@ -329,10 +349,15 @@ struct ScreenCapture::Impl {
         if (local.empty()) {
             return std::nullopt;
         }
-        const core::SizeI size{local.width(), local.height()};
+        return local;
+    }
 
-        // 只把需要的範圍從 GPU 複製到可讀回的暫存材質
-        if (!shared->staging || shared->stagingSize != size) {
+    // 把 source 的一個子資源（box 不為 nullptr 時只取其中一塊）複製到暫存材質，再讀回 CPU。
+    // 呼叫時必須持有 shared->mutex。
+    std::optional<core::ImageBgra> readback(ID3D11Texture2D* source, UINT subresource,
+                                            const D3D11_BOX* box, core::SizeI size,
+                                            StagingTexture& staging) {
+        if (!staging.texture || staging.size != size) {
             D3D11_TEXTURE2D_DESC desc{};
             desc.Width = static_cast<UINT>(size.width);
             desc.Height = static_cast<UINT>(size.height);
@@ -342,36 +367,94 @@ struct ScreenCapture::Impl {
             desc.SampleDesc.Count = 1;
             desc.Usage = D3D11_USAGE_STAGING;
             desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
-            shared->staging = nullptr;
+            staging.texture = nullptr;
             winrt::check_hresult(
-                shared->d3d.device->CreateTexture2D(&desc, nullptr, shared->staging.put()));
-            shared->stagingSize = size;
+                shared->d3d.device->CreateTexture2D(&desc, nullptr, staging.texture.put()));
+            staging.size = size;
         }
-        const D3D11_BOX box{static_cast<UINT>(local.left),  static_cast<UINT>(local.top),    0,
-                            static_cast<UINT>(local.right), static_cast<UINT>(local.bottom), 1};
-        shared->d3d.context->CopySubresourceRegion(shared->staging.get(), 0, 0, 0, 0,
-                                                   shared->latest.get(), 0, &box);
+        shared->d3d.context->CopySubresourceRegion(staging.texture.get(), 0, 0, 0, 0, source,
+                                                   subresource, box);
 
         D3D11_MAPPED_SUBRESOURCE mapped{};
         const HRESULT hr =
-            shared->d3d.context->Map(shared->staging.get(), 0, D3D11_MAP_READ, 0, &mapped);
+            shared->d3d.context->Map(staging.texture.get(), 0, D3D11_MAP_READ, 0, &mapped);
         if (FAILED(hr)) {
             shared->deviceLost = shared->deviceLost || isDeviceLost(hr);
             return std::nullopt;
         }
         core::ImageBgra image(size.width, size.height);
-        const auto* source = static_cast<const std::uint8_t*>(mapped.pData);
+        const auto* bytes = static_cast<const std::uint8_t*>(mapped.pData);
         for (int y = 0; y < size.height; ++y) {
             std::uint8_t* row = image.pixel(0, y);
-            std::memcpy(row, source + static_cast<std::size_t>(y) * mapped.RowPitch,
-                        image.stride());
+            std::memcpy(row, bytes + static_cast<std::size_t>(y) * mapped.RowPitch, image.stride());
             // 螢幕畫面本來就是不透明的；擷取結果的 alpha 沒有意義，統一設為 255
             for (int x = 0; x < size.width; ++x) {
                 row[x * 4 + 3] = 255;
             }
         }
-        shared->d3d.context->Unmap(shared->staging.get(), 0);
+        shared->d3d.context->Unmap(staging.texture.get(), 0);
         return image;
+    }
+
+    std::optional<core::ImageBgra> readRegion(const core::RectI& screenRect,
+                                              std::chrono::milliseconds timeout) {
+        std::unique_lock<std::mutex> lock;
+        const std::optional<core::RectI> local = prepare(screenRect, timeout, lock);
+        if (!local) {
+            return std::nullopt;
+        }
+        const D3D11_BOX box = toBox(*local);
+        return readback(shared->latest.get(), 0, &box, {local->width(), local->height()},
+                        shared->regionStaging);
+    }
+
+    std::optional<core::ImageBgra> readThumbnail(const core::RectI& screenRect, int maxSide,
+                                                 std::chrono::milliseconds timeout) {
+        std::unique_lock<std::mutex> lock;
+        const std::optional<core::RectI> local = prepare(screenRect, timeout, lock);
+        if (!local) {
+            return std::nullopt;
+        }
+        const core::SizeI size{local->width(), local->height()};
+        const D3D11_BOX box = toBox(*local);
+
+        // 選擇 mipmap 等級：每一級長寬各縮小一半，取第一個最長邊不超過 maxSide 的等級
+        const int limit = std::max(1, maxSide);
+        UINT level = 0;
+        while (std::max(size.width >> level, size.height >> level) > limit) {
+            ++level;
+        }
+        if (level == 0) {
+            return readback(shared->latest.get(), 0, &box, size, shared->thumbnailStaging);
+        }
+
+        if (!shared->mipTexture || shared->mipSize != size) {
+            D3D11_TEXTURE2D_DESC desc{};
+            desc.Width = static_cast<UINT>(size.width);
+            desc.Height = static_cast<UINT>(size.height);
+            desc.MipLevels = 0;  // 完整的 mipmap 鏈，一路縮到 1×1
+            desc.ArraySize = 1;
+            desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+            desc.SampleDesc.Count = 1;
+            desc.Usage = D3D11_USAGE_DEFAULT;
+            desc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
+            desc.MiscFlags = D3D11_RESOURCE_MISC_GENERATE_MIPS;
+            shared->mipTexture = nullptr;
+            shared->mipView = nullptr;
+            winrt::check_hresult(
+                shared->d3d.device->CreateTexture2D(&desc, nullptr, shared->mipTexture.put()));
+            winrt::check_hresult(shared->d3d.device->CreateShaderResourceView(
+                shared->mipTexture.get(), nullptr, shared->mipView.put()));
+            shared->mipSize = size;
+        }
+        shared->d3d.context->CopySubresourceRegion(shared->mipTexture.get(), 0, 0, 0, 0,
+                                                   shared->latest.get(), 0, &box);
+        shared->d3d.context->GenerateMips(shared->mipView.get());
+
+        const core::SizeI levelSize{std::max(1, size.width >> level),
+                                    std::max(1, size.height >> level)};
+        return readback(shared->mipTexture.get(), level, nullptr, levelSize,
+                        shared->thumbnailStaging);
     }
 };
 
@@ -395,6 +478,19 @@ std::optional<core::ImageBgra> ScreenCapture::readRegion(const core::RectI& scre
                                                          std::chrono::milliseconds timeout) {
     try {
         return impl_->readRegion(screenRect, timeout);
+    } catch (const winrt::hresult_error& error) {
+        OutputDebugStringW(error.message().c_str());
+        std::lock_guard lock(impl_->shared->mutex);
+        impl_->shared->deviceLost = impl_->shared->deviceLost || isDeviceLost(error.code());
+        return std::nullopt;
+    }
+}
+
+std::optional<core::ImageBgra> ScreenCapture::readThumbnail(const core::RectI& screenRect,
+                                                            int maxSide,
+                                                            std::chrono::milliseconds timeout) {
+    try {
+        return impl_->readThumbnail(screenRect, maxSide, timeout);
     } catch (const winrt::hresult_error& error) {
         OutputDebugStringW(error.message().c_str());
         std::lock_guard lock(impl_->shared->mutex);

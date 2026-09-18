@@ -15,6 +15,10 @@ namespace {
 using namespace std::chrono_literals;
 using test::TestWindow;
 
+// 等待第一張畫面的時間。正式程式是 1 秒；測試放寬到 5 秒，
+// 因為剛建置好的程式前幾次執行時，防毒軟體（例如 Norton）可能讓整個程序暫時變慢。
+constexpr auto kTimeout = 5000ms;
+
 core::RectI primaryMonitorRect() {
     const HMONITOR monitor = MonitorFromPoint({0, 0}, MONITOR_DEFAULTTOPRIMARY);
     MONITORINFO info{};
@@ -65,7 +69,7 @@ TEST_F(ScreenCaptureTest, CapturesWindowPixelsExactly) {
     test::waitForComposition();
 
     ScreenCapture capture;
-    const auto image = capture.readRegion(target_);
+    const auto image = capture.readRegion(target_, kTimeout);
     ASSERT_TRUE(image.has_value());
     EXPECT_EQ(image->width, 320);
     EXPECT_EQ(image->height, 240);
@@ -79,7 +83,7 @@ TEST_F(ScreenCaptureTest, SubRegionCoordinatesAreExact) {
 
     ScreenCapture capture;
     const core::RectI region = core::RectI::fromXYWH(target_.left + 37, target_.top + 23, 100, 80);
-    const auto image = capture.readRegion(region);
+    const auto image = capture.readRegion(region, kTimeout);
     ASSERT_TRUE(image.has_value());
     ASSERT_EQ(image->width, 100);
     ASSERT_EQ(image->height, 80);
@@ -94,7 +98,7 @@ TEST_F(ScreenCaptureTest, RegionCrossingMonitorEdgeIsClipped) {
     // 中心點還在主螢幕內，右邊 40px 超出主螢幕
     const core::RectI region{monitor_.right - 60, monitor_.top + 100, monitor_.right + 40,
                              monitor_.top + 200};
-    const auto image = capture.readRegion(region);
+    const auto image = capture.readRegion(region, kTimeout);
     ASSERT_TRUE(image.has_value());
     EXPECT_EQ(image->width, 60);
     EXPECT_EQ(image->height, 100);
@@ -102,8 +106,8 @@ TEST_F(ScreenCaptureTest, RegionCrossingMonitorEdgeIsClipped) {
 
 TEST_F(ScreenCaptureTest, RegionOffAllMonitorsFails) {
     ScreenCapture capture;
-    EXPECT_FALSE(capture.readRegion({-100000, -100000, -99900, -99900}).has_value());
-    EXPECT_FALSE(capture.readRegion({}).has_value());
+    EXPECT_FALSE(capture.readRegion({-100000, -100000, -99900, -99900}, kTimeout).has_value());
+    EXPECT_FALSE(capture.readRegion({}, kTimeout).has_value());
 }
 
 // IT-01（擷取部分）：設定了 WDA_EXCLUDEFROMCAPTURE 的視窗不會出現在擷取結果中。
@@ -119,7 +123,7 @@ TEST_F(ScreenCaptureTest, ExcludedWindowDoesNotAppear) {
         test::waitForComposition();
 
         ScreenCapture capture;
-        const auto image = capture.readRegion(target_);
+        const auto image = capture.readRegion(target_, kTimeout);
         ASSERT_TRUE(image.has_value());
         EXPECT_EQ(patternMismatches(*image, 0, 0), 0) << "被排除的視窗出現在擷取結果中";
     }
@@ -130,7 +134,7 @@ TEST_F(ScreenCaptureTest, ExcludedWindowDoesNotAppear) {
         test::waitForComposition();
 
         ScreenCapture capture;
-        const auto image = capture.readRegion(target_);
+        const auto image = capture.readRegion(target_, kTimeout);
         ASSERT_TRUE(image.has_value());
         EXPECT_GE(patternMismatches(*image, 0, 0), coverRect.width() * coverRect.height())
             << "正向對照失敗：沒有排除擷取的視窗也沒被擷取到，這個測試測不出差異";
@@ -146,7 +150,7 @@ TEST_F(ScreenCaptureTest, RapidChangesThenStaticShowsFinalContent) {
     test::waitForComposition();
 
     ScreenCapture capture;
-    ASSERT_TRUE(capture.readRegion(target_).has_value());  // 開始擷取
+    ASSERT_TRUE(capture.readRegion(target_, kTimeout).has_value());  // 開始擷取
 
     const COLORREF finalColor = RGB(200, 150, 100);
     window.setSolidColor(RGB(90, 90, 90));
@@ -156,7 +160,7 @@ TEST_F(ScreenCaptureTest, RapidChangesThenStaticShowsFinalContent) {
     window.setSolidColor(finalColor);
     test::pumpMessages(400ms);  // 比節流間隔（100ms）長得多
 
-    const auto image = capture.readRegion(target_);
+    const auto image = capture.readRegion(target_, kTimeout);
     ASSERT_TRUE(image.has_value());
     EXPECT_EQ(colorMismatches(*image, finalColor), 0);
 }
@@ -169,7 +173,7 @@ TEST_F(ScreenCaptureTest, SystemThrottlesFrameRate) {
     test::waitForComposition();
 
     ScreenCapture capture(ScreenCapture::Options{100ms});
-    ASSERT_TRUE(capture.readRegion(target_).has_value());
+    ASSERT_TRUE(capture.readRegion(target_, kTimeout).has_value());
     if (!capture.stats().systemThrottling) {
         GTEST_SKIP() << "這個 Windows 版本不支援 MinUpdateInterval";
     }
@@ -180,16 +184,67 @@ TEST_F(ScreenCaptureTest, SystemThrottlesFrameRate) {
     EXPECT_LE(arrived, 25u) << "節流沒有生效";
 }
 
+TEST_F(ScreenCaptureTest, ThumbnailIsDownscaledOnTheGpu) {
+    TestWindow::Options options;
+    options.mode = TestWindow::Mode::Solid;
+    options.color = RGB(30, 120, 210);
+    const TestWindow window(target_, options);
+    test::waitForComposition();
+
+    ScreenCapture capture;
+    // 320×240：縮一半是 160×120（仍大於 128），再縮一半是 80×60
+    const auto thumbnail = capture.readThumbnail(target_, 128, kTimeout);
+    ASSERT_TRUE(thumbnail.has_value());
+    EXPECT_EQ(thumbnail->width, 80);
+    EXPECT_EQ(thumbnail->height, 60);
+    // 純色縮小後仍然是同一個顏色
+    EXPECT_EQ(colorMismatches(*thumbnail, options.color), 0);
+
+    const auto small = capture.readThumbnail(target_, 64, kTimeout);
+    ASSERT_TRUE(small.has_value());
+    EXPECT_EQ(small->width, 40);
+    EXPECT_EQ(small->height, 30);
+
+    // 範圍本來就夠小時不縮
+    const auto full = capture.readThumbnail(target_, 400, kTimeout);
+    ASSERT_TRUE(full.has_value());
+    EXPECT_EQ(full->width, 320);
+    EXPECT_EQ(full->height, 240);
+}
+
+TEST_F(ScreenCaptureTest, ThumbnailFollowsContentChanges) {
+    TestWindow::Options options;
+    options.mode = TestWindow::Mode::Solid;
+    options.color = RGB(10, 10, 10);
+    TestWindow window(target_, options);
+    test::waitForComposition();
+
+    ScreenCapture capture;
+    const auto before = capture.readThumbnail(target_, 128, kTimeout);
+    ASSERT_TRUE(before.has_value());
+    EXPECT_EQ(colorMismatches(*before, options.color), 0);
+    const auto serialBefore = capture.stats().framesArrived;
+
+    const COLORREF changed = RGB(240, 200, 20);
+    window.setSolidColor(changed);
+    test::pumpMessages(300ms);
+
+    EXPECT_GT(capture.stats().framesArrived, serialBefore) << "畫面變了，應該收到新畫面";
+    const auto after = capture.readThumbnail(target_, 128, kTimeout);
+    ASSERT_TRUE(after.has_value());
+    EXPECT_EQ(colorMismatches(*after, changed), 0);
+}
+
 TEST_F(ScreenCaptureTest, ResetStartsNewSession) {
     const TestWindow window(target_);
     test::waitForComposition();
 
     ScreenCapture capture;
-    ASSERT_TRUE(capture.readRegion(target_).has_value());
+    ASSERT_TRUE(capture.readRegion(target_, kTimeout).has_value());
     EXPECT_EQ(capture.stats().sessionsStarted, 1u);
 
     capture.reset();
-    const auto image = capture.readRegion(target_);
+    const auto image = capture.readRegion(target_, kTimeout);
     ASSERT_TRUE(image.has_value());
     EXPECT_EQ(capture.stats().sessionsStarted, 2u);
     EXPECT_EQ(patternMismatches(*image, 0, 0), 0);

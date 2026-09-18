@@ -15,7 +15,8 @@ target_link_libraries(tmw_integration_tests PRIVATE
     GTest::gtest)
 tmw_copy_asan_runtime(tmw_integration_tests)
 
+# TIMEOUT：單一測試超過 60 秒就判定失敗，真的卡住時不會無限等待
 gtest_discover_tests(tmw_integration_tests
     DISCOVERY_MODE PRE_TEST
     DISCOVERY_TIMEOUT 120
-    PROPERTIES LABELS integration)
+    PROPERTIES LABELS integration TIMEOUT 60)

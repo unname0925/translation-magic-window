@@ -2,6 +2,8 @@
 add_library(tmw_platform STATIC
     app_paths.cpp
     app_paths.h
+    capture_frame_source.cpp
+    capture_frame_source.h
     lens_window.cpp
     lens_window.h
     png_file.cpp

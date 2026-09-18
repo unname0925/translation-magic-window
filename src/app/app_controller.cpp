@@ -2,6 +2,7 @@
 
 #include <windowsx.h>
 
+#include <chrono>
 #include <exception>
 #include <optional>
 #include <string>
@@ -22,18 +23,37 @@ constexpr UINT kCommandToggleLens = 1;
 constexpr UINT kCommandExit = 2;
 constexpr UINT kCommandCapture = 3;
 constexpr UINT kCommandOpenCaptures = 4;
+constexpr UINT kCommandToggleAutoSave = 5;
 
 constexpr int kHotkeyCapture = 1;
 constexpr UINT_PTR kTimerRestoreAccent = 1;
+constexpr UINT_PTR kTimerTick = 2;
 constexpr UINT kFlashMilliseconds = 400;
+constexpr UINT kTickMilliseconds = 100;
 
 // 擷取範圍的預設大小（96 DPI 基準）
 constexpr core::SizeI kDefaultContentSize{480, 270};
 
-// 邊框顏色。M0-07 會改由狀態機決定顏色。
-constexpr core::Rgba kMovingAccent{245, 158, 11, 230};
-constexpr core::Rgba kSuccessAccent{16, 185, 129, 230};
-constexpr core::Rgba kErrorAccent{239, 68, 68, 230};
+// 邊框顏色（見 docs/design.md 4.1 的「狀態顯示」）
+constexpr core::Rgba kDraggingAccent{245, 158, 11, 230};    // 橘：拖動中
+constexpr core::Rgba kSettlingAccent{250, 204, 21, 230};    // 黃：等待畫面穩定
+constexpr core::Rgba kProcessingAccent{139, 92, 246, 230};  // 紫：處理中
+constexpr core::Rgba kSuccessAccent{16, 185, 129, 230};     // 綠：手動擷取成功
+constexpr core::Rgba kErrorAccent{239, 68, 68, 230};        // 紅：失敗
+
+core::Rgba accentFor(core::LensState state) {
+    switch (state) {
+        case core::LensState::Dragging:
+            return kDraggingAccent;
+        case core::LensState::Settling:
+            return kSettlingAccent;
+        case core::LensState::Processing:
+            return kProcessingAccent;
+        case core::LensState::Showing:
+            break;
+    }
+    return platform::LensWindow::kDefaultAccent;  // 藍：顯示中（平常的狀態）
+}
 
 // capture-20260918-193012-123.png
 std::wstring timestampedCaptureName() {
@@ -70,14 +90,25 @@ AppController::AppController(HINSTANCE instance) {
 
     try {
         capture_ = std::make_unique<platform::ScreenCapture>();
+        frameSource_ = std::make_unique<platform::CaptureFrameSource>(*capture_);
 
-        platform::LensWindow::Callbacks callbacks;
-        callbacks.onMoveSizeStart = [this] { lens_->setAccent(kMovingAccent); };
-        callbacks.onMoveSizeEnd = [this] {
-            lens_->setAccent(platform::LensWindow::kDefaultAccent);
+        core::AutoTrigger::Callbacks triggerCallbacks;
+        triggerCallbacks.onStateChanged = [this](core::LensState) { updateAccent(); };
+        triggerCallbacks.onProcess = [this](const core::ProcessRequest& request) {
+            process(request);
+        };
+        trigger_ = std::make_unique<core::AutoTrigger>(
+            clock_, *frameSource_, core::AutoTriggerConfig{}, std::move(triggerCallbacks));
+
+        platform::LensWindow::Callbacks lensCallbacks;
+        lensCallbacks.onMoveSizeStart = [this] { trigger_->onMoveSizeStart(); };
+        lensCallbacks.onMoveSizeEnd = [this] {
+            trigger_->onMoveSizeEnd(lens_->contentScreenRect());
         };
         lens_ = std::make_unique<platform::LensWindow>(instance, kDefaultContentSize,
-                                                       std::move(callbacks));
+                                                       std::move(lensCallbacks));
+        trigger_->onMoveSizeEnd(lens_->contentScreenRect());
+        updateAccent();
 
         tray_ = std::make_unique<platform::TrayIcon>(hwnd_, kTrayCallbackMessage,
                                                      LoadIconW(nullptr, IDI_APPLICATION),
@@ -87,6 +118,8 @@ AppController::AppController(HINSTANCE instance) {
         captureHotkeyRegistered_ =
             RegisterHotKey(hwnd_, kHotkeyCapture, MOD_CONTROL | MOD_ALT | MOD_SHIFT | MOD_NOREPEAT,
                            'S') != FALSE;
+
+        SetTimer(hwnd_, kTimerTick, kTickMilliseconds, nullptr);
     } catch (...) {
         DestroyWindow(hwnd_);
         throw;
@@ -148,7 +181,7 @@ LRESULT AppController::handleMessage(UINT message, WPARAM wParam, LPARAM lParam)
                 break;
             case NIN_SELECT:
             case NIN_KEYSELECT:
-                lens_->setVisible(!lens_->isVisible());
+                setLensVisible(!lens_->isVisible());
                 break;
             default:
                 break;
@@ -160,7 +193,7 @@ LRESULT AppController::handleMessage(UINT message, WPARAM wParam, LPARAM lParam)
         return 0;
     }
     if (message == showLensMessage_ && lens_) {
-        lens_->setVisible(true);
+        setLensVisible(true);
         return 0;
     }
 
@@ -168,14 +201,19 @@ LRESULT AppController::handleMessage(UINT message, WPARAM wParam, LPARAM lParam)
         case WM_COMMAND:
             switch (LOWORD(wParam)) {
                 case kCommandToggleLens:
-                    lens_->setVisible(!lens_->isVisible());
+                    setLensVisible(!lens_->isVisible());
                     break;
                 case kCommandCapture:
-                    captureLensToFile();
+                    if (lens_->isVisible()) {
+                        flashLens(saveLensCapture() ? kSuccessAccent : kErrorAccent);
+                    }
                     break;
                 case kCommandOpenCaptures:
                     ShellExecuteW(nullptr, L"open", platform::capturesDirectory().c_str(), nullptr,
                                   nullptr, SW_SHOWNORMAL);
+                    break;
+                case kCommandToggleAutoSave:
+                    autoSave_ = !autoSave_;
                     break;
                 case kCommandExit:
                     DestroyWindow(hwnd_);
@@ -185,32 +223,41 @@ LRESULT AppController::handleMessage(UINT message, WPARAM wParam, LPARAM lParam)
             }
             return 0;
         case WM_HOTKEY:
-            if (wParam == kHotkeyCapture) {
-                captureLensToFile();
+            if (wParam == kHotkeyCapture && lens_->isVisible()) {
+                flashLens(saveLensCapture() ? kSuccessAccent : kErrorAccent);
             }
             return 0;
         case WM_TIMER:
-            if (wParam == kTimerRestoreAccent) {
+            if (wParam == kTimerTick) {
+                trigger_->tick();
+            } else if (wParam == kTimerRestoreAccent) {
                 KillTimer(hwnd_, kTimerRestoreAccent);
-                lens_->setAccent(platform::LensWindow::kDefaultAccent);
+                flashing_ = false;
+                updateAccent();
             }
             return 0;
         case WM_DISPLAYCHANGE:
-            // 解析度或螢幕配置改變：下次擷取時重建工作階段
+            // 解析度或螢幕配置改變：重建擷取，並重新等待畫面穩定
             capture_->reset();
+            trigger_->onMoveSizeEnd(lens_->contentScreenRect());
             return 0;
         case WM_POWERBROADCAST:
             if (wParam == PBT_APMRESUMEAUTOMATIC) {
                 capture_->reset();
+                trigger_->onMoveSizeEnd(lens_->contentScreenRect());
             }
             return TRUE;
         case WM_DESTROY:
+            KillTimer(hwnd_, kTimerTick);
+            KillTimer(hwnd_, kTimerRestoreAccent);
             if (captureHotkeyRegistered_) {
                 UnregisterHotKey(hwnd_, kHotkeyCapture);
             }
-            KillTimer(hwnd_, kTimerRestoreAccent);
-            tray_.reset();
+            // 依相依關係的反向順序釋放：透鏡的回呼會用到 trigger_，trigger_ 會用到 frameSource_
             lens_.reset();
+            tray_.reset();
+            trigger_.reset();
+            frameSource_.reset();
             capture_.reset();
             PostQuitMessage(0);
             return 0;
@@ -228,6 +275,8 @@ void AppController::showTrayMenu(POINT anchor) {
     AppendMenuW(menu, MF_STRING | (lens_->isVisible() ? MF_CHECKED : MF_UNCHECKED),
                 kCommandToggleLens, L"顯示透鏡");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(menu, MF_STRING | (autoSave_ ? MF_CHECKED : MF_UNCHECKED), kCommandToggleAutoSave,
+                L"畫面穩定後自動存成 PNG（測試用）");
     AppendMenuW(menu, MF_STRING, kCommandCapture,
                 captureHotkeyRegistered_ ? L"擷取透鏡範圍\tCtrl+Alt+Shift+S" : L"擷取透鏡範圍");
     AppendMenuW(menu, MF_STRING, kCommandOpenCaptures, L"開啟擷取資料夾");
@@ -243,25 +292,42 @@ void AppController::showTrayMenu(POINT anchor) {
     DestroyMenu(menu);
 }
 
-void AppController::captureLensToFile() {
-    if (!lens_->isVisible()) {
-        return;
+void AppController::setLensVisible(bool visible) {
+    lens_->setVisible(visible);
+    // 隱藏時完全不取樣、不觸發；重新顯示時從「等待穩定」開始
+    trigger_->setEnabled(visible);
+}
+
+void AppController::process(const core::ProcessRequest& request) {
+    if (autoSave_ && !saveLensCapture()) {
+        flashLens(kErrorAccent);
     }
+    // 目前的處理是同步的，做完馬上回報。M1 改成非同步後，過時的結果會在這裡被丟棄。
+    trigger_->onProcessingFinished(request.generation);
+}
+
+bool AppController::saveLensCapture() {
     const std::optional<core::ImageBgra> image = capture_->readRegion(lens_->contentScreenRect());
     if (!image) {
-        flashLens(kErrorAccent);
-        return;
+        return false;
     }
     try {
         platform::savePng(*image, platform::capturesDirectory() / timestampedCaptureName());
-        flashLens(kSuccessAccent);
+        return true;
     } catch (const std::exception& error) {
         OutputDebugStringA(error.what());
-        flashLens(kErrorAccent);
+        return false;
+    }
+}
+
+void AppController::updateAccent() {
+    if (lens_ && !flashing_) {
+        lens_->setAccent(accentFor(trigger_->state()));
     }
 }
 
 void AppController::flashLens(core::Rgba accent) {
+    flashing_ = true;
     lens_->setAccent(accent);
     SetTimer(hwnd_, kTimerRestoreAccent, kFlashMilliseconds, nullptr);
 }
