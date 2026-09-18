@@ -5,6 +5,7 @@ add_library(tmw_core STATIC
     color.h
     geometry.cpp
     geometry.h
+    image.h
     lens_layout.cpp
     lens_layout.h)
 target_include_directories(tmw_core PUBLIC "${PROJECT_SOURCE_DIR}/src")

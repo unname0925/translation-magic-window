@@ -39,6 +39,7 @@ cmake --workflow --preset debug
 |---|---|
 | `cmake --workflow --preset release` | Release 版 |
 | `cmake --workflow --preset asan` | 開啟 AddressSanitizer，檢查記憶體錯誤 |
+| `cmake --workflow --preset integration` | 整合測試（螢幕擷取等），執行時主螢幕左上角會短暫出現測試視窗 |
 
 建置結果在 `build/<preset>/bin/<設定>/`。
 

@@ -3,8 +3,12 @@
 #include <windowsx.h>
 
 #include <exception>
+#include <optional>
+#include <string>
 #include <utility>
 
+#include "platform/app_paths.h"
+#include "platform/png_file.h"
 #include "platform/win_error.h"
 
 namespace tmw::app {
@@ -16,12 +20,30 @@ constexpr UINT kTrayCallbackMessage = WM_APP + 1;
 
 constexpr UINT kCommandToggleLens = 1;
 constexpr UINT kCommandExit = 2;
+constexpr UINT kCommandCapture = 3;
+constexpr UINT kCommandOpenCaptures = 4;
+
+constexpr int kHotkeyCapture = 1;
+constexpr UINT_PTR kTimerRestoreAccent = 1;
+constexpr UINT kFlashMilliseconds = 400;
 
 // 擷取範圍的預設大小（96 DPI 基準）
 constexpr core::SizeI kDefaultContentSize{480, 270};
 
-// 拖動或縮放時的邊框顏色。M0-07 會改由狀態機決定顏色。
+// 邊框顏色。M0-07 會改由狀態機決定顏色。
 constexpr core::Rgba kMovingAccent{245, 158, 11, 230};
+constexpr core::Rgba kSuccessAccent{16, 185, 129, 230};
+constexpr core::Rgba kErrorAccent{239, 68, 68, 230};
+
+// capture-20260918-193012-123.png
+std::wstring timestampedCaptureName() {
+    SYSTEMTIME now{};
+    GetLocalTime(&now);
+    wchar_t name[64]{};
+    swprintf_s(name, L"capture-%04u%02u%02u-%02u%02u%02u-%03u.png", now.wYear, now.wMonth, now.wDay,
+               now.wHour, now.wMinute, now.wSecond, now.wMilliseconds);
+    return name;
+}
 
 }  // namespace
 
@@ -47,6 +69,8 @@ AppController::AppController(HINSTANCE instance) {
     }
 
     try {
+        capture_ = std::make_unique<platform::ScreenCapture>();
+
         platform::LensWindow::Callbacks callbacks;
         callbacks.onMoveSizeStart = [this] { lens_->setAccent(kMovingAccent); };
         callbacks.onMoveSizeEnd = [this] {
@@ -58,6 +82,11 @@ AppController::AppController(HINSTANCE instance) {
         tray_ = std::make_unique<platform::TrayIcon>(hwnd_, kTrayCallbackMessage,
                                                      LoadIconW(nullptr, IDI_APPLICATION),
                                                      L"Translation Magic Window");
+
+        // 快捷鍵被其他程式佔用時不算錯誤，系統匣選單一樣可以擷取
+        captureHotkeyRegistered_ =
+            RegisterHotKey(hwnd_, kHotkeyCapture, MOD_CONTROL | MOD_ALT | MOD_SHIFT | MOD_NOREPEAT,
+                           'S') != FALSE;
     } catch (...) {
         DestroyWindow(hwnd_);
         throw;
@@ -141,6 +170,13 @@ LRESULT AppController::handleMessage(UINT message, WPARAM wParam, LPARAM lParam)
                 case kCommandToggleLens:
                     lens_->setVisible(!lens_->isVisible());
                     break;
+                case kCommandCapture:
+                    captureLensToFile();
+                    break;
+                case kCommandOpenCaptures:
+                    ShellExecuteW(nullptr, L"open", platform::capturesDirectory().c_str(), nullptr,
+                                  nullptr, SW_SHOWNORMAL);
+                    break;
                 case kCommandExit:
                     DestroyWindow(hwnd_);
                     break;
@@ -148,9 +184,34 @@ LRESULT AppController::handleMessage(UINT message, WPARAM wParam, LPARAM lParam)
                     break;
             }
             return 0;
+        case WM_HOTKEY:
+            if (wParam == kHotkeyCapture) {
+                captureLensToFile();
+            }
+            return 0;
+        case WM_TIMER:
+            if (wParam == kTimerRestoreAccent) {
+                KillTimer(hwnd_, kTimerRestoreAccent);
+                lens_->setAccent(platform::LensWindow::kDefaultAccent);
+            }
+            return 0;
+        case WM_DISPLAYCHANGE:
+            // 解析度或螢幕配置改變：下次擷取時重建工作階段
+            capture_->reset();
+            return 0;
+        case WM_POWERBROADCAST:
+            if (wParam == PBT_APMRESUMEAUTOMATIC) {
+                capture_->reset();
+            }
+            return TRUE;
         case WM_DESTROY:
+            if (captureHotkeyRegistered_) {
+                UnregisterHotKey(hwnd_, kHotkeyCapture);
+            }
+            KillTimer(hwnd_, kTimerRestoreAccent);
             tray_.reset();
             lens_.reset();
+            capture_.reset();
             PostQuitMessage(0);
             return 0;
         default:
@@ -167,6 +228,10 @@ void AppController::showTrayMenu(POINT anchor) {
     AppendMenuW(menu, MF_STRING | (lens_->isVisible() ? MF_CHECKED : MF_UNCHECKED),
                 kCommandToggleLens, L"顯示透鏡");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(menu, MF_STRING, kCommandCapture,
+                captureHotkeyRegistered_ ? L"擷取透鏡範圍\tCtrl+Alt+Shift+S" : L"擷取透鏡範圍");
+    AppendMenuW(menu, MF_STRING, kCommandOpenCaptures, L"開啟擷取資料夾");
+    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu, MF_STRING, kCommandExit, L"結束");
 
     // 擁有者必須是前景視窗，否則點選單外面時選單不會關閉（Windows 的已知行為）
@@ -176,6 +241,29 @@ void AppController::showTrayMenu(POINT anchor) {
                      nullptr);
     PostMessageW(hwnd_, WM_NULL, 0, 0);
     DestroyMenu(menu);
+}
+
+void AppController::captureLensToFile() {
+    if (!lens_->isVisible()) {
+        return;
+    }
+    const std::optional<core::ImageBgra> image = capture_->readRegion(lens_->contentScreenRect());
+    if (!image) {
+        flashLens(kErrorAccent);
+        return;
+    }
+    try {
+        platform::savePng(*image, platform::capturesDirectory() / timestampedCaptureName());
+        flashLens(kSuccessAccent);
+    } catch (const std::exception& error) {
+        OutputDebugStringA(error.what());
+        flashLens(kErrorAccent);
+    }
+}
+
+void AppController::flashLens(core::Rgba accent) {
+    lens_->setAccent(accent);
+    SetTimer(hwnd_, kTimerRestoreAccent, kFlashMilliseconds, nullptr);
 }
 
 }  // namespace tmw::app

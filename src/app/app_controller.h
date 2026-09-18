@@ -5,6 +5,7 @@
 #include <memory>
 
 #include "platform/lens_window.h"
+#include "platform/screen_capture.h"
 #include "platform/tray_icon.h"
 
 namespace tmw::app {
@@ -30,9 +31,15 @@ private:
     LRESULT handleMessage(UINT message, WPARAM wParam, LPARAM lParam);
     void showTrayMenu(POINT anchor);
 
+    // 把透鏡範圍擷取下來存成 PNG（M0-06 的驗證工具），並用邊框顏色回報成功或失敗
+    void captureLensToFile();
+    void flashLens(core::Rgba accent);
+
     HWND hwnd_ = nullptr;
     UINT taskbarCreatedMessage_ = 0;
     UINT showLensMessage_ = 0;
+    bool captureHotkeyRegistered_ = false;
+    std::unique_ptr<platform::ScreenCapture> capture_;
     std::unique_ptr<platform::TrayIcon> tray_;
     std::unique_ptr<platform::LensWindow> lens_;
 };

@@ -54,30 +54,50 @@
   ],
   "testPresets": [
     {
-      "name": "debug",
-      "displayName": "Debug",
-      "configurePreset": "msvc-x64",
-      "configuration": "Debug",
+      "name": "unit-only",
+      "hidden": true,
       "output": {
         "outputOnFailure": true
+      },
+      "filter": {
+        "exclude": {
+          "label": "integration"
+        }
       }
+    },
+    {
+      "name": "debug",
+      "displayName": "Debug（單元測試）",
+      "inherits": "unit-only",
+      "configurePreset": "msvc-x64",
+      "configuration": "Debug"
     },
     {
       "name": "release",
-      "displayName": "Release",
+      "displayName": "Release（單元測試）",
+      "inherits": "unit-only",
       "configurePreset": "msvc-x64",
-      "configuration": "Release",
-      "output": {
-        "outputOnFailure": true
-      }
+      "configuration": "Release"
     },
     {
       "name": "asan",
-      "displayName": "Debug + AddressSanitizer",
+      "displayName": "Debug + AddressSanitizer（單元測試）",
+      "inherits": "unit-only",
       "configurePreset": "msvc-x64-asan",
+      "configuration": "Debug"
+    },
+    {
+      "name": "integration",
+      "displayName": "整合測試（需要桌面，會短暫顯示測試視窗）",
+      "configurePreset": "msvc-x64",
       "configuration": "Debug",
       "output": {
         "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "label": "integration"
+        }
       }
     }
   ],
@@ -107,6 +127,15 @@
         { "type": "configure", "name": "msvc-x64-asan" },
         { "type": "build", "name": "asan" },
         { "type": "test", "name": "asan" }
+      ]
+    },
+    {
+      "name": "integration",
+      "displayName": "設定 → 建置 → 整合測試",
+      "steps": [
+        { "type": "configure", "name": "msvc-x64" },
+        { "type": "build", "name": "debug" },
+        { "type": "test", "name": "integration" }
       ]
     }
   ]

@@ -7,6 +7,11 @@ target_compile_options(tmw_options INTERFACE
     /utf-8
     /Zc:__cplusplus
     /MP
+    # C++/WinRT 標頭很大，需要更多的 section
+    /bigobj
+    # 以角括號引入的標頭（Windows SDK、C++/WinRT）視為外部程式碼，不檢查警告
+    /external:anglebrackets
+    /external:W0
     $<$<BOOL:${TMW_WARNINGS_AS_ERRORS}>:/WX>)
 target_compile_definitions(tmw_options INTERFACE
     UNICODE

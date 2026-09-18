@@ -1,5 +1,7 @@
 #include <windows.h>
 
+#include <winrt/base.h>
+
 #include <exception>
 #include <string>
 
@@ -27,8 +29,13 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
             return 0;
         }
 
+        // 螢幕擷取（WinRT）和 PNG（WIC）都需要 COM。UI 執行緒使用單一執行緒 apartment。
+        winrt::init_apartment(winrt::apartment_type::single_threaded);
+
         tmw::app::AppController controller(instance);
         return controller.run();
+    } catch (const winrt::hresult_error& error) {
+        showFatalError(std::wstring(error.message()));
     } catch (const std::exception& error) {
         showFatalError(tmw::platform::utf8ToWide(error.what()));
     } catch (...) {
