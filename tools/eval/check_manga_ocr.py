@@ -7,13 +7,16 @@
 4. 逐字解碼（greedy）：只記錄結果和速度，用來評估是否值得保留 beam search。
 
 必須用 tools/eval/.venv-manga 的 Python 執行：
-    tools/eval/.venv-manga/Scripts/python tools/eval/check_manga_ocr.py
+    tools/eval/.venv-manga/Scripts/python tools/eval/check_manga_ocr.py [--crops <資料夾>]
 
-結果寫在 build/manga_ocr/report.md 和 results.json。
+預設用合成的對話框（make_manga_crops.py）；--crops 改用資料夾裡的圖片，例如 evaluate_manga.py
+從真實截圖裁切出來的區塊（build/ocr_eval/m0-11/crops/ja-manga）。
+結果寫在 build/manga_ocr/report.md 和 results.json（--crops 時寫在那個資料夾旁邊）。
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import statistics
@@ -47,11 +50,19 @@ def timed(function, *args, **kwargs):
 
 
 def main() -> int:
-    crops_dir = OUTPUT_DIR / "crops"
-    if not crops_dir.exists():
-        crops_dir.mkdir(parents=True)
-        for name, image in make_manga_crops.crops().items():
-            image.save(crops_dir / f"{name}.png")
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--crops", type=Path, help="改用這個資料夾裡的圖片")
+    args = parser.parse_args()
+    output_dir = OUTPUT_DIR
+    if args.crops:
+        crops_dir = args.crops
+        output_dir = crops_dir.parent / f"{crops_dir.name}.check_manga_ocr"
+    else:
+        crops_dir = OUTPUT_DIR / "crops"
+        if not crops_dir.exists():
+            crops_dir.mkdir(parents=True)
+            for name, image in make_manga_crops.crops().items():
+                image.save(crops_dir / f"{name}.png")
     if not (manga_onnx.ONNX_DIR / "decoder.onnx").exists():
         print("exporting ONNX ...")
         manga_onnx.export()
@@ -61,7 +72,8 @@ def main() -> int:
     from manga_ocr import MangaOcr
 
     images = sorted(crops_dir.glob("*.png"))
-    images.append(Path(official_module.__file__).parent / "assets" / "example.jpg")
+    if not args.crops:
+        images.append(Path(official_module.__file__).parent / "assets" / "example.jpg")
 
     official = MangaOcr(str(manga_onnx.MODEL_DIR), force_cpu=True)
     settings = manga_onnx.GenerationSettings.load()
@@ -116,8 +128,8 @@ def main() -> int:
         print(f"{same} {path.name}: {row['official_text']}")
         rows.append(row)
 
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    (OUTPUT_DIR / "results.json").write_text(json.dumps(rows, ensure_ascii=False, indent=2),
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "results.json").write_text(json.dumps(rows, ensure_ascii=False, indent=2),
                                              encoding="utf-8")
 
     def median(key):
@@ -146,7 +158,7 @@ def main() -> int:
         "",
         f"逐字解碼和官方（beam search）結果相同：{greedy_same}／{len(rows)} 張",
     ]
-    (OUTPUT_DIR / "report.md").write_text("\n".join(report) + "\n", encoding="utf-8")
+    (output_dir / "report.md").write_text("\n".join(report) + "\n", encoding="utf-8")
     print("\n" + "\n".join(report))
     if problems:
         print(f"\nFAIL: {len(problems)} problem(s)")

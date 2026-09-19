@@ -23,6 +23,11 @@ if(Python3_Interpreter_FOUND)
         COMMAND Python3::Interpreter -W error::ResourceWarning -m unittest discover
                 -s "${PROJECT_SOURCE_DIR}/tools/fetch_models" -p "*_test.py"
         WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}")
+    # tools/eval 大多需要評測環境（.venv）；檔名是 *_test.py 的測試只用標準函式庫（含 tkinter）
+    add_test(NAME tools.eval
+        COMMAND Python3::Interpreter -W error::ResourceWarning -m unittest discover
+                -s "${PROJECT_SOURCE_DIR}/tools/eval" -p "*_test.py"
+        WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}")
 else()
     message(WARNING "找不到 Python 3.10 以上的版本，略過 tools/ 的測試")
 endif()

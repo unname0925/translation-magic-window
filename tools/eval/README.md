@@ -51,6 +51,58 @@ tools/eval/.venv-manga/Scripts/python tools/eval/check_manga_ocr.py
 4. 用 ONNX Runtime（CPU、DirectML）加上 `manga_onnx.py` 自己寫的 beam search，檢查產生的 token 和文字是否和官方完全相同。
 5. 另外跑逐字解碼，記錄結果和速度；報告寫在 `build/manga_ocr/report.md`。
 
+## 正確答案（M0-10）
+
+真實截圖的正確答案放在 `testdata/private/<分類>/ground_truth.txt`（有版權，不進版本控制）。格式寫在 `ground_truth.py` 的開頭：一張截圖一段，每個區塊記錄種類、方向、字級、位置和文字，日文另外記錄ルビ（讀音，以及是一般讀音還是另有含義）。
+
+**校對**（你）：用正確答案編輯器，直接在截圖上看框、改文字：
+
+```powershell
+tools/eval/.venv/Scripts/python tools/eval/gt_editor.py ja-manga
+```
+
+- 上面選分類和截圖；左邊是截圖和每個區塊的框（紅色：評測；灰色：不評測；藍色：選取中），右邊是區塊清單（順序就是閱讀順序）和選取區塊的欄位。
+- 在空白處拖曳新增框（按住 Shift 可以在別的框裡面新增）；拖曳框移動，拖曳角或邊調整大小；滾輪縮放，右鍵拖曳移動畫面。
+- 選取一個框後按 Ctrl+R（或「辨識文字」），會用 C++ 的 `tmw_ocr_cli` 辨識框裡的字填進去，再手動核對。需要先建置 release 版（`cmake --workflow --preset release`）並下載模型。
+- Ctrl+S 存檔，存檔前會檢查格式，有問題會跳到那個區塊；第一次存檔時會把原本的檔案備份成 `ground_truth.txt.bak`。Ctrl+Z 復原框的新增、刪除、移動和辨識。
+- 新加的截圖打開時沒有區塊，可以按「匯入草稿」加入模型產生的草稿（見下面），或直接框選再辨識。
+
+`review_ground_truth.py` 一次檢查所有分類的格式，並在 `build/gt_review/<分類>/` 畫出每張截圖的區塊，方便快速瀏覽：
+
+```powershell
+tools/eval/.venv/Scripts/python tools/eval/review_ground_truth.py
+```
+
+**草稿怎麼來的**（Claude）：
+
+1. 用 `tmw_ocr_cli` 跑每個分類，結果存成 `build/gt_drafts/<分類>.ppocr.json`（日文、英文用 PP-OCRv6 medium，韓文用 PP-OCRv5 server 偵測加韓文辨識模型）。
+2. `draft_ground_truth.py` 把逐行結果合併成區塊、找出ルビ，日文漫畫另外用 manga-ocr 辨識，產生 `build/gt_drafts/<分類>/ground_truth.draft.txt` 和標出區塊編號的圖（必須用 `.venv-manga` 執行）。
+3. 用 `show_draft.py <分類> <第幾張>` 印出草稿，逐張看圖修正文字、補上漏掉的區塊、刪掉誤判，寫成 `ground_truth.txt`。
+
+## OCR 評測（M0-11）
+
+用真實截圖和正確答案比較各種模型。結果都在 `build/ocr_eval/m0-11/`（含有截圖裡的文字，不進版本控制）。
+
+```powershell
+cmake --workflow --preset release                               # 建置 tmw_ocr_cli
+python tools/eval/run_ocr.py --device dml                       # 所有組合跑一次（RTX 4070 約 12 分鐘）
+python tools/eval/run_ocr.py --device cpu                       # 較小的組合在 CPU 上量耗時
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/eval/windows_ocr.ps1 -Category en-web
+python tools/eval/evaluate_ocr.py                               # 評分，寫出 report.md
+tools/eval/.venv-manga/Scripts/python tools/eval/evaluate_manga.py      # 日文漫畫：manga-ocr
+tools/eval/.venv-manga/Scripts/python tools/eval/evaluate_detector.py   # 漫畫的文字偵測
+```
+
+- `run_ocr.py` 的結果存在 `raw/<裝置>/<組合>/<分類>.json`，已經有的會略過，所以改了正確答案只要重跑評分。
+- 評分方式（行怎麼對應到區塊、ルビ怎麼去掉、各項指標）寫在 `evaluate_ocr.py` 的開頭。
+  韓文的語言判斷策略是用同一個偵測模型的兩個辨識結果逐行模擬的（文字框完全相同）。
+- `windows_ocr.ps1` 需要對應語言的 Windows OCR 語言套件，`-List` 可以查看已安裝的語言。
+- `evaluate_manga.py` 用正確答案的框裁切日文漫畫的每個區塊（假設偵測完全正確），比較 manga-ocr 的逐字解碼、
+  beam search 和 PP-OCR。裁切圖也可以拿來確認 ONNX 版在真實截圖上和官方版一致：
+  `check_manga_ocr.py --crops build/ocr_eval/m0-11/crops/ja-manga`。
+- `evaluate_detector.py` 比較 comic-text-detector 和 PP-OCR 的偵測模型各找到多少區塊（依種類、字級分開），
+  並在 `detector/<分類>/` 畫出偵測結果。
+
 ## 各檔案
 
 | 檔案 | 用途 |
@@ -62,6 +114,18 @@ tools/eval/.venv-manga/Scripts/python tools/eval/check_manga_ocr.py
 | `manga_onnx.py` | manga-ocr 的 ONNX 匯出、前處理、beam search 和逐字解碼、轉成文字 |
 | `make_manga_crops.py` | 產生合成的漫畫對話框（直排、橫排、重複的狀聲詞、網點、小字） |
 | `check_manga_ocr.py` | manga-ocr 的 ONNX 版本和官方版的一致性檢查 |
+| `ground_truth.py` | 正確答案的格式：讀取、寫出、比較文字前的正規化（只用標準函式庫） |
+| `draft_ground_truth.py` | 從模型的辨識結果產生正確答案的草稿 |
+| `show_draft.py` | 印出某一張截圖的草稿 |
+| `gt_editor.py` | 正確答案編輯器（視窗）：框選、輸入文字、用 OCR 辨識框裡的字 |
+| `review_ground_truth.py` | 檢查正確答案，畫出校對用的圖 |
+| `ocr_lines.py` | 逐行辨識結果的共用處理：找出ルビ、排出閱讀順序（只用標準函式庫） |
+| `run_ocr.py` | 用 `tmw_ocr_cli` 對真實截圖跑每一種模型組合 |
+| `windows_ocr.ps1` | 用 Windows 內建的 OCR 辨識真實截圖，輸出格式和 `tmw_ocr_cli` 相同 |
+| `evaluate_ocr.py` | OCR 評分和報告，包含韓文的語言判斷策略（只用標準函式庫） |
+| `evaluate_manga.py` | 日文漫畫：manga-ocr（逐字解碼、beam search）和 PP-OCR 的比較 |
+| `comic_text_detector.py` | comic-text-detector（ONNX）的推論和後處理 |
+| `evaluate_detector.py` | 漫畫文字偵測率：comic-text-detector 和 PP-OCR 的比較 |
 
 C++ 的命令列工具 `tmw_ocr_cli`（`tools/ocr_cli/`）也可以單獨使用：
 
