@@ -1,0 +1,17 @@
+# M0-12：把 HY-MT2-7B 匯入 Ollama
+#
+#     python tools/fetch_models/fetch_models.py --manifest tools/eval/models-eval.json
+#     ollama create hy-mt2 -f tools/eval/Modelfile.hy-mt2
+#
+# 參數照 tencent/Hy-MT2-7B 的官方建議。匯入後 Ollama 會在自己的資料夾再存一份（約 4.3 GB）。
+# FROM 的相對路徑是相對於這個檔案的位置（不是執行時的資料夾）
+FROM ../../models/Hy-MT2-7B-GGUF/Hy-MT2-7B-Q4_K_M.gguf
+# GGUF 裡沒有對話樣板，照 tencent/Hy-MT2-7B 的 chat_template.jinja 自己寫：
+# 系統訊息用 <|extra_4|> 結尾，使用者訊息用 <|extra_0|> 結尾，模型的回答以 <|eos|> 結束。
+TEMPLATE """{{ if .System }}<|startoftext|>{{ .System }}<|extra_4|>{{ .Prompt }}<|extra_0|>{{ else }}<|startoftext|>{{ .Prompt }}<|extra_0|>{{ end }}"""
+PARAMETER stop "<|eos|>"
+PARAMETER stop "<|startoftext|>"
+PARAMETER temperature 0.7
+PARAMETER top_p 0.6
+PARAMETER top_k 20
+PARAMETER repeat_penalty 1.05

@@ -5,3 +5,5 @@
 paddleocr==3.7.0
 # 和 C++ 使用相同版本的 ONNX Runtime（DirectML 版包含 CPU 和 DirectML）
 onnxruntime-directml==1.24.4
+# 簡體轉台灣繁體（M0-12 翻譯評測；C++ 版在 M1 用 vcpkg 的 OpenCC，轉換表相同）
+opencc==1.4.2

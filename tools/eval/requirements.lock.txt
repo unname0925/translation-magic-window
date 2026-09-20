@@ -29,12 +29,13 @@ httpx==0.28.1
 huggingface_hub==1.32.0
 idna==3.20
 imagesize==2.0.1
-modelscope==1.40.1
 modelscope-hub==0.4.3
+modelscope==1.40.1
 mpmath==1.3.0
 multidict==6.9.0
 numpy==2.3.5
 onnxruntime-directml==1.24.4
+OpenCC==1.4.2
 opencv-contrib-python==4.10.0.84
 packaging==26.3
 paddleocr==3.7.0

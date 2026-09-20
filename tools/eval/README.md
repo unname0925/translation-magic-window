@@ -103,6 +103,42 @@ tools/eval/.venv-manga/Scripts/python tools/eval/evaluate_detector.py   # 漫畫
 - `evaluate_detector.py` 比較 comic-text-detector 和 PP-OCR 的偵測模型各找到多少區塊（依種類、字級分開），
   並在 `detector/<分類>/` 畫出偵測結果。
 
+## 翻譯評測（M0-12）
+
+同一批原文（正確答案裡的每個區塊，去掉純數字和單一符號，共 838 段）送到各翻譯引擎，你再盲評打分。
+結果都在 `build/translation_eval/m0-12/`（含有截圖裡的文字，不進版本控制）。
+
+```powershell
+tools/eval/.venv/Scripts/python tools/eval/translate.py --engines google gemini claude hy-mt2
+tools/eval/.venv/Scripts/python tools/eval/rate_translations.py      # 你盲評打分
+tools/eval/.venv/Scripts/python tools/eval/evaluate_translation.py   # 產生 report.md
+```
+
+- `google` 不需要金鑰；`gemini` 需要 `GEMINI_API_KEY`、`claude` 需要 `ANTHROPIC_API_KEY`
+  （金鑰只從環境變數讀，不會寫進任何檔案；機構層級的 Anthropic 金鑰還要 `ANTHROPIC_WORKSPACE_ID`）。
+- **不要浪費額度**：翻過而且原文沒變的段落不會重送（`--force` 才會），每翻完一頁就存檔，
+  中途停掉可以接著跑。付費引擎會累計 token 並估算費用，超過 `--budget-usd`（預設 2 美元）就停下來存檔。
+  免費的雲端 LLM 額度很小（M0-12 時 Gemini 3.6 flash 每天只有 20 次請求），被限流時用 `--interval`
+  放慢，或用 `--model` 換一個額度比較寬的模型。
+- 本機模型（`hy-mt2`）要先下載並匯入 Ollama：
+
+  ```powershell
+  python tools/fetch_models/fetch_models.py --manifest tools/eval/models-eval.json
+  ollama create hy-mt2 -f tools/eval/Modelfile.hy-mt2
+  ```
+
+  `models-eval.json` 是評測專用的模型清單（正式程式不內建本機 LLM，所以不放進
+  `tools/fetch_models/models.json`），用的是同一支會驗證 SHA-256 的下載腳本。
+- 譯文都經過 OpenCC 的 `s2twp`（和產品相同）。另有含義的ルビ用 `{本文|讀音}` 送出，
+  看引擎能不能保留標記（design.md 4.5）。
+- 本機模型一次只翻一段、輸出很短，GPU 大半在等（解碼受限於記憶體頻寬），所以同一頁的段落會同時送出
+  （`--parallel`，預設 8）。另外**一定要連 `127.0.0.1` 而不是 `localhost`**：Windows 上 `localhost`
+  會先試 IPv6 再退回 IPv4，每個請求多花約 2 秒（實測每頁 6.9 秒 → 1.6 秒）。
+- `rate_translations.py` 每個分類抽 6 段（依 key 的雜湊，結果固定），含特殊ルビ的一定會抽到；
+  各引擎的譯文打亂順序、不顯示引擎名稱，用 1～5 打分，每打一次就存檔，可以隨時關掉再繼續。
+- `evaluate_translation.py` 把分數對照回引擎，另外自動檢查：失敗、譯文裡還有假名或韓文字母、
+  轉換後還有簡體字、ルビ標記有沒有保留、每段耗時。
+
 ## 各檔案
 
 | 檔案 | 用途 |
@@ -126,6 +162,10 @@ tools/eval/.venv-manga/Scripts/python tools/eval/evaluate_detector.py   # 漫畫
 | `evaluate_manga.py` | 日文漫畫：manga-ocr（逐字解碼、beam search）和 PP-OCR 的比較 |
 | `comic_text_detector.py` | comic-text-detector（ONNX）的推論和後處理 |
 | `evaluate_detector.py` | 漫畫文字偵測率：comic-text-detector 和 PP-OCR 的比較 |
+| `translate.py` | M0-12：把原文送到各翻譯引擎（Google、Gemini、本機 Ollama） |
+| `rate_translations.py` | 翻譯盲評的視窗（打亂、不顯示引擎名稱） |
+| `evaluate_translation.py` | 翻譯評測的報告：盲評分數和自動檢查 |
+| `models-eval.json`、`Modelfile.hy-mt2` | 評測專用模型的下載清單，以及匯入 Ollama 的設定 |
 
 C++ 的命令列工具 `tmw_ocr_cli`（`tools/ocr_cli/`）也可以單獨使用：
 

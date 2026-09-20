@@ -1,0 +1,21 @@
+{
+  "//": "只有評測會用到的模型（M0-12 翻譯評測）。正式程式不會內建本機 LLM，所以不放進 tools/fetch_models/models.json；用同一支下載腳本下載和驗證：python tools/fetch_models/fetch_models.py --manifest tools/eval/models-eval.json",
+  "schemaVersion": 1,
+  "models": [
+    {
+      "id": "Hy-MT2-7B-GGUF",
+      "group": "translate",
+      "purpose": "Hunyuan HY-MT2 7B translation model, Q4_K_M GGUF (local LLM baseline for M0-12)",
+      "license": "Apache-2.0",
+      "source": "https://huggingface.co/tencent/Hy-MT2-7B-GGUF/tree/ab8472660ac61fac25f1af43fac2599d52a8a775",
+      "files": [
+        {
+          "name": "Hy-MT2-7B-Q4_K_M.gguf",
+          "url": "https://huggingface.co/tencent/Hy-MT2-7B-GGUF/resolve/ab8472660ac61fac25f1af43fac2599d52a8a775/Hy-MT2-7B-Q4_K_M.gguf",
+          "size": 4624648896,
+          "sha256": "9f96256500f3fc1ab4d64336b58f52a949a95ad7516b0c229476eef782f9f77b"
+        }
+      ]
+    }
+  ]
+}
