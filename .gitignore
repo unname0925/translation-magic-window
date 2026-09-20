@@ -33,3 +33,6 @@ __pycache__/
 *.dmp
 Thumbs.db
 desktop.ini
+
+# 建置或工具產生的記錄檔
+*.log
