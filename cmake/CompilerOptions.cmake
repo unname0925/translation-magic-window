@@ -26,6 +26,10 @@ target_compile_definitions(tmw_options INTERFACE
 # 否則 MSVC 會因為 STL 容器的 ASan 標註不一致而連結失敗。
 if(TMW_ENABLE_ASAN)
     add_compile_options(/fsanitize=address)
+    # vcpkg 的靜態程式庫（spdlog、OpenCV…）沒有開 ASan。STL 的容器標註只要兩邊不一致，
+    # 連結就會失敗（LNK2038 annotate_string/vector/optional）。關掉容器標註後，
+    # 堆積、堆疊、use-after-free 都照常偵測，只是不檢查 vector、string 內部的越界。
+    add_compile_definitions(_DISABLE_STL_ANNOTATION)
     # /RTC 和 /INCREMENTAL 都和 ASan 不相容
     string(REPLACE "/RTC1" "" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
     string(REPLACE "/INCREMENTAL" "/INCREMENTAL:NO" CMAKE_EXE_LINKER_FLAGS_DEBUG

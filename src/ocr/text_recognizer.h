@@ -13,7 +13,12 @@
 namespace tmw::ocr {
 
 // PP-OCR 的文字辨識（CTC）。前處理和解碼逐步對照 PaddleX 3.7 的實作
-// （OCRReisizeNormImg、CTCLabelDecode），一次辨識一張裁切圖（batch size 1）。
+// （OCRReisizeNormImg、CTCLabelDecode）。
+//
+// 一張一張辨識（recognize(crop)）和官方版完全一致，但 DirectML 上每次呼叫的固定成本很高
+// （M0-14 實測每行 25～40 ms，和模型大小幾乎無關），所以產品用 recognize(crops)：
+// 把寬度補齊到固定的級距、一次送多張進模型。補的 0 比官方版多，結果可能略有不同，
+// 差異由 tools/eval 的一致性檢查量測（見 docs/design.md 4.4）。
 
 struct Recognition {
     std::string text;    // UTF-8
@@ -27,6 +32,10 @@ struct RecognitionWidth {
 };
 RecognitionWidth recognitionInputWidth(int cropHeight, int cropWidth, int imageHeight,
                                        int minimumWidth);
+
+// 批次辨識時，把補 0 後的寬度再往上對齊到固定的級距。級距少，DirectML 才不會因為每次輸入
+// 大小不同而重新編譯；級距之間的間隔不大，才不會補太多 0。
+int recognitionWidthBucket(int paddedWidth);
 
 // CTC 貪婪解碼：每個時間點取機率最大的類別，合併連續重複的類別，再去掉 blank（索引 0）。
 // probabilities 是 timeSteps × characters.size() 的機率。
@@ -42,8 +51,12 @@ public:
     // modelDir 包含 inference.onnx 和 inference.yml。
     TextRecognizer(const std::filesystem::path& modelDir, Device device);
 
-    // crop：CV_8UC3 的裁切圖。
+    // crop：CV_8UC3 的裁切圖。一次一張，和官方版逐項一致。
     Recognition recognize(const cv::Mat& crop);
+
+    // 一次辨識多張：寬度相近的會補齊到同一個級距併成一批。回傳的順序和 crops 相同。
+    // maxBatch 是一批最多幾張（太大反而會因為補 0 而浪費）。
+    std::vector<Recognition> recognize(std::span<const cv::Mat> crops, int maxBatch = 8);
 
     const RecognitionModelConfig& config() const { return config_; }
 

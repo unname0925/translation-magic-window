@@ -11,8 +11,14 @@
 # 相依套件一律靜態連結、但使用動態的 C 執行階段（/MD）：
 # - 發布時不必散布 OpenCV、curl 等 DLL（ONNX Runtime 和 DirectML 仍然是 DLL）
 # - OpenCC 依賴的 marisa-trie 在 Windows 上只支援靜態連結
+set(TMW_VCPKG_TRIPLET "x64-windows-static-md")
 if(NOT DEFINED VCPKG_TARGET_TRIPLET AND NOT DEFINED ENV{VCPKG_TARGET_TRIPLET})
-    set(VCPKG_TARGET_TRIPLET "x64-windows-static-md" CACHE STRING "vcpkg 的目標 triplet")
+    set(VCPKG_TARGET_TRIPLET "${TMW_VCPKG_TRIPLET}" CACHE STRING "vcpkg 的目標 triplet")
+elseif(DEFINED VCPKG_TARGET_TRIPLET AND NOT VCPKG_TARGET_TRIPLET STREQUAL TMW_VCPKG_TRIPLET)
+    # 換 triplet 之後，舊的建置資料夾裡還留著上一個 triplet，會出現看不懂的相依套件錯誤
+    message(FATAL_ERROR
+        "這個建置資料夾是用 ${VCPKG_TARGET_TRIPLET} 設定的，但專案需要 ${TMW_VCPKG_TRIPLET}。"
+        "請刪掉建置資料夾（例如 build/ci）後重新設定。")
 endif()
 
 if(DEFINED CMAKE_TOOLCHAIN_FILE)
