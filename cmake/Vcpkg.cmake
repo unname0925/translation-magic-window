@@ -8,6 +8,13 @@
 #
 # 相依套件列在 vcpkg.json（manifest 模式），第一次設定（configure）時會自動下載並建置。
 
+# 相依套件一律靜態連結、但使用動態的 C 執行階段（/MD）：
+# - 發布時不必散布 OpenCV、curl 等 DLL（ONNX Runtime 和 DirectML 仍然是 DLL）
+# - OpenCC 依賴的 marisa-trie 在 Windows 上只支援靜態連結
+if(NOT DEFINED VCPKG_TARGET_TRIPLET AND NOT DEFINED ENV{VCPKG_TARGET_TRIPLET})
+    set(VCPKG_TARGET_TRIPLET "x64-windows-static-md" CACHE STRING "vcpkg 的目標 triplet")
+endif()
+
 if(DEFINED CMAKE_TOOLCHAIN_FILE)
     return()
 endif()

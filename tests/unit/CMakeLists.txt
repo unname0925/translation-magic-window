@@ -14,12 +14,14 @@ add_executable(tmw_unit_tests
     platform/single_instance_test.cpp
     platform/text_encoding_test.cpp
     platform/win_error_test.cpp
+    ui/qt_runtime_test.cpp
     sanitizer_canary_test.cpp)
 target_include_directories(tmw_unit_tests PRIVATE "${PROJECT_SOURCE_DIR}/tests")
 target_link_libraries(tmw_unit_tests PRIVATE
     tmw_core
     tmw_ocr
     tmw_platform
+    tmw_ui
     tmw_options
     GTest::gtest_main)
 if(TMW_ENABLE_ASAN)
@@ -28,6 +30,7 @@ if(TMW_ENABLE_ASAN)
 endif()
 tmw_copy_asan_runtime(tmw_unit_tests)
 tmw_copy_onnxruntime(tmw_unit_tests)
+tmw_copy_qt(tmw_unit_tests)
 
 # PRE_TEST：在執行測試時才列出測試案例，避免建置時就需要 ASan DLL。
 # DISCOVERY_TIMEOUT：防毒軟體（例如 Norton）第一次執行新建置的執行檔時，

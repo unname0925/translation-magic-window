@@ -57,6 +57,7 @@
 - M0-16（完成，等你確認）：M0 的結論整理進 design.md 2.3「M0 技術驗證的結論」（一張表列出每個技術點選定的做法，以及還沒解決、要帶進 M1／M2／M5 的四個問題）。各項的細節在 M0-11、M0-12 完成時就已經寫進 4.4、4.5、第 5 節和風險表
 - ✅ M0-03：公開倉庫建立在 https://github.com/unname0925/translation-magic-window（GPL-3.0）。倉庫裡不含真實截圖和模型：`testdata/private/`、`models/`、`build/` 都在 .gitignore 中
 - ✅ M0-04：GitHub Actions 在 Windows 上建置 Debug、Release 和 AddressSanitizer 並執行單元測試（整合測試需要桌面環境，不在 CI 執行），另外用固定版本的 clang-format 檢查格式。執行環境沒有 Visual Studio 2026，所以新增 `ci` 這組 preset（Ninja Multi-Config，不綁版本）；改用 Ninja 之後發現專案從來沒有明確指定 `/EHsc`，一直靠 Visual Studio 產生器自動補上，已修正。vcpkg 的建置結果和 ONNX Runtime 的下載都有快取。第一次執行三種設定各約 15～16 分鐘（大部分在建置 OpenCV），全部綠燈。**M0 到此全部完成**
+- M1-01（完成，等 CI 綠燈）：vcpkg 加入 cpr 1.14.2、spdlog 1.17.0、OpenCC 1.1.9，並改用 `x64-windows-static-md`（OpenCC 依賴的 marisa-trie 在 Windows 上只支援靜態連結；附帶好處是發布時不用散布 OpenCV、curl 等 DLL）。從乾淨的狀態建置全部相依套件約 5.5 分鐘。Qt 6.9.3 改用官方預編譯的 qtbase（39 MB、半分鐘）而不是 vcpkg（從原始碼建置要 30 分鐘到數小時），由 aqtinstall 下載、`cmake/Qt.cmake` 尋找；新增最小的 `tmw_ui` 目標和一個測試，確認建置和執行時的 Qt 版本一致。CI 加上 Qt 的安裝和快取
 
 ### M0：技術驗證
 

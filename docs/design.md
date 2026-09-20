@@ -637,7 +637,7 @@ public:
 
 | 用途 | 選擇 | 授權 |
 |---|---|---|
-| 編譯與建置 | MSVC、C++20、CMake、vcpkg（manifest 模式），只建置 x64 | — |
+| 編譯與建置 | MSVC、C++20、CMake、vcpkg（manifest 模式、`x64-windows-static-md`），只建置 x64 | — |
 | 透鏡與覆蓋層 | Win32、Direct2D、DirectWrite | 系統內建 |
 | 擷取 | Windows.Graphics.Capture（C++/WinRT）、D3D11 | 系統內建 |
 | 模型推論 | ONNX Runtime 1.24.4（DirectML 版）和 DirectML 1.15.4。不在 vcpkg 中，由 CMake 從 NuGet 下載固定版本，並用 NuGet 公布的 SHA-512 驗證 | MIT；DirectML.dll 是微軟的專有可再散布元件 |
@@ -651,9 +651,18 @@ public:
 | HTTP | libcurl（透過 cpr） | MIT / curl |
 | JSON | nlohmann/json | MIT |
 | 記錄 | spdlog | MIT |
-| 結果與設定視窗 | Qt 6 Widgets（動態連結，透過 vcpkg 取得） | LGPL-3.0 |
+| 結果與設定視窗 | Qt 6.9.3 Widgets（動態連結；用官方預編譯的 qtbase，不透過 vcpkg，見下方說明） | LGPL-3.0 |
 | 測試 | GoogleTest | BSD-3 |
 | 字型 | Noto Sans/Serif TC、jf open 粉圓 | OFL-1.1 |
+
+**相依套件怎麼取得**（M1-01）：
+- **vcpkg**（`x64-windows-static-md`）：OpenCV、cpr、spdlog、OpenCC、yaml-cpp、nlohmann-json。
+  一律靜態連結、但用動態的 C 執行階段，所以發布時不必散布這些 DLL；OpenCC 依賴的 marisa-trie
+  在 Windows 上也只支援靜態連結。從乾淨的狀態建置全部套件約 5.5 分鐘。
+- **Qt**：官方預編譯的 qtbase（39 MB，半分鐘裝好），用 aqtinstall 下載，版本固定在 `cmake/Qt.cmake`。
+  不用 vcpkg 是因為它會從原始碼建置整個 Qt：本機 30～60 分鐘、CI 1～3 小時，而且在靜態 triplet 下
+  會變成靜態 Qt（和「動態連結」的設計不符）。
+- **ONNX Runtime、DirectML**：CMake 從 NuGet 下載固定版本並驗證 SHA-512（見 4.4）。
 
 **非商用授權的模型**（例如 Sakura-LLM、NLLB）不隨程式發布，只在介面上提供「自行下載」的選項，並標示授權條款。
 
@@ -766,6 +775,7 @@ translation-magic-window/
 | 日期 | 內容 |
 |---|---|
 | 2026-09-18 | 初版 |
+| 2026-09-21 | M1-01：相依套件加入 cpr、spdlog、OpenCC；vcpkg 改用 `x64-windows-static-md`（OpenCC 依賴的 marisa-trie 在 Windows 上只支援靜態連結，發布時也不必散布 DLL）；Qt 改用官方預編譯的 qtbase，不透過 vcpkg（第 6 節）|
 | 2026-09-20 | M0-16：新增 2.3「M0 技術驗證的結論」，一張表列出每個技術點選定的做法，以及還沒解決、要帶進 M1／M2／M5 的問題；4.1 的分層視窗縮放疑慮以 M0-05 的實測結果結案 |
 | 2026-09-20 | M0-12：翻譯評測（838 段、盲評 54 段）。LLM（Gemini flash-lite、Claude Haiku、本機 HY-MT2）之間沒有顯著差異，都明顯優於 Google 非官方端點；預設引擎鏈改成「LLM → Google」。免費 LLM 的每日額度很小列入風險；LLM 漏段或壞 JSON 的三層退路寫進 4.5；本機服務要連 127.0.0.1（localhost 每個請求多 2 秒）|
 | 2026-09-19 | M0-11：用 90 張真實截圖選定模型：一般和韓文的偵測都用 PP-OCRv6 medium，沒有 GPU 時用 small；日文漫畫的直排用 manga-ocr 逐字解碼，橫排和細長的單行用 PP-OCR；語言判斷改成兩個模型都跑、依韓文字母整張判斷（原本的門檻策略不可行）；擬聲詞的位置用 comic-text-detector 的文字遮罩找，辨識還沒有解法；Windows OCR 不採用（4.4、5、10） |

@@ -1,0 +1,107 @@
+2026-09-21 02:33:54,671 - aqt.main - INFO - installer 35572 aqtinstall(aqt) v3.3.0 on Python 3.14.1 [CPython MSC v.1944 64 bit (AMD64)]
+2026-09-21 02:33:55,150 - aqt.helper - DEBUG - helper 4332 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6111/qt6_6111/Updates.xml.sha256
+2026-09-21 02:33:56,591 - aqt.helper - DEBUG - helper 4332 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6111/qt6_6111/Updates.xml.sha256
+2026-09-21 02:33:58,005 - aqt.helper - DEBUG - helper 4332 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6111/qt6_6111/Updates.xml.sha256
+2026-09-21 02:33:59,565 - aqt.helper - DEBUG - helper 4332 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6111/qt6_6111/Updates.xml.sha256
+2026-09-21 02:34:01,139 - aqt.helper - DEBUG - helper 4332 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6111/qt6_6111/Updates.xml.sha256
+2026-09-21 02:34:02,715 - aqt.main - ERROR - installer 4332 Failed to download checksum for the file 'Updates.xml' from mirrors '['https://download.qt.io']
+==============================Suggested follow-up:==============================
+* Check your internet connection
+* Consider modifying `requests.max_retries_to_retrieve_hash` in settings.ini
+* Consider modifying `mirrors.trusted_mirrors` in settings.ini (see https://aqtinstall.readthedocs.io/en/stable/configuration.html#configuration)
+* Please use 'aqt list-qt windows desktop' to show versions of Qt available.
+2026-09-21 02:34:09,854 - aqt.helper - DEBUG - helper 42416 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6111/qt6_6111/Updates.xml.sha256
+2026-09-21 02:34:11,376 - aqt.helper - DEBUG - helper 42416 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6111/qt6_6111/Updates.xml.sha256
+2026-09-21 02:34:12,799 - aqt.helper - DEBUG - helper 42416 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6111/qt6_6111/Updates.xml.sha256
+2026-09-21 02:34:14,416 - aqt.helper - DEBUG - helper 42416 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6111/qt6_6111/Updates.xml.sha256
+2026-09-21 02:34:15,955 - aqt.helper - DEBUG - helper 42416 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6111/qt6_6111/Updates.xml.sha256
+2026-09-21 02:34:17,612 - aqt.main - ERROR - installer 42416 Failed to download checksum for the file 'Updates.xml' from mirrors '['https://download.qt.io']
+==============================Suggested follow-up:==============================
+* Check your internet connection
+* Consider modifying `requests.max_retries_to_retrieve_hash` in settings.ini
+* Consider modifying `mirrors.trusted_mirrors` in settings.ini (see https://aqtinstall.readthedocs.io/en/stable/configuration.html#configuration)
+* Please use 'aqt list-qt windows desktop' to show versions of Qt available.
+2026-09-21 02:34:31,726 - aqt.helper - DEBUG - helper 41720 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6112/qt6_6112/Updates.xml.sha256
+2026-09-21 02:34:33,168 - aqt.helper - DEBUG - helper 41720 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6112/qt6_6112/Updates.xml.sha256
+2026-09-21 02:34:34,583 - aqt.helper - DEBUG - helper 41720 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6112/qt6_6112/Updates.xml.sha256
+2026-09-21 02:34:36,005 - aqt.helper - DEBUG - helper 41720 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6112/qt6_6112/Updates.xml.sha256
+2026-09-21 02:34:37,415 - aqt.helper - DEBUG - helper 41720 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6112/qt6_6112/Updates.xml.sha256
+2026-09-21 02:34:38,846 - aqt.main - ERROR - installer 41720 Failed to download checksum for the file 'Updates.xml' from mirrors '['https://download.qt.io']
+==============================Suggested follow-up:==============================
+* Check your internet connection
+* Consider modifying `requests.max_retries_to_retrieve_hash` in settings.ini
+* Consider modifying `mirrors.trusted_mirrors` in settings.ini (see https://aqtinstall.readthedocs.io/en/stable/configuration.html#configuration)
+* Please use 'aqt list-qt windows desktop' to show versions of Qt available.
+2026-09-21 02:34:39,260 - aqt.helper - DEBUG - helper 41332 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6112/qt6_6112/Updates.xml.sha256
+2026-09-21 02:34:40,688 - aqt.helper - DEBUG - helper 41332 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6112/qt6_6112/Updates.xml.sha256
+2026-09-21 02:34:42,106 - aqt.helper - DEBUG - helper 41332 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6112/qt6_6112/Updates.xml.sha256
+2026-09-21 02:34:43,613 - aqt.helper - DEBUG - helper 41332 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6112/qt6_6112/Updates.xml.sha256
+2026-09-21 02:34:45,120 - aqt.helper - DEBUG - helper 41332 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6112/qt6_6112/Updates.xml.sha256
+2026-09-21 02:34:46,547 - aqt.main - ERROR - installer 41332 Failed to download checksum for the file 'Updates.xml' from mirrors '['https://download.qt.io']
+==============================Suggested follow-up:==============================
+* Check your internet connection
+* Consider modifying `requests.max_retries_to_retrieve_hash` in settings.ini
+* Consider modifying `mirrors.trusted_mirrors` in settings.ini (see https://aqtinstall.readthedocs.io/en/stable/configuration.html#configuration)
+* Please use 'aqt list-qt windows desktop' to show versions of Qt available.
+* Please use 'aqt list-qt windows desktop --arch <QT_VERSION>' to list valid architectures.
+2026-09-21 02:35:01,281 - aqt.helper - DEBUG - helper 24944 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6112/qt6_6112/Updates.xml.sha256
+2026-09-21 02:35:02,797 - aqt.helper - DEBUG - helper 24944 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6112/qt6_6112/Updates.xml.sha256
+2026-09-21 02:35:04,198 - aqt.helper - DEBUG - helper 24944 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6112/qt6_6112/Updates.xml.sha256
+2026-09-21 02:35:05,611 - aqt.helper - DEBUG - helper 24944 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6112/qt6_6112/Updates.xml.sha256
+2026-09-21 02:35:07,011 - aqt.helper - DEBUG - helper 24944 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6112/qt6_6112/Updates.xml.sha256
+2026-09-21 02:35:08,411 - aqt.main - ERROR - installer 24944 Failed to download checksum for the file 'Updates.xml' from mirrors '['https://download.qt.io']
+==============================Suggested follow-up:==============================
+* Check your internet connection
+* Consider modifying `requests.max_retries_to_retrieve_hash` in settings.ini
+* Consider modifying `mirrors.trusted_mirrors` in settings.ini (see https://aqtinstall.readthedocs.io/en/stable/configuration.html#configuration)
+* Please use 'aqt list-qt windows desktop' to show versions of Qt available.
+2026-09-21 02:35:24,560 - aqt.helper - DEBUG - helper 28560 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_693/qt6_693/Updates.xml.sha256
+2026-09-21 02:35:43,330 - aqt.main - INFO - installer 8684 aqtinstall(aqt) v3.3.0 on Python 3.14.1 [CPython MSC v.1944 64 bit (AMD64)]
+2026-09-21 02:35:43,331 - aqt.helper - DEBUG - helper 8684 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_693/qt6_693/Updates.xml.sha256
+2026-09-21 02:35:46,728 - aqt.helper - DEBUG - helper 8684 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/extensions/qtwebengine/693/msvc2022_64/Updates.xml.sha256
+2026-09-21 02:35:49,562 - aqt.archives - INFO - archives 8684 Found extension qtwebengine
+2026-09-21 02:35:49,563 - aqt.helper - DEBUG - helper 8684 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/extensions/qtpdf/693/msvc2022_64/Updates.xml.sha256
+2026-09-21 02:35:52,395 - aqt.archives - INFO - archives 8684 Found extension qtpdf
+2026-09-21 02:35:52,940 - aqt.helper - DEBUG - helper 22132 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_693/qt6_693/qt.qt6.693.win64_msvc2022_64/6.9.3-0-202509261208qtbase-Windows-Windows_11_23H2-MSVC2022-Windows-Windows_11_23H2-X86_64.7z.sha256
+2026-09-21 02:35:54,362 - aqt.helper - INFO - helper 22132 Downloading qtbase...
+2026-09-21 02:35:54,362 - aqt.installer - DEBUG - installer 22132 Download URL: https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_693/qt6_693/qt.qt6.693.win64_msvc2022_64/6.9.3-0-202509261208qtbase-Windows-Windows_11_23H2-MSVC2022-Windows-Windows_11_23H2-X86_64.7z
+2026-09-21 02:35:55,768 - aqt.helper - DEBUG - helper 22132 Asked to redirect(302) to: https://ftp.jaist.ac.jp/pub/qtproject/online/qtsdkrepository/windows_x86/desktop/qt6_693/qt6_693/qt.qt6.693.win64_msvc2022_64/6.9.3-0-202509261208qtbase-Windows-Windows_11_23H2-MSVC2022-Windows-Windows_11_23H2-X86_64.7z
+2026-09-21 02:35:55,768 - aqt.helper - INFO - helper 22132 Redirected: ftp.jaist.ac.jp
+2026-09-21 02:36:19,415 - aqt.installer - INFO - installer 22132 Finished installation of qtbase-Windows-Windows_11_23H2-MSVC2022-Windows-Windows_11_23H2-X86_64.7z in 26.47655230
+2026-09-21 02:36:19,713 - aqt.updater - INFO - updater 8684 Patching .cache\qt\6.9.3\msvc2022_64\bin\qmake.exe
+2026-09-21 02:36:19,722 - aqt.updater - INFO - updater 8684 Patching .cache\qt\6.9.3\msvc2022_64\lib\Qt6Concurrent.prl
+2026-09-21 02:36:19,722 - aqt.updater - INFO - updater 8684 Patching .cache\qt\6.9.3\msvc2022_64\lib\Qt6Concurrentd.prl
+2026-09-21 02:36:19,723 - aqt.updater - INFO - updater 8684 Patching .cache\qt\6.9.3\msvc2022_64\lib\Qt6Core.prl
+2026-09-21 02:36:19,724 - aqt.updater - INFO - updater 8684 Patching .cache\qt\6.9.3\msvc2022_64\lib\Qt6Cored.prl
+2026-09-21 02:36:19,724 - aqt.updater - INFO - updater 8684 Patching .cache\qt\6.9.3\msvc2022_64\lib\Qt6DBus.prl
+2026-09-21 02:36:19,725 - aqt.updater - INFO - updater 8684 Patching .cache\qt\6.9.3\msvc2022_64\lib\Qt6DBusd.prl
+2026-09-21 02:36:19,726 - aqt.updater - INFO - updater 8684 Patching .cache\qt\6.9.3\msvc2022_64\lib\Qt6DeviceDiscoverySupport.prl
+2026-09-21 02:36:19,726 - aqt.updater - INFO - updater 8684 Patching .cache\qt\6.9.3\msvc2022_64\lib\Qt6DeviceDiscoverySupportd.prl
+2026-09-21 02:36:19,727 - aqt.updater - INFO - updater 8684 Patching .cache\qt\6.9.3\msvc2022_64\lib\Qt6EntryPoint.prl
+2026-09-21 02:36:19,728 - aqt.updater - INFO - updater 8684 Patching .cache\qt\6.9.3\msvc2022_64\lib\Qt6EntryPointd.prl
+2026-09-21 02:36:19,728 - aqt.updater - INFO - updater 8684 Patching .cache\qt\6.9.3\msvc2022_64\lib\Qt6ExampleIcons.prl
+2026-09-21 02:36:19,729 - aqt.updater - INFO - updater 8684 Patching .cache\qt\6.9.3\msvc2022_64\lib\Qt6ExampleIconsd.prl
+2026-09-21 02:36:19,729 - aqt.updater - INFO - updater 8684 Patching .cache\qt\6.9.3\msvc2022_64\lib\Qt6ExamplesAssetDownloader.prl
+2026-09-21 02:36:19,730 - aqt.updater - INFO - updater 8684 Patching .cache\qt\6.9.3\msvc2022_64\lib\Qt6ExamplesAssetDownloaderd.prl
+2026-09-21 02:36:19,731 - aqt.updater - INFO - updater 8684 Patching .cache\qt\6.9.3\msvc2022_64\lib\Qt6FbSupport.prl
+2026-09-21 02:36:19,731 - aqt.updater - INFO - updater 8684 Patching .cache\qt\6.9.3\msvc2022_64\lib\Qt6FbSupportd.prl
+2026-09-21 02:36:19,732 - aqt.updater - INFO - updater 8684 Patching .cache\qt\6.9.3\msvc2022_64\lib\Qt6Gui.prl
+2026-09-21 02:36:19,732 - aqt.updater - INFO - updater 8684 Patching .cache\qt\6.9.3\msvc2022_64\lib\Qt6Guid.prl
+2026-09-21 02:36:19,733 - aqt.updater - INFO - updater 8684 Patching .cache\qt\6.9.3\msvc2022_64\lib\Qt6Network.prl
+2026-09-21 02:36:19,734 - aqt.updater - INFO - updater 8684 Patching .cache\qt\6.9.3\msvc2022_64\lib\Qt6Networkd.prl
+2026-09-21 02:36:19,734 - aqt.updater - INFO - updater 8684 Patching .cache\qt\6.9.3\msvc2022_64\lib\Qt6OpenGL.prl
+2026-09-21 02:36:19,735 - aqt.updater - INFO - updater 8684 Patching .cache\qt\6.9.3\msvc2022_64\lib\Qt6OpenGLd.prl
+2026-09-21 02:36:19,735 - aqt.updater - INFO - updater 8684 Patching .cache\qt\6.9.3\msvc2022_64\lib\Qt6OpenGLWidgets.prl
+2026-09-21 02:36:19,736 - aqt.updater - INFO - updater 8684 Patching .cache\qt\6.9.3\msvc2022_64\lib\Qt6OpenGLWidgetsd.prl
+2026-09-21 02:36:19,737 - aqt.updater - INFO - updater 8684 Patching .cache\qt\6.9.3\msvc2022_64\lib\Qt6PrintSupport.prl
+2026-09-21 02:36:19,737 - aqt.updater - INFO - updater 8684 Patching .cache\qt\6.9.3\msvc2022_64\lib\Qt6PrintSupportd.prl
+2026-09-21 02:36:19,738 - aqt.updater - INFO - updater 8684 Patching .cache\qt\6.9.3\msvc2022_64\lib\Qt6Sql.prl
+2026-09-21 02:36:19,738 - aqt.updater - INFO - updater 8684 Patching .cache\qt\6.9.3\msvc2022_64\lib\Qt6Sqld.prl
+2026-09-21 02:36:19,739 - aqt.updater - INFO - updater 8684 Patching .cache\qt\6.9.3\msvc2022_64\lib\Qt6Test.prl
+2026-09-21 02:36:19,740 - aqt.updater - INFO - updater 8684 Patching .cache\qt\6.9.3\msvc2022_64\lib\Qt6Testd.prl
+2026-09-21 02:36:19,740 - aqt.updater - INFO - updater 8684 Patching .cache\qt\6.9.3\msvc2022_64\lib\Qt6Widgets.prl
+2026-09-21 02:36:19,741 - aqt.updater - INFO - updater 8684 Patching .cache\qt\6.9.3\msvc2022_64\lib\Qt6Widgetsd.prl
+2026-09-21 02:36:19,741 - aqt.updater - INFO - updater 8684 Patching .cache\qt\6.9.3\msvc2022_64\lib\Qt6Xml.prl
+2026-09-21 02:36:19,742 - aqt.updater - INFO - updater 8684 Patching .cache\qt\6.9.3\msvc2022_64\lib\Qt6Xmld.prl
+2026-09-21 02:36:19,743 - aqt.main - INFO - installer 8684 Finished installation
+2026-09-21 02:36:19,743 - aqt.main - INFO - installer 8684 Time elapsed: 36.41268890 second

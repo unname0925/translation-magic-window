@@ -16,6 +16,7 @@
 - Windows 11
 - [Build Tools for Visual Studio 2026](https://visualstudio.microsoft.com/downloads/)，安裝時勾選「使用 C++ 的桌面開發」，並確認有勾選其中的「vcpkg 套件管理員」
 - CMake 3.28 以上
+- Qt 6.9.3（見下方「安裝 Qt」）
 - Python 3.10 以上（選用：下載模型、OCR 評測、clang-format）
 - VS Code 搭配 C/C++ Extension Pack（選用）
 
@@ -47,6 +48,22 @@ cmake --workflow --preset debug
 | `cmake --workflow --preset integration` | 整合測試（透鏡、點擊穿透、拖動、螢幕擷取等），約 15 秒 |
 
 建置結果在 `build/<preset>/bin/<設定>/`。
+
+### 安裝 Qt
+
+結果視窗和設定視窗用 Qt 6 Widgets。Qt 不透過 vcpkg 取得（vcpkg 會從原始碼建置整個 Qt，要好幾十分鐘
+到數小時），改用官方的預編譯版，約半分鐘就裝好：
+
+```powershell
+pip install aqtinstall==3.3.0
+aqt install-qt windows desktop 6.9.3 win64_msvc2022_64 --archives qtbase --outputdir .cache/qt
+```
+
+裝在別的位置（例如用 Qt 官方安裝器裝在 `C:\Qt`）時，把環境變數 `QT_ROOT` 設成
+`C:/Qt/6.9.3/msvc2022_64` 即可。
+
+> 版本固定在 `cmake/Qt.cmake` 的 `TMW_QT_VERSION`，CI 也用同一個版本。
+> 目前停在 6.9.3：aqtinstall 3.3.0 還無法處理 Qt 6.10 之後的下載目錄結構。
 
 ### 程式碼格式
 

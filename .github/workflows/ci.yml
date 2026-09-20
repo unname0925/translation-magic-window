@@ -61,6 +61,20 @@ jobs:
       # 設定 cl.exe 的環境（Ninja 需要）。固定版本：v1.13.0
       - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756
 
+      # Qt 的官方預編譯版（qtbase 約 39 MB，解壓後約 290 MB），版本固定在 cmake/Qt.cmake
+      - name: 快取 Qt
+        id: qt-cache
+        uses: actions/cache@v4
+        with:
+          path: .cache/qt
+          key: qt-6.9.3-win64_msvc2022_64-qtbase
+
+      - name: 安裝 Qt
+        if: steps.qt-cache.outputs.cache-hit != 'true'
+        run: |
+          pip install aqtinstall==3.3.0
+          aqt install-qt windows desktop 6.9.3 win64_msvc2022_64 --archives qtbase --outputdir .cache/qt
+
       # ONNX Runtime 和 DirectML 的 NuGet 套件，版本固定在 cmake/OnnxRuntime.cmake
       - name: 快取下載的套件
         uses: actions/cache@v4
