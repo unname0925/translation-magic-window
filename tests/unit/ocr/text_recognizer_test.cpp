@@ -94,6 +94,27 @@ TEST(CropTextRegionTest, TallBoxIsRotatedCounterClockwise) {
     EXPECT_EQ(crop.at<cv::Vec3b>(10, 115)[0], 0);
 }
 
+TEST(RecognitionWidthBucketTest, RoundsUpToAFixedSetOfWidths) {
+    // 級距要少（DirectML 每種輸入大小都要重新編譯），而且只能往上取（不能裁掉文字）
+    EXPECT_EQ(recognitionWidthBucket(1), 160);
+    EXPECT_EQ(recognitionWidthBucket(160), 160);
+    EXPECT_EQ(recognitionWidthBucket(161), 256);
+    EXPECT_EQ(recognitionWidthBucket(500), 512);
+    EXPECT_EQ(recognitionWidthBucket(1025), 1600);
+}
+
+TEST(RecognitionWidthBucketTest, NeverExceedsTheModelInputLimit) {
+    // PaddleX 的 max_imgW 是 3200，再寬也不能超過
+    EXPECT_EQ(recognitionWidthBucket(3200), 3200);
+    EXPECT_EQ(recognitionWidthBucket(9999), 3200);
+}
+
+TEST(RecognitionWidthBucketTest, IsNeverSmallerThanTheRequestedWidth) {
+    for (int width = 1; width <= 3200; ++width) {
+        ASSERT_GE(recognitionWidthBucket(width), width) << "寬度 " << width;
+    }
+}
+
 TEST(CropTextRegionTest, DegenerateBoxGivesEmptyCrop) {
     cv::Mat image(50, 50, CV_8UC3, cv::Scalar(0, 0, 0));
     const Quad box = {cv::Point(10, 10), cv::Point(10, 10), cv::Point(10, 10), cv::Point(10, 10)};

@@ -1,6 +1,7 @@
 #include "ocr/ocr_pipeline.h"
 
 #include <chrono>
+#include <cstddef>
 
 namespace tmw::ocr {
 namespace {
@@ -26,18 +27,32 @@ std::vector<TextLine> OcrPipeline::run(const cv::Mat& bgr, OcrTimings* timings) 
     const double detectionMs = millisecondsSince(detectionStart);
 
     const auto recognitionStart = std::chrono::steady_clock::now();
+    std::vector<cv::Mat> crops;
+    crops.reserve(boxes.size());
+    for (const DetectedBox& box : boxes) {
+        crops.push_back(cropTextRegion(bgr, box.points));
+    }
+
+    std::vector<Recognition> recognitions;
+    if (options_.batchRecognition) {
+        recognitions = recognizer_.recognize(crops, options_.maxBatch);
+    } else {
+        recognitions.resize(crops.size());
+        for (std::size_t i = 0; i < crops.size(); ++i) {
+            if (!crops[i].empty()) {
+                recognitions[i] = recognizer_.recognize(crops[i]);
+            }
+        }
+    }
+
     std::vector<TextLine> lines;
     lines.reserve(boxes.size());
-    for (const DetectedBox& box : boxes) {
-        const cv::Mat crop = cropTextRegion(bgr, box.points);
-        if (crop.empty()) {
+    for (std::size_t i = 0; i < boxes.size(); ++i) {
+        if (crops[i].empty() || recognitions[i].score < options_.recognitionScoreThreshold) {
             continue;
         }
-        Recognition recognition = recognizer_.recognize(crop);
-        if (recognition.score < options_.recognitionScoreThreshold) {
-            continue;
-        }
-        lines.push_back({box.points, std::move(recognition.text), recognition.score, box.score});
+        lines.push_back({boxes[i].points, std::move(recognitions[i].text), recognitions[i].score,
+                         boxes[i].score});
     }
     if (timings != nullptr) {
         timings->detectionMs = detectionMs;

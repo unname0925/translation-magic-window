@@ -30,6 +30,10 @@ struct OcrTimings {
 struct OcrOptions {
     DetectionOptions detection;
     float recognitionScoreThreshold = 0.0f;  // 分數低於這個值的結果捨棄
+    // 一次辨識多行（DirectML 上逐行呼叫的固定成本很高，見 text_recognizer.h）。
+    // 關掉時逐行辨識，結果和 PaddleOCR 官方版完全一致，用來做一致性檢查。
+    bool batchRecognition = true;
+    int maxBatch = 8;
 };
 
 class OcrPipeline {

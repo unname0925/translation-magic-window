@@ -29,7 +29,11 @@ if(TMW_ENABLE_ASAN)
     # vcpkg 的靜態程式庫（spdlog、OpenCV…）沒有開 ASan。STL 的容器標註只要兩邊不一致，
     # 連結就會失敗（LNK2038 annotate_string/vector/optional）。關掉容器標註後，
     # 堆積、堆疊、use-after-free 都照常偵測，只是不檢查 vector、string 內部的越界。
-    add_compile_definitions(_DISABLE_STL_ANNOTATION)
+    #
+    # 四個巨集都要定義：_DISABLE_STL_ANNOTATION 是新版 STL 才有的總開關（VS 2026），
+    # CI 用的 VS 2022 只認得個別的那三個。定義了不存在的巨集沒有副作用。
+    add_compile_definitions(_DISABLE_STL_ANNOTATION _DISABLE_STRING_ANNOTATION
+                            _DISABLE_VECTOR_ANNOTATION _DISABLE_OPTIONAL_ANNOTATION)
     # /RTC 和 /INCREMENTAL 都和 ASan 不相容
     string(REPLACE "/RTC1" "" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
     string(REPLACE "/INCREMENTAL" "/INCREMENTAL:NO" CMAKE_EXE_LINKER_FLAGS_DEBUG

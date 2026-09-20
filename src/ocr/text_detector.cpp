@@ -223,6 +223,28 @@ TextDetector::TextDetector(const std::filesystem::path& modelDir, Device device,
       options_(options),
       model_(modelDir / "inference.onnx", device) {}
 
+cv::Size roundUpToDetectionGrid(cv::Size size) {
+    const auto round = [](int value) {
+        constexpr int grid = 32;
+        return std::max(grid, (value + grid - 1) / grid * grid);
+    };
+    return {round(size.width), round(size.height)};
+}
+
+LetterboxLayout letterboxLayout(cv::Size image, cv::Size fixedInput) {
+    if (image.width <= 0 || image.height <= 0 || fixedInput.width <= 0 || fixedInput.height <= 0) {
+        throw std::invalid_argument("letterboxLayout: empty size");
+    }
+    const double scale =
+        std::min(fixedInput.width * 1.0 / image.width, fixedInput.height * 1.0 / image.height);
+    // 至少 1 個像素，而且不能超過畫布
+    const int width =
+        std::clamp(static_cast<int>(std::lround(image.width * scale)), 1, fixedInput.width);
+    const int height =
+        std::clamp(static_cast<int>(std::lround(image.height * scale)), 1, fixedInput.height);
+    return {cv::Size(width, height), scale};
+}
+
 std::vector<float> TextDetector::preprocess(const cv::Mat& bgr, cv::Size& inputSize) const {
     CV_Assert(bgr.type() == CV_8UC3 && !bgr.empty());
     cv::Mat image = bgr;
@@ -233,12 +255,26 @@ std::vector<float> TextDetector::preprocess(const cv::Mat& bgr, cv::Size& inputS
         image.copyTo(padded(cv::Rect(0, 0, image.cols, image.rows)));
         image = padded;
     }
-    inputSize = detectionInputSize(image.rows, image.cols, options_);
     cv::Mat resized;
-    if (inputSize.width == image.cols && inputSize.height == image.rows) {
-        resized = image;
+    if (options_.fixedInput.width > 0 && options_.fixedInput.height > 0) {
+        // 等比例縮放後放在固定大小的畫布左上角，其餘補黑色
+        inputSize = roundUpToDetectionGrid(options_.fixedInput);
+        const LetterboxLayout layout = letterboxLayout(image.size(), inputSize);
+        cv::Mat canvas = cv::Mat::zeros(inputSize, CV_8UC3);
+        cv::Mat target = canvas(cv::Rect(0, 0, layout.resized.width, layout.resized.height));
+        if (layout.resized == image.size()) {
+            image.copyTo(target);
+        } else {
+            cv::resize(image, target, layout.resized);
+        }
+        resized = canvas;
     } else {
-        cv::resize(image, resized, inputSize);  // 預設 INTER_LINEAR，和 cv2.resize 相同
+        inputSize = detectionInputSize(image.rows, image.cols, options_);
+        if (inputSize.width == image.cols && inputSize.height == image.rows) {
+            resized = image;
+        } else {
+            cv::resize(image, resized, inputSize);  // 預設 INTER_LINEAR，和 cv2.resize 相同
+        }
     }
 
     // NormalizeImage：先乘 alpha 再加 beta，兩次都在 float32 下計算。
@@ -274,6 +310,14 @@ std::vector<DetectedBox> TextDetector::detect(const cv::Mat& bgr) {
         throw std::runtime_error("unexpected detection output shape");
     }
     const cv::Mat probability(inputSize.height, inputSize.width, CV_32FC1, output.data.data());
+    if (options_.fixedInput.width > 0 && options_.fixedInput.height > 0) {
+        // 只看畫面實際佔用的部分，補邊的區域不算（座標換算才會正確）
+        const LetterboxLayout layout =
+            letterboxLayout(bgr.size(), roundUpToDetectionGrid(options_.fixedInput));
+        const cv::Mat used =
+            probability(cv::Rect(0, 0, layout.resized.width, layout.resized.height)).clone();
+        return boxesFromProbability(used, bgr.cols, bgr.rows, options_);
+    }
     return boxesFromProbability(probability, bgr.cols, bgr.rows, options_);
 }
 

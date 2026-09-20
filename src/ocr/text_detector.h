@@ -22,6 +22,11 @@ enum class LimitType {
 // 預設值是 PaddleOCR 的 OCR 管線預設值（paddlex/configs/pipelines/OCR.yaml），
 // 不是模型 inference.yml 裡的值。
 struct DetectionOptions {
+    // 固定的模型輸入大小（0×0 表示照 PaddleX 的規則依圖片大小決定）。
+    // DirectML 上，一個工作階段只有「第一次看到的輸入大小」跑得快，之後每換一種大小，
+    // 那個大小的每一次推論都會慢 3～5 倍（M1-03 實測）。產品的透鏡可以調整大小，
+    // 所以把畫面等比例縮放後補邊到固定大小，形狀就永遠不變。
+    cv::Size fixedInput{0, 0};
     int limitSideLen = 64;
     LimitType limitType = LimitType::Min;
     int maxSideLimit = 4000;
@@ -30,6 +35,17 @@ struct DetectionOptions {
     double unclipRatio = 1.5;
     int maxCandidates = 1000;
 };
+
+// 偵測模型的輸入長寬必須是 32 的倍數（模型內部的 Resize 節點會對不齊，DirectML 直接失敗），
+// 所以固定輸入大小會先往上對齊。
+cv::Size roundUpToDetectionGrid(cv::Size size);
+
+// 等比例縮放後放在固定大小畫布左上角的結果（補邊的部分是黑色）。
+struct LetterboxLayout {
+    cv::Size resized;    // 縮放後的大小
+    double scale = 1.0;  // 原圖 → 縮放後
+};
+LetterboxLayout letterboxLayout(cv::Size image, cv::Size fixedInput);
 
 // 四邊形文字框，依序是左上、右上、右下、左下（原圖座標）。
 using Quad = std::array<cv::Point, 4>;

@@ -135,5 +135,41 @@ TEST(BoxesFromProbabilityTest, BoxesAreClampedToImage) {
     }
 }
 
+TEST(LetterboxLayoutTest, KeepsTheAspectRatioAndFitsInTheCanvas) {
+    // 720×405 放進 1280×720：兩邊的比例相同，剛好填滿
+    const LetterboxLayout layout = letterboxLayout(cv::Size(720, 405), cv::Size(1280, 720));
+    EXPECT_NEAR(layout.scale, 1280.0 / 720.0, 1e-9);
+    EXPECT_EQ(layout.resized, cv::Size(1280, 720));
+}
+
+TEST(LetterboxLayoutTest, ShrinksImagesLargerThanTheCanvas) {
+    const LetterboxLayout layout = letterboxLayout(cv::Size(3840, 2160), cv::Size(1280, 720));
+    EXPECT_NEAR(layout.scale, 1.0 / 3.0, 1e-9);
+    EXPECT_EQ(layout.resized, cv::Size(1280, 720));
+}
+
+TEST(LetterboxLayoutTest, NeverExceedsTheCanvasOrDisappears) {
+    for (const cv::Size size : {cv::Size(1, 1), cv::Size(1, 999), cv::Size(999, 1),
+                                cv::Size(1279, 3), cv::Size(2001, 999)}) {
+        const LetterboxLayout layout = letterboxLayout(size, cv::Size(1280, 720));
+        EXPECT_GE(layout.resized.width, 1) << size;
+        EXPECT_GE(layout.resized.height, 1) << size;
+        EXPECT_LE(layout.resized.width, 1280) << size;
+        EXPECT_LE(layout.resized.height, 720) << size;
+    }
+}
+
+TEST(DetectionGridTest, RoundsUpToMultiplesOf32) {
+    // 不是 32 的倍數時，模型內部的 Resize 對不齊，DirectML 會直接失敗
+    EXPECT_EQ(roundUpToDetectionGrid(cv::Size(1280, 720)), cv::Size(1280, 736));
+    EXPECT_EQ(roundUpToDetectionGrid(cv::Size(1280, 736)), cv::Size(1280, 736));
+    EXPECT_EQ(roundUpToDetectionGrid(cv::Size(1, 1)), cv::Size(32, 32));
+}
+
+TEST(LetterboxLayoutTest, RejectsEmptySizes) {
+    EXPECT_THROW(letterboxLayout(cv::Size(0, 10), cv::Size(1280, 720)), std::invalid_argument);
+    EXPECT_THROW(letterboxLayout(cv::Size(10, 10), cv::Size(0, 720)), std::invalid_argument);
+}
+
 }  // namespace
 }  // namespace tmw::ocr

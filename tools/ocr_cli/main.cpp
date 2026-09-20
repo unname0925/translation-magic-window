@@ -33,6 +33,7 @@
 namespace {
 
 using tmw::ocr::Device;
+using tmw::ocr::OcrOptions;
 using tmw::ocr::OcrPipeline;
 using tmw::ocr::OcrTimings;
 using tmw::ocr::TextLine;
@@ -42,6 +43,10 @@ struct Arguments {
     std::filesystem::path recognitionModel;
     Device device = Device::Cpu;
     int repeat = 1;
+    bool batchRecognition = true;  // --no-batch：逐行辨識（和官方版一致，用來比對差異）
+    int maxBatch = 8;
+    int fixedWidth = 0;  // --fixed-input W H：偵測固定用這個輸入大小
+    int fixedHeight = 0;
     std::filesystem::path output;
     std::filesystem::path dumpCharacters;
     std::vector<std::filesystem::path> images;
@@ -50,6 +55,7 @@ struct Arguments {
 void printUsage() {
     std::fputs(
         "usage: tmw_ocr_cli --det <dir> --rec <dir> [--device cpu|dml] [--repeat N]\n"
+        "                   [--no-batch] [--max-batch N] [--fixed-input W H]\n"
         "                   --output <result.json> <image> [<image> ...]\n"
         "       tmw_ocr_cli --rec <dir> --dump-characters <characters.json>\n",
         stderr);
@@ -75,6 +81,13 @@ std::optional<Arguments> parseArguments(int argc, wchar_t** argv) {
             }
         } else if (arg == L"--repeat" && hasValue) {
             args.repeat = std::max(1, _wtoi(argv[++i]));
+        } else if (arg == L"--no-batch") {
+            args.batchRecognition = false;
+        } else if (arg == L"--max-batch" && hasValue) {
+            args.maxBatch = std::max(1, _wtoi(argv[++i]));
+        } else if (arg == L"--fixed-input" && i + 2 < argc) {
+            args.fixedWidth = std::max(1, _wtoi(argv[++i]));
+            args.fixedHeight = std::max(1, _wtoi(argv[++i]));
         } else if (arg == L"--output" && hasValue) {
             args.output = argv[++i];
         } else if (arg == L"--dump-characters" && hasValue) {
@@ -157,7 +170,11 @@ int run(const Arguments& args) {
         return dumpCharacters(args);
     }
     const auto loadStart = std::chrono::steady_clock::now();
-    OcrPipeline pipeline(args.detectionModel, args.recognitionModel, args.device);
+    OcrOptions options;
+    options.batchRecognition = args.batchRecognition;
+    options.maxBatch = args.maxBatch;
+    options.detection.fixedInput = cv::Size(args.fixedWidth, args.fixedHeight);
+    OcrPipeline pipeline(args.detectionModel, args.recognitionModel, args.device, options);
     const double loadMs =
         std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - loadStart)
             .count();
