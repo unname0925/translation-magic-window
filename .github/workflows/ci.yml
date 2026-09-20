@@ -1,0 +1,74 @@
+# 每次推送和 PR 都建置並執行測試（execution-plan.md 5.10）。
+#
+# CI 用 `ci` 這組 preset：產生器是 Ninja Multi-Config，不綁 Visual Studio 版本
+# （執行環境的版本和開發機不一定相同）。整合測試需要桌面環境，不在 CI 執行。
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: windows-2025
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Debug
+            configure: ci
+            build: ci-debug
+            test: ci-debug
+          - name: Release
+            configure: ci
+            build: ci-release
+            test: ci-release
+          - name: AddressSanitizer
+            configure: ci-asan
+            build: ci-asan
+            test: ci-asan
+    steps:
+      - uses: actions/checkout@v5
+
+      # tools/ 的 Python 測試會和單元測試一起由 ctest 執行（需要 3.10 以上）
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # 設定 cl.exe 的環境（Ninja 需要）。固定版本：v1.13.0
+      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756
+
+      # ONNX Runtime 和 DirectML 的 NuGet 套件，版本固定在 cmake/OnnxRuntime.cmake
+      - name: 快取下載的套件
+        uses: actions/cache@v4
+        with:
+          path: .cache/downloads
+          key: downloads-${{ hashFiles('cmake/OnnxRuntime.cmake') }}
+
+      # vcpkg 的建置結果（OpenCV 要從原始碼建置，第一次很久）
+      - name: 快取 vcpkg 的建置結果
+        uses: actions/cache@v4
+        with:
+          path: ~/AppData/Local/vcpkg/archives
+          key: vcpkg-${{ matrix.name }}-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            vcpkg-${{ matrix.name }}-
+            vcpkg-
+
+      - name: 設定
+        run: |
+          $env:VCPKG_ROOT = $env:VCPKG_INSTALLATION_ROOT
+          cmake --preset ${{ matrix.configure }}
+
+      - name: 建置
+        run: cmake --build --preset ${{ matrix.build }}
+
+      - name: 單元測試
+        run: ctest --preset ${{ matrix.test }}

@@ -30,6 +30,31 @@
       "cacheVariables": {
         "TMW_ENABLE_ASAN": "ON"
       }
+    },
+    {
+      "name": "ci",
+      "displayName": "CI（Ninja Multi-Config）",
+      "description": "GitHub Actions 用：不綁 Visual Studio 版本，由 MSVC 開發者環境提供編譯器",
+      "generator": "Ninja Multi-Config",
+      "binaryDir": "${sourceDir}/build/ci",
+      "cacheVariables": {
+        "CMAKE_CONFIGURATION_TYPES": "Debug;Release"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
+      "name": "ci-asan",
+      "inherits": "ci",
+      "displayName": "CI + AddressSanitizer",
+      "binaryDir": "${sourceDir}/build/ci-asan",
+      "cacheVariables": {
+        "CMAKE_CONFIGURATION_TYPES": "Debug",
+        "TMW_ENABLE_ASAN": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -49,6 +74,21 @@
       "name": "asan",
       "displayName": "Debug + AddressSanitizer",
       "configurePreset": "msvc-x64-asan",
+      "configuration": "Debug"
+    },
+    {
+      "name": "ci-debug",
+      "configurePreset": "ci",
+      "configuration": "Debug"
+    },
+    {
+      "name": "ci-release",
+      "configurePreset": "ci",
+      "configuration": "Release"
+    },
+    {
+      "name": "ci-asan",
+      "configurePreset": "ci-asan",
       "configuration": "Debug"
     }
   ],
@@ -99,6 +139,24 @@
           "label": "integration"
         }
       }
+    },
+    {
+      "name": "ci-debug",
+      "inherits": "unit-only",
+      "configurePreset": "ci",
+      "configuration": "Debug"
+    },
+    {
+      "name": "ci-release",
+      "inherits": "unit-only",
+      "configurePreset": "ci",
+      "configuration": "Release"
+    },
+    {
+      "name": "ci-asan",
+      "inherits": "unit-only",
+      "configurePreset": "ci-asan",
+      "configuration": "Debug"
     }
   ],
   "workflowPresets": [
@@ -106,36 +164,72 @@
       "name": "debug",
       "displayName": "設定 → 建置 → 測試（Debug）",
       "steps": [
-        { "type": "configure", "name": "msvc-x64" },
-        { "type": "build", "name": "debug" },
-        { "type": "test", "name": "debug" }
+        {
+          "type": "configure",
+          "name": "msvc-x64"
+        },
+        {
+          "type": "build",
+          "name": "debug"
+        },
+        {
+          "type": "test",
+          "name": "debug"
+        }
       ]
     },
     {
       "name": "release",
       "displayName": "設定 → 建置 → 測試（Release）",
       "steps": [
-        { "type": "configure", "name": "msvc-x64" },
-        { "type": "build", "name": "release" },
-        { "type": "test", "name": "release" }
+        {
+          "type": "configure",
+          "name": "msvc-x64"
+        },
+        {
+          "type": "build",
+          "name": "release"
+        },
+        {
+          "type": "test",
+          "name": "release"
+        }
       ]
     },
     {
       "name": "asan",
       "displayName": "設定 → 建置 → 測試（AddressSanitizer）",
       "steps": [
-        { "type": "configure", "name": "msvc-x64-asan" },
-        { "type": "build", "name": "asan" },
-        { "type": "test", "name": "asan" }
+        {
+          "type": "configure",
+          "name": "msvc-x64-asan"
+        },
+        {
+          "type": "build",
+          "name": "asan"
+        },
+        {
+          "type": "test",
+          "name": "asan"
+        }
       ]
     },
     {
       "name": "integration",
       "displayName": "設定 → 建置 → 整合測試",
       "steps": [
-        { "type": "configure", "name": "msvc-x64" },
-        { "type": "build", "name": "debug" },
-        { "type": "test", "name": "integration" }
+        {
+          "type": "configure",
+          "name": "msvc-x64"
+        },
+        {
+          "type": "build",
+          "name": "debug"
+        },
+        {
+          "type": "test",
+          "name": "integration"
+        }
       ]
     }
   ]

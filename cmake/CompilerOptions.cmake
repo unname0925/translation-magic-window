@@ -6,6 +6,9 @@ target_compile_options(tmw_options INTERFACE
     /permissive-
     /utf-8
     /Zc:__cplusplus
+    # 標準的例外處理模型。Visual Studio 產生器會自動加上，Ninja 不會，
+    # 所以明確指定，讓兩種產生器（本機和 CI）用相同的旗標。
+    /EHsc
     /MP
     # C++/WinRT 標頭很大，需要更多的 section
     /bigobj
