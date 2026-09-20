@@ -12,6 +12,8 @@
 #include "app/app_identity.h"
 #include "core/command_line.h"
 #include "platform/app_paths.h"
+#include "platform/logging.h"
+#include "platform/settings_file.h"
 #include "platform/single_instance.h"
 #include "platform/text_encoding.h"
 
@@ -54,11 +56,34 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
             options.dataDirectory ? std::filesystem::absolute(*options.dataDirectory)
                                   : tmw::platform::defaultDataDirectory();
 
+        // 設定要先讀，記錄的「詳細診斷」由設定決定（design.md 4.10、4.11）
+        const std::filesystem::path settingsPath =
+            options.dataDirectory ? tmw::platform::settingsPathIn(dataDirectory)
+                                  : tmw::platform::defaultSettingsPath();
+        const tmw::platform::SettingsFileLoad settings = tmw::platform::loadSettings(settingsPath);
+        tmw::platform::initializeLogging(
+            {.directory = dataDirectory / L"logs",
+             .verboseDiagnostics = settings.settings.verboseDiagnostics});
+        tmw::platform::logInfo("Translation Magic Window 啟動，資料夾：" +
+                               tmw::platform::pathToUtf8(dataDirectory));
+        if (!settings.problem.empty()) {
+            tmw::platform::logWarn("設定檔改用了預設值：" + settings.problem);
+        }
+        if (settings.missing) {
+            // 第一次啟動就寫出預設設定檔，使用者才知道有哪些選項可以改
+            tmw::platform::saveSettings(settingsPath, settings.settings);
+            tmw::platform::logInfo("建立了預設的設定檔：" +
+                                   tmw::platform::pathToUtf8(settingsPath));
+        }
+
         // 螢幕擷取（WinRT）和 PNG（WIC）都需要 COM。UI 執行緒使用單一執行緒 apartment。
         winrt::init_apartment(winrt::apartment_type::single_threaded);
 
         tmw::app::AppController controller(instance, dataDirectory);
-        return controller.run();
+        const int code = controller.run();
+        tmw::platform::logInfo("結束");
+        tmw::platform::shutdownLogging();
+        return code;
     } catch (const winrt::hresult_error& error) {
         showFatalError(std::wstring(error.message()));
     } catch (const std::exception& error) {

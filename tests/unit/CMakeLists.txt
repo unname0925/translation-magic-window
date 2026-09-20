@@ -6,11 +6,15 @@ add_executable(tmw_unit_tests
     core/command_line_test.cpp
     core/geometry_test.cpp
     core/lens_layout_test.cpp
+    core/settings_test.cpp
     core/trigger_state_machine_test.cpp
     ocr/model_config_test.cpp
     ocr/text_detector_test.cpp
     ocr/text_recognizer_test.cpp
+    platform/logging_test.cpp
     platform/png_file_test.cpp
+    platform/secret_test.cpp
+    platform/settings_file_test.cpp
     platform/single_instance_test.cpp
     platform/text_encoding_test.cpp
     platform/win_error_test.cpp
