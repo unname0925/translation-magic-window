@@ -14,7 +14,7 @@
 - Windows 11
 - [Build Tools for Visual Studio 2026](https://visualstudio.microsoft.com/downloads/)，安裝時勾選「使用 C++ 的桌面開發」，並確認有勾選其中的「vcpkg 套件管理員」
 - CMake 3.28 以上
-- Python 3.10 以上（選用：下載模型、OCR 評測）
+- Python 3.10 以上（選用：下載模型、OCR 評測、clang-format）
 - VS Code 搭配 C/C++ Extension Pack（選用）
 
 ## 建置與測試
@@ -46,6 +46,18 @@ cmake --workflow --preset debug
 
 建置結果在 `build/<preset>/bin/<設定>/`。
 
+### 程式碼格式
+
+C++ 的格式由 `.clang-format` 決定，CI 會檢查。本機用同一個版本檢查或排版：
+
+```powershell
+pip install clang-format==19.1.7
+clang-format --dry-run --Werror $(git ls-files '*.cpp' '*.h' ':!:third_party/*')   # 只檢查
+clang-format -i $(git ls-files '*.cpp' '*.h' ':!:third_party/*')                   # 直接排版
+```
+
+> 版本要一致：不同版本的 clang-format 排出來的結果會不一樣。
+
 > 防毒軟體（例如 Norton）第一次執行新建置的程式時，可能會先掃描 20 秒以上，這是正常的。
 
 **執行整合測試前後要注意：**
@@ -68,6 +80,12 @@ python tools/fetch_models/fetch_models.py --verify-only   # 只檢查已下載�
 ```
 
 每個檔案都固定在特定的版本，下載後會用大小和 SHA-256 驗證。已經下載而且驗證通過的檔案不會重新下載。
+
+## 持續整合
+
+每次推送和 PR，[GitHub Actions](.github/workflows/ci.yml) 會在 Windows 上建置 Debug、Release 和
+AddressSanitizer 三種設定並執行單元測試，另外檢查 C++ 的格式。CI 用 `ci` 這組 preset
+（產生器是 Ninja Multi-Config），不綁 Visual Studio 版本。整合測試需要桌面環境，不在 CI 執行。
 
 ## 授權
 

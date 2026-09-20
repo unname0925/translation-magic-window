@@ -56,6 +56,7 @@
 - ✅ M0-12：同一批 838 段原文送到 Google 非官方端點、Gemini 3.5 flash-lite、Claude Haiku 4.5 和本機的 HY-MT2 7B（Ollama），全部經過 OpenCC 轉台灣繁體；你盲評 54 段（216 個分數）。三個 LLM 之間沒有顯著差異（4.13～4.46 分），都明顯優於 Google（3.46 分），所以預設引擎鏈是「LLM → Google」（design.md 4.5「M0-12 的評測結果」）。過程中發現免費 LLM 的每日額度很小（Gemini 3.6 flash 每天 20 次請求）、連本機服務要用 127.0.0.1 而不是 localhost（否則每個請求多 2 秒，本機 LLM 一頁從 6.9 秒降到 1.6 秒），以及 LLM 會漏段或輸出壞 JSON（已加上三層退路）。工具見 tools/eval/README.md 的「翻譯評測」
 - M0-16（完成，等你確認）：M0 的結論整理進 design.md 2.3「M0 技術驗證的結論」（一張表列出每個技術點選定的做法，以及還沒解決、要帶進 M1／M2／M5 的四個問題）。各項的細節在 M0-11、M0-12 完成時就已經寫進 4.4、4.5、第 5 節和風險表
 - ✅ M0-03：公開倉庫建立在 https://github.com/unname0925/translation-magic-window（GPL-3.0）。倉庫裡不含真實截圖和模型：`testdata/private/`、`models/`、`build/` 都在 .gitignore 中
+- M0-04（完成，等 CI 綠燈）：GitHub Actions 在 Windows 上建置 Debug、Release 和 AddressSanitizer 並執行單元測試（整合測試需要桌面環境，不在 CI 執行），另外用固定版本的 clang-format 檢查格式。執行環境沒有 Visual Studio 2026，所以新增 `ci` 這組 preset（Ninja Multi-Config，不綁版本）；改用 Ninja 之後發現專案從來沒有明確指定 `/EHsc`，一直靠 Visual Studio 產生器自動補上，已修正。vcpkg 的建置結果和 ONNX Runtime 的下載都有快取
 
 ### M0：技術驗證
 
