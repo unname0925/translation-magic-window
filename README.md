@@ -1,5 +1,7 @@
 # Translation Magic Window
 
+[![CI](https://github.com/unname0925/translation-magic-window/actions/workflows/ci.yml/badge.svg)](https://github.com/unname0925/translation-magic-window/actions/workflows/ci.yml)
+
 一個 Windows 螢幕翻譯工具。把半透明的「透鏡」放在漫畫、遊戲或網頁上，透鏡底下的日文、英文、韓文會自動翻譯成繁體中文。
 
 > **目前狀態**：開發初期（M0 技術驗證），還沒有可以使用的功能。
