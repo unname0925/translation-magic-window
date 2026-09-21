@@ -3,9 +3,12 @@
 
 #include <gtest/gtest.h>
 
+#include <chrono>
 #include <memory>
 #include <optional>
+#include <span>
 #include <stdexcept>
+#include <stop_token>
 #include <string>
 #include <utility>
 #include <vector>

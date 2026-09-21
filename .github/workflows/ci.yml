@@ -97,8 +97,18 @@ jobs:
           $env:VCPKG_ROOT = $env:VCPKG_INSTALLATION_ROOT
           cmake --preset ${{ matrix.configure }}
 
+      # 失敗時把編譯器的錯誤行輸出成 GitHub 的「註解」。註解不需要倉庫管理權限就看得到，
+      # 完整的執行日誌則需要，所以光看日誌連結不夠。
       - name: 建置
-        run: cmake --build --preset ${{ matrix.build }}
+        run: |
+          cmake --build --preset ${{ matrix.build }} 2>&1 | Tee-Object -FilePath build.log
+          $code = $LASTEXITCODE
+          if ($code -ne 0) {
+            Select-String -Path build.log -Pattern ': (error|fatal error) ' |
+              Select-Object -First 20 |
+              ForEach-Object { Write-Output "::error::$($_.Line.Trim())" }
+          }
+          exit $code
 
       - name: 單元測試
         run: ctest --preset ${{ matrix.test }}

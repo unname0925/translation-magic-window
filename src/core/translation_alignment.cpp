@@ -1,5 +1,6 @@
 #include "core/translation_alignment.h"
 
+#include <cstddef>
 #include <nlohmann/json.hpp>
 #include <utility>
 

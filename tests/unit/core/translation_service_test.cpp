@@ -3,8 +3,12 @@
 
 #include <gtest/gtest.h>
 
+#include <cstddef>
 #include <memory>
+#include <span>
+#include <stop_token>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "support/fake_clock.h"

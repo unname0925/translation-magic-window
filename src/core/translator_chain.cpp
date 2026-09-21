@@ -1,5 +1,7 @@
 #include "core/translator_chain.h"
 
+#include <cstddef>
+#include <exception>
 #include <optional>
 #include <utility>
 

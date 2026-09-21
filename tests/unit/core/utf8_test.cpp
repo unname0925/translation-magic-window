@@ -3,7 +3,11 @@
 
 #include <gtest/gtest.h>
 
+#include <cstddef>
+#include <cstdint>
+#include <ios>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace tmw::core {

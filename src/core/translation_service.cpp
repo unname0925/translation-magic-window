@@ -1,5 +1,7 @@
 #include "core/translation_service.h"
 
+#include <optional>
+#include <string>
 #include <unordered_map>
 #include <utility>
 

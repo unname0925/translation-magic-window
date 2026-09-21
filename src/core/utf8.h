@@ -4,6 +4,7 @@
 // 所以這裡的解碼把壞掉的位元組當成 U+FFFD 跳過，不丟例外、也不會讀到字串外面。
 #pragma once
 
+#include <cstddef>
 #include <string>
 #include <string_view>
 

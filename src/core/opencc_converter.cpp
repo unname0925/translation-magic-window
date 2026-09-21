@@ -1,11 +1,10 @@
 #include "core/opencc_converter.h"
 
 #include <SimpleConverter.hpp>
+#include <exception>
 #include <stdexcept>
 #include <string>
 #include <vector>
-
-#include "core/utf8.h"
 
 namespace tmw::core {
 namespace {
