@@ -3,6 +3,8 @@ find_package(OpenCV CONFIG REQUIRED COMPONENTS core imgproc)
 find_package(yaml-cpp CONFIG REQUIRED)
 
 add_library(tmw_ocr STATIC
+    model_choice.cpp
+    model_choice.h
     model_config.cpp
     model_config.h
     ocr_pipeline.cpp

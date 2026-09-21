@@ -34,6 +34,9 @@ struct OcrOptions {
     // 關掉時逐行辨識，結果和 PaddleOCR 官方版完全一致，用來做一致性檢查。
     bool batchRecognition = true;
     int maxBatch = 64;  // 一批最多幾行（實際張數由寬度預算決定，見 text_recognizer.h）
+    // 建立時先空跑一次，把 DirectML 的編譯成本移到啟動階段（見 design.md 第 5 節）。
+    // 偵測用 detection.fixedInput 的大小，辨識用最常見的寬度級距。
+    bool warmUpOnStart = true;
 };
 
 class OcrPipeline {
@@ -51,6 +54,10 @@ public:
     Device device() const { return detector_.device(); }
 
 private:
+    // 用假的畫面各跑一次偵測和辨識。DirectML 第一次遇到一種形狀時要編譯（實測 227 ms），
+    // 在這裡做完，使用者的第一次翻譯就不會卡住。
+    void warmUp();
+
     OcrOptions options_;
     TextDetector detector_;
     TextRecognizer recognizer_;

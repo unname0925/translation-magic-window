@@ -45,6 +45,7 @@ struct Arguments {
     int repeat = 1;
     bool batchRecognition = true;  // --no-batch：逐行辨識（和官方版一致，用來比對差異）
     int maxBatch = 64;
+    bool warmUp = true;  // --no-warmup：不要在載入時先空跑一次
     int fixedWidth = 0;  // --fixed-input W H：偵測固定用這個輸入大小
     int fixedHeight = 0;
     std::filesystem::path output;
@@ -55,7 +56,7 @@ struct Arguments {
 void printUsage() {
     std::fputs(
         "usage: tmw_ocr_cli --det <dir> --rec <dir> [--device cpu|dml|auto] [--repeat N]\n"
-        "                   [--no-batch] [--max-batch N] [--fixed-input W H]\n"
+        "                   [--no-batch] [--no-warmup] [--max-batch N] [--fixed-input W H]\n"
         "                   --output <result.json> <image> [<image> ...]\n"
         "       tmw_ocr_cli --rec <dir> --dump-characters <characters.json>\n",
         stderr);
@@ -85,6 +86,8 @@ std::optional<Arguments> parseArguments(int argc, wchar_t** argv) {
             args.repeat = std::max(1, _wtoi(argv[++i]));
         } else if (arg == L"--no-batch") {
             args.batchRecognition = false;
+        } else if (arg == L"--no-warmup") {
+            args.warmUp = false;
         } else if (arg == L"--max-batch" && hasValue) {
             args.maxBatch = std::max(1, _wtoi(argv[++i]));
         } else if (arg == L"--fixed-input" && i + 2 < argc) {
@@ -176,6 +179,7 @@ int run(const Arguments& args) {
     options.batchRecognition = args.batchRecognition;
     options.maxBatch = args.maxBatch;
     options.detection.fixedInput = cv::Size(args.fixedWidth, args.fixedHeight);
+    options.warmUpOnStart = args.warmUp;
     OcrPipeline pipeline(args.detectionModel, args.recognitionModel, args.device, options);
     const double loadMs =
         std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - loadStart)

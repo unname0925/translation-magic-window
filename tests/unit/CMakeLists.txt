@@ -8,6 +8,7 @@ add_executable(tmw_unit_tests
     core/lens_layout_test.cpp
     core/settings_test.cpp
     core/trigger_state_machine_test.cpp
+    ocr/model_choice_test.cpp
     ocr/model_config_test.cpp
     ocr/text_detector_test.cpp
     ocr/text_recognizer_test.cpp

@@ -59,7 +59,7 @@
 - ✅ M0-04：GitHub Actions 在 Windows 上建置 Debug、Release 和 AddressSanitizer 並執行單元測試（整合測試需要桌面環境，不在 CI 執行），另外用固定版本的 clang-format 檢查格式。執行環境沒有 Visual Studio 2026，所以新增 `ci` 這組 preset（Ninja Multi-Config，不綁版本）；改用 Ninja 之後發現專案從來沒有明確指定 `/EHsc`，一直靠 Visual Studio 產生器自動補上，已修正。vcpkg 的建置結果和 ONNX Runtime 的下載都有快取。第一次執行三種設定各約 15～16 分鐘（大部分在建置 OpenCV），全部綠燈。**M0 到此全部完成**
 - M1-01（完成，等 CI 綠燈）：vcpkg 加入 cpr 1.14.2、spdlog 1.17.0、OpenCC 1.1.9，並改用 `x64-windows-static-md`（OpenCC 依賴的 marisa-trie 在 Windows 上只支援靜態連結；附帶好處是發布時不用散布 OpenCV、curl 等 DLL）。從乾淨的狀態建置全部相依套件約 5.5 分鐘。Qt 6.9.3 改用官方預編譯的 qtbase（39 MB、半分鐘）而不是 vcpkg（從原始碼建置要 30 分鐘到數小時），由 aqtinstall 下載、`cmake/Qt.cmake` 尋找；新增最小的 `tmw_ui` 目標和一個測試，確認建置和執行時的 Qt 版本一致。CI 加上 Qt 的安裝和快取
 - M1-02（完成，等你確認）：設定檔（`core/settings`＋`platform/settings_file`）有 schemaVersion、可注入的遷移鏈、欄位缺少或型別不對時用預設值；讀不懂的檔案會先備份成 `settings.json.bak` 再用預設值，寫檔先寫 .tmp 再取代。金鑰用 DPAPI 加密後存 base64（`platform/secret`）。記錄用 spdlog（`platform/logging`）：輪替檔案、每筆可帶透鏡編號和流水號，敏感內容一律經過 `sensitive()`，沒開詳細診斷時寫成「（略）」。主程式啟動時讀設定、開記錄，第一次啟動會寫出預設設定檔。新增 29 個測試（UT-09），共 159 個
-- M1-03（進行中）：批次辨識（同一張畫面的文字行一次送進模型，寬度補齊到 8 種級距）和固定輸入大小，把透鏡大小的畫面從 283 ms 降到 106 ms，符合 150 ms 的預算；90 張真實截圖上字元錯誤率完全沒變。量測時發現「一個推論工作階段只有第一種輸入大小快，之後每換一種大小就永久慢 3～5 倍」，所以偵測改成固定輸入大小。裝置可以自動選擇（DirectML 失敗改用 CPU）。一致性檢查會同時量測「批次 vs 逐行」的差異，逐行仍和官方版完全一致。還沒做：接進產品的處理管線（M1-09）、沒有 GPU 時改用 small 模型
+- M1-03（進行中）：批次辨識（同一張畫面的文字行一次送進模型，寬度補齊到 8 種級距）和固定輸入大小，把透鏡大小的畫面從 283 ms 降到 106 ms，符合 150 ms 的預算；90 張真實截圖上字元錯誤率完全沒變。量測時發現「一個推論工作階段只有第一種輸入大小快，之後每換一種大小就永久慢 3～5 倍」，所以偵測改成固定輸入大小。裝置可以自動選擇（DirectML 失敗改用 CPU）。一致性檢查會同時量測「批次 vs 逐行」的差異，逐行仍和官方版完全一致。啟動時先暖機（第一次翻譯從 584 ms 降到 123 ms）、沒有 GPU 時改用 small 模型（`ocr/model_choice`）。用 `tools/shape_bench` 查出「只有第一種形狀快」的原因：DirectML 第一次遇到某個形狀才編譯而且只留一份，CPU 沒有這個現象（design.md 第 5 節）。還沒做：接進產品的處理管線（M1-09）
 
 ### M0：技術驗證
 
