@@ -16,6 +16,9 @@ add_executable(tmw_unit_tests
     core/translator_chain_test.cpp
     core/trigger_state_machine_test.cpp
     core/utf8_test.cpp
+    net/cpr_http_client_test.cpp
+    net/google_translator_test.cpp
+    net/rate_limiter_test.cpp
     ocr/model_choice_test.cpp
     ocr/model_config_test.cpp
     ocr/text_detector_test.cpp
@@ -31,9 +34,13 @@ add_executable(tmw_unit_tests
     sanitizer_canary_test.cpp)
 target_include_directories(tmw_unit_tests PRIVATE "${PROJECT_SOURCE_DIR}/tests")
 # OpenCC 的字典檔不必複製到測試旁邊，直接讀 vcpkg 安裝的位置（見 cmake/Opencc.cmake）
-target_compile_definitions(tmw_unit_tests PRIVATE TMW_OPENCC_DATA_DIR="${TMW_OPENCC_DATA_DIR}")
+target_compile_definitions(tmw_unit_tests PRIVATE
+    TMW_OPENCC_DATA_DIR="${TMW_OPENCC_DATA_DIR}"
+    # 錄好的 HTTP 回應（CT-01、CT-02）
+    TMW_TEST_DATA_DIR="${PROJECT_SOURCE_DIR}/tests/data")
 target_link_libraries(tmw_unit_tests PRIVATE
     tmw_core
+    tmw_net
     tmw_ocr
     tmw_platform
     tmw_ui
