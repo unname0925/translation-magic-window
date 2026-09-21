@@ -26,7 +26,8 @@ struct TranslateRequest {
 enum class TranslateError {
     Network,      // 連不上、逾時、HTTP 5xx
     RateLimited,  // HTTP 429、配額用完
-    BadResponse,  // 回應格式錯誤、數量對不上
+    Rejected,     // 請求被拒絕：金鑰錯誤、模型名稱錯誤（重送同樣的內容不會變好）
+    BadResponse,  // 回應格式錯誤、數量對不上（模型有隨機性，重送可能就好了）
     Cancelled,    // 使用者移動透鏡或畫面又變了
     Unavailable,  // 沒有可用的引擎（全部都在暫停中）
 };

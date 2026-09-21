@@ -48,7 +48,8 @@ TranslateError classify(const HttpResponse& response) {
     if (response.status >= 500) {
         return TranslateError::Network;
     }
-    return TranslateError::BadResponse;
+    // 其餘的 4xx（金鑰錯誤、模型名稱錯誤、被擋下來）重送同樣的內容也不會變好
+    return TranslateError::Rejected;
 }
 
 }  // namespace

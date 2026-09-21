@@ -1,0 +1,1 @@
+{"id":"chatcmpl-537","object":"chat.completion","created":1789986858,"model":"hy-mt2","system_fingerprint":"fp_ollama","choices":[{"index":0,"message":{"role":"assistant","content":"{\"source_lang\": \"ja\", \"segments\": [\"你好\", \"我會認真戰鬥的\", \"存檔\"]}"},"finish_reason":"stop"}],"usage":{"prompt_tokens":130,"completion_tokens":28,"total_tokens":158}}

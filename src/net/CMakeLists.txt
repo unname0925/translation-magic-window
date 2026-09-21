@@ -10,8 +10,12 @@ add_library(tmw_net STATIC
     google_translator.h
     http_client.cpp
     http_client.h
+    openai_translator.cpp
+    openai_translator.h
     rate_limiter.cpp
-    rate_limiter.h)
+    rate_limiter.h
+    sse.cpp
+    sse.h)
 target_include_directories(tmw_net PUBLIC "${PROJECT_SOURCE_DIR}/src")
 target_compile_features(tmw_net PUBLIC cxx_std_20)
 target_link_libraries(tmw_net

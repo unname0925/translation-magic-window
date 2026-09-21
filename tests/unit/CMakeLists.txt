@@ -13,11 +13,13 @@ add_executable(tmw_unit_tests
     core/translation_alignment_test.cpp
     core/translation_cache_test.cpp
     core/translation_service_test.cpp
+    core/translation_stream_test.cpp
     core/translator_chain_test.cpp
     core/trigger_state_machine_test.cpp
     core/utf8_test.cpp
     net/cpr_http_client_test.cpp
     net/google_translator_test.cpp
+    net/openai_translator_test.cpp
     net/rate_limiter_test.cpp
     ocr/model_choice_test.cpp
     ocr/model_config_test.cpp

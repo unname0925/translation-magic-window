@@ -1,0 +1,56 @@
+data: {"id":"chatcmpl-837","object":"chat.completion.chunk","created":1789986858,"model":"hy-mt2","system_fingerprint":"fp_ollama","choices":[{"index":0,"delta":{"role":"assistant","content":"{\""},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-837","object":"chat.completion.chunk","created":1789986858,"model":"hy-mt2","system_fingerprint":"fp_ollama","choices":[{"index":0,"delta":{"role":"assistant","content":"source"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-837","object":"chat.completion.chunk","created":1789986858,"model":"hy-mt2","system_fingerprint":"fp_ollama","choices":[{"index":0,"delta":{"role":"assistant","content":"_lang"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-837","object":"chat.completion.chunk","created":1789986858,"model":"hy-mt2","system_fingerprint":"fp_ollama","choices":[{"index":0,"delta":{"role":"assistant","content":"\":"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-837","object":"chat.completion.chunk","created":1789986858,"model":"hy-mt2","system_fingerprint":"fp_ollama","choices":[{"index":0,"delta":{"role":"assistant","content":" \""},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-837","object":"chat.completion.chunk","created":1789986858,"model":"hy-mt2","system_fingerprint":"fp_ollama","choices":[{"index":0,"delta":{"role":"assistant","content":"ja"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-837","object":"chat.completion.chunk","created":1789986858,"model":"hy-mt2","system_fingerprint":"fp_ollama","choices":[{"index":0,"delta":{"role":"assistant","content":"\","},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-837","object":"chat.completion.chunk","created":1789986858,"model":"hy-mt2","system_fingerprint":"fp_ollama","choices":[{"index":0,"delta":{"role":"assistant","content":" \""},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-837","object":"chat.completion.chunk","created":1789986859,"model":"hy-mt2","system_fingerprint":"fp_ollama","choices":[{"index":0,"delta":{"role":"assistant","content":"segments"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-837","object":"chat.completion.chunk","created":1789986859,"model":"hy-mt2","system_fingerprint":"fp_ollama","choices":[{"index":0,"delta":{"role":"assistant","content":"\":"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-837","object":"chat.completion.chunk","created":1789986859,"model":"hy-mt2","system_fingerprint":"fp_ollama","choices":[{"index":0,"delta":{"role":"assistant","content":" [\""},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-837","object":"chat.completion.chunk","created":1789986859,"model":"hy-mt2","system_fingerprint":"fp_ollama","choices":[{"index":0,"delta":{"role":"assistant","content":"你好"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-837","object":"chat.completion.chunk","created":1789986859,"model":"hy-mt2","system_fingerprint":"fp_ollama","choices":[{"index":0,"delta":{"role":"assistant","content":"\","},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-837","object":"chat.completion.chunk","created":1789986859,"model":"hy-mt2","system_fingerprint":"fp_ollama","choices":[{"index":0,"delta":{"role":"assistant","content":" \""},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-837","object":"chat.completion.chunk","created":1789986859,"model":"hy-mt2","system_fingerprint":"fp_ollama","choices":[{"index":0,"delta":{"role":"assistant","content":"我"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-837","object":"chat.completion.chunk","created":1789986859,"model":"hy-mt2","system_fingerprint":"fp_ollama","choices":[{"index":0,"delta":{"role":"assistant","content":"會"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-837","object":"chat.completion.chunk","created":1789986859,"model":"hy-mt2","system_fingerprint":"fp_ollama","choices":[{"index":0,"delta":{"role":"assistant","content":"認"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-837","object":"chat.completion.chunk","created":1789986859,"model":"hy-mt2","system_fingerprint":"fp_ollama","choices":[{"index":0,"delta":{"role":"assistant","content":"真"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-837","object":"chat.completion.chunk","created":1789986859,"model":"hy-mt2","system_fingerprint":"fp_ollama","choices":[{"index":0,"delta":{"role":"assistant","content":"戰"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-837","object":"chat.completion.chunk","created":1789986859,"model":"hy-mt2","system_fingerprint":"fp_ollama","choices":[{"index":0,"delta":{"role":"assistant","content":"鬥"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-837","object":"chat.completion.chunk","created":1789986859,"model":"hy-mt2","system_fingerprint":"fp_ollama","choices":[{"index":0,"delta":{"role":"assistant","content":"的"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-837","object":"chat.completion.chunk","created":1789986859,"model":"hy-mt2","system_fingerprint":"fp_ollama","choices":[{"index":0,"delta":{"role":"assistant","content":"\","},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-837","object":"chat.completion.chunk","created":1789986860,"model":"hy-mt2","system_fingerprint":"fp_ollama","choices":[{"index":0,"delta":{"role":"assistant","content":" \""},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-837","object":"chat.completion.chunk","created":1789986860,"model":"hy-mt2","system_fingerprint":"fp_ollama","choices":[{"index":0,"delta":{"role":"assistant","content":"存"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-837","object":"chat.completion.chunk","created":1789986860,"model":"hy-mt2","system_fingerprint":"fp_ollama","choices":[{"index":0,"delta":{"role":"assistant","content":"檔"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-837","object":"chat.completion.chunk","created":1789986860,"model":"hy-mt2","system_fingerprint":"fp_ollama","choices":[{"index":0,"delta":{"role":"assistant","content":"\"]}"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-837","object":"chat.completion.chunk","created":1789986860,"model":"hy-mt2","system_fingerprint":"fp_ollama","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":"stop"}]}
+
+data: [DONE]
+

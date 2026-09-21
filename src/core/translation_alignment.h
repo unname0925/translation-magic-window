@@ -25,6 +25,11 @@ std::optional<std::vector<std::string>> parseJsonArray(std::string_view reply);
 // 因為空行代表原文那一段翻出來是空的，數量必須對得上。
 std::vector<std::string> splitLines(std::string_view reply);
 
+// 從還沒收完的 JSON 陣列中取出「已經完整」的字串元素。
+// 串流時用來邊收邊顯示（design.md 4.6「邊翻邊顯示」）：收到第一段就先填進結果視窗，
+// 不必等整個陣列。還在傳輸中的那一段不會回傳。
+std::vector<std::string> parseJsonArrayPrefix(std::string_view partial);
+
 // 有另外含義的 ルビ 用 {本文|讀音} 標出來（design.md 4.5），譯文要保留同樣數量的標記。
 int countRubyMarkers(std::string_view text);
 

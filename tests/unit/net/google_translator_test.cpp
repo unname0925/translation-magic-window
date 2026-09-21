@@ -161,6 +161,19 @@ TEST_F(GoogleTranslatorTest, ReportsServerErrorsAsNetworkProblems) {
     }
 }
 
+TEST_F(GoogleTranslatorTest, ReportsBeingBlocked) {
+    // 少了 User-Agent 或送太快時端點會回 403，重送同樣的內容不會變好
+    http_->reply("", 403);
+    GoogleTranslator translator = makeTranslator();
+    try {
+        translate(translator, {"こんにちは"});
+        FAIL() << "403 應該丟例外";
+    } catch (const TranslatorError& error) {
+        EXPECT_EQ(error.kind(), TranslateError::Rejected);
+    }
+    EXPECT_EQ(http_->requests.size(), 1u);
+}
+
 TEST_F(GoogleTranslatorTest, ReportsRepliesItCannotRead) {
     // 端點改格式或被中間的裝置換成登入頁面
     http_->reply("<html>請先登入</html>");

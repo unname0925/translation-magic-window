@@ -121,6 +121,39 @@ std::vector<std::string> splitLines(std::string_view reply) {
     return out;
 }
 
+std::vector<std::string> parseJsonArrayPrefix(std::string_view partial) {
+    const std::string_view text = stripCodeFence(partial);
+    const std::size_t begin = text.find('[');
+    if (begin == std::string_view::npos) {
+        return {};
+    }
+    // 掃到最後一個「已經收完」的字串，再自己補上 ]，就可以交給一般的解析
+    std::size_t lastComplete = std::string_view::npos;
+    bool inString = false;
+    for (std::size_t i = begin + 1; i < text.size(); ++i) {
+        const char c = text[i];
+        if (inString) {
+            if (c == '\\') {
+                ++i;  // 跳過被跳脫的字元
+            } else if (c == '"') {
+                inString = false;
+                lastComplete = i;
+            }
+        } else if (c == '"') {
+            inString = true;
+        } else if (c == ']') {
+            lastComplete = i - 1;  // 整個陣列都收完了
+            break;
+        }
+    }
+    if (lastComplete == std::string_view::npos) {
+        return {};
+    }
+    std::string complete(text.substr(begin, lastComplete - begin + 1));
+    complete += ']';
+    return parseJsonArray(complete).value_or(std::vector<std::string>{});
+}
+
 int countRubyMarkers(std::string_view text) {
     int count = 0;
     for (std::size_t i = 0; i < text.size(); ++i) {
