@@ -379,23 +379,30 @@ struct TextBlock {
 
 ### 4.5 翻譯服務
 
-#### 翻譯器介面（草案）
+#### 翻譯器介面
+
+實作在 `src/core/translator.h`（M1-06）。
 
 ```cpp
 struct TranslateRequest {
     std::string srcLang;                         // "ja" | "en" | "ko" | "auto"
-    std::string dstLang;                         // 目前固定為 "zh-TW"
+    std::string dstLang = "zh-TW";               // 目前固定
     std::vector<std::pair<std::string, std::string>> context;  // 同一透鏡最近 K 組原文和譯文
     std::map<std::string, std::string> glossary;               // 專有名詞表（M2 以後）
 };
+
+// 引擎失敗的原因，引擎鏈用它決定要不要改用下一個
+enum class TranslateError { Network, RateLimited, BadResponse, Cancelled, Unavailable };
+
+class TranslatorError : public std::runtime_error { /* 帶著 TranslateError */ };
 
 class ITranslator {
 public:
     virtual ~ITranslator() = default;
     virtual std::string id() const = 0;
     virtual bool supportsBatch() const = 0;
-    // 回傳的陣列長度必須和 segments 相同
-    virtual std::vector<std::string> translate(const std::vector<std::string>& segments,
+    // 回傳的陣列長度必須和 segments 相同；失敗時丟出 TranslatorError
+    virtual std::vector<std::string> translate(std::span<const std::string> segments,
                                                const TranslateRequest& req,
                                                std::stop_token cancel) = 0;
 };
@@ -460,6 +467,39 @@ public:
    - LLM 要求輸出等長的 JSON 陣列；解析失敗或數量不對時，改成逐段重翻。
 5. **轉成台灣繁體**：所有譯文都經過 OpenCC 的 `s2twp` 設定（簡體轉繁體，並轉換成台灣慣用詞）。
 6. **非官方端點限流**：每秒最多 1 個請求，降低被封鎖的風險。
+
+#### 實作（M1-06）
+
+`core/translation_service` 把這個流程串起來，各部分都可以單獨測試：
+
+| 模組 | 負責 |
+|---|---|
+| `core/translator.h` | `ITranslator`、`TranslateRequest`、`TranslatorError` |
+| `core/translation_cache` | 原文正規化和 LRU 快取 |
+| `core/translator_chain` | 引擎順序、失敗計數、暫停 |
+| `core/translation_alignment` | 從回應取出陣列、檢查對齊、逐段重送 |
+| `core/opencc_converter` | `s2twp`（介面是 `ITextConverter`，測試時換成假的） |
+| `core/translation_service` | 上面五個的組合 |
+
+幾個實作上的決定：
+
+- **快取以「段」為單位**，不是整批。畫面上只有一個對話框改變時，其餘各段仍然命中。
+- **快取的鍵包含引擎**，所以換引擎不會沿用另一個引擎（可能比較差）的譯文；查詢時依照引擎鏈的順序找，
+  首選引擎的結果優先，它暫停時才用備援引擎留下的。
+- **正規化只動空白**：去掉前後空白、中間連續的空白（含全形空白）合併成一個、去掉零寬字元。
+  大小寫不動，因為全大寫的遊戲介面和一般句子可能要翻得不一樣。
+- **沒有字母的段落不送出**（`110/110`、`00:35`）：翻了也是原樣回來，不如省下時間和費用。
+  判斷方式就是 4.4 的語言判斷回傳 Unknown。
+- **同一個畫面上重複的文字只送一次**（例如兩個一樣的按鈕）。
+- **只有「回應格式錯誤」才重試**：網路錯誤、額度用完、使用者取消都直接換下一個引擎，
+  不在同一個壞掉的引擎上浪費時間和金錢。
+- **暫停結束後重新給三次機會**，而不是一失敗就又被停掉。
+- **譯文存進快取前就先轉成繁體**，取出來就是最終結果。
+
+**OpenCC 的部署**：vcpkg 只安裝程式庫和字典，`cmake/Opencc.cmake` 負責把 `s2twp` 用得到的
+5 個檔案複製到執行檔旁邊的 `opencc\`。vcpkg 的 opencc 有兩個包裝問題要繞過：匯出的相依目標中有一個
+叫 `RapidJSON` 的目標（rapidjson 只有標頭檔、沒有程式庫），以及靜態版沒有定義
+`Opencc_BUILT_AS_STATIC`（少了它，標頭會把函式宣告成 `__declspec(dllimport)`）。
 
 #### LLM 提示詞（草案）
 - **系統訊息**：你是翻譯引擎。把 `segments` 中的每個字串翻譯成台灣繁體中文，保留語氣和角色口吻，專有名詞依照 `glossary` 翻譯。只輸出和 `segments` 等長的 JSON 字串陣列，不要加任何說明。

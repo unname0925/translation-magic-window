@@ -1,48 +1,11 @@
 #include "core/language.h"
 
-#include <cstdint>
+#include <cstddef>
+
+#include "core/utf8.h"
 
 namespace tmw::core {
 namespace {
-
-// UTF-8 解碼。壞掉的位元組當成一個「其他」字元跳過（OCR 的輸出理論上是合法的 UTF-8，
-// 但這裡是純函式，不該因為輸入不合法就當掉）。
-char32_t nextCodePoint(std::string_view text, std::size_t& index) {
-    const auto byte = static_cast<unsigned char>(text[index]);
-    const auto tail = [&](std::size_t count) -> char32_t {
-        if (index + count >= text.size()) {
-            index = text.size();
-            return U'�';
-        }
-        char32_t value = byte & (0x7Fu >> (count + 1));
-        for (std::size_t i = 1; i <= count; ++i) {
-            const auto next = static_cast<unsigned char>(text[index + i]);
-            if ((next & 0xC0u) != 0x80u) {
-                index += i;
-                return U'�';
-            }
-            value = (value << 6) | (next & 0x3Fu);
-        }
-        index += count + 1;
-        return value;
-    };
-
-    if (byte < 0x80u) {
-        ++index;
-        return byte;
-    }
-    if ((byte & 0xE0u) == 0xC0u) {
-        return tail(1);
-    }
-    if ((byte & 0xF0u) == 0xE0u) {
-        return tail(2);
-    }
-    if ((byte & 0xF8u) == 0xF0u) {
-        return tail(3);
-    }
-    ++index;
-    return U'�';
-}
 
 bool isKana(char32_t c) {
     return (c >= 0x3040 && c <= 0x30FF) ||  // 平假名、片假名

@@ -17,15 +17,30 @@ add_library(tmw_core STATIC
     language.h
     lens_layout.cpp
     lens_layout.h
+    opencc_converter.cpp
+    opencc_converter.h
     settings.cpp
     settings.h
+    text_converter.h
     text_layout.cpp
     text_layout.h
+    translation_alignment.cpp
+    translation_alignment.h
+    translation_cache.cpp
+    translation_cache.h
+    translation_service.cpp
+    translation_service.h
+    translator.cpp
+    translator.h
+    translator_chain.cpp
+    translator_chain.h
     trigger_state_machine.cpp
-    trigger_state_machine.h)
+    trigger_state_machine.h
+    utf8.cpp
+    utf8.h)
 target_include_directories(tmw_core PUBLIC "${PROJECT_SOURCE_DIR}/src")
 target_compile_features(tmw_core PUBLIC cxx_std_20)
 find_package(nlohmann_json CONFIG REQUIRED)
 target_link_libraries(tmw_core
     PUBLIC nlohmann_json::nlohmann_json
-    PRIVATE tmw_options)
+    PRIVATE OpenCC::OpenCC tmw_options)
