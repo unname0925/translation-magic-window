@@ -13,10 +13,14 @@ add_library(tmw_core STATIC
     geometry.cpp
     geometry.h
     image.h
+    language.cpp
+    language.h
     lens_layout.cpp
     lens_layout.h
     settings.cpp
     settings.h
+    text_layout.cpp
+    text_layout.h
     trigger_state_machine.cpp
     trigger_state_machine.h)
 target_include_directories(tmw_core PUBLIC "${PROJECT_SOURCE_DIR}/src")

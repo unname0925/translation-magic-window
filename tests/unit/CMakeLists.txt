@@ -5,8 +5,10 @@ add_executable(tmw_unit_tests
     core/clock_test.cpp
     core/command_line_test.cpp
     core/geometry_test.cpp
+    core/language_test.cpp
     core/lens_layout_test.cpp
     core/settings_test.cpp
+    core/text_layout_test.cpp
     core/trigger_state_machine_test.cpp
     ocr/model_choice_test.cpp
     ocr/model_config_test.cpp
