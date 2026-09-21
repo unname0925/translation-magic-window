@@ -120,8 +120,9 @@ def main() -> int:
         for device in ("cpu", "dml"):
             output = results_dir / f"{name}_cpp_{device}.json"
             repeat = args.cpu_repeat if device == "cpu" else args.dml_repeat
+            # 和官方版比對時用逐行辨識（產品預設是批次，差異在下面另外量測）
             run([str(args.cli), "--det", str(det_dir), "--rec", str(rec_dir), "--device", device,
-                 "--repeat", str(repeat), "--output", str(output), *images])
+                 "--repeat", str(repeat), "--no-batch", "--output", str(output), *images])
             candidate = compare_ocr.load(output)
             problems, stats = compare_ocr.compare(reference, candidate, box_tolerance=2)
             row[device] = {"problems": problems, "stats": stats,
@@ -133,6 +134,18 @@ def main() -> int:
             for problem in problems:
                 print(f"      {problem}")
             failures += len(problems)
+        # 產品預設：一次辨識多行（design.md 4.4）。和逐行的差異在這裡量測並記錄。
+        batched_json = results_dir / f"{name}_cpp_dml_batch.json"
+        run([str(args.cli), "--det", str(det_dir), "--rec", str(rec_dir), "--device", "dml",
+             "--repeat", str(args.dml_repeat), "--output", str(batched_json), *images])
+        batched = compare_ocr.load(batched_json)
+        per_line = compare_ocr.load(results_dir / f"{name}_cpp_dml.json")
+        problems, stats = compare_ocr.compare(per_line, batched, box_tolerance=2)
+        row["batch"] = {"problems": problems, "stats": stats, "timings": timing_summary(batched)}
+        print(f"   cpp dml 批次：{len(problems)} 處和逐行不同，"
+              f"分數最大差異 {stats['max_score_diff']:.6f}")
+        for problem in problems:
+            print(f"      {problem}")
         rows.append(row)
 
     report = ["| 組合 | 行數 | CPU 一致 | DirectML 一致 | 框最大誤差 | "
@@ -149,6 +162,18 @@ def main() -> int:
             f"| {cpu['timings']['recognition_per_line_ms']:.1f}／"
             f"{dml['timings']['recognition_per_line_ms']:.1f} "
             f"| {cpu['timings']['load_ms']:.0f}／{dml['timings']['load_ms']:.0f} |")
+    report += ["", "**批次辨識**（產品預設，DirectML）：一次送多行進模型，寬度補齊到固定級距。",
+               "和逐行辨識比較（逐行的結果和官方版完全一致）：", "",
+               "| 組合 | 文字不同的行 | 框最大誤差 | 分數最大差異 | 逐行每行 (ms) | 批次每行 (ms) | 加速 |",
+               "|---|---|---|---|---|---|---|"]
+    for row in rows:
+        batch, per_line = row["batch"], row["dml"]
+        before = per_line["timings"]["recognition_per_line_ms"]
+        after = batch["timings"]["recognition_per_line_ms"]
+        report.append(f"| {row['name']} | {len(batch['problems'])} "
+                      f"| {batch['stats']['max_box_error']}px "
+                      f"| {batch['stats']['max_score_diff']:.6f} "
+                      f"| {before:.1f} | {after:.1f} | {before / max(after, 0.001):.1f}x |")
     (OUTPUT_DIR / "report.md").write_text("\n".join(report) + "\n", encoding="utf-8")
     print("\n" + "\n".join(report))
     print(f"\n{'PASS' if failures == 0 else 'FAIL'}: {failures} problem(s)")

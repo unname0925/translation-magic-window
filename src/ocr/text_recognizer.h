@@ -37,6 +37,10 @@ RecognitionWidth recognitionInputWidth(int cropHeight, int cropWidth, int imageH
 // 大小不同而重新編譯；級距之間的間隔不大，才不會補太多 0。
 int recognitionWidthBucket(int paddedWidth);
 
+// 這個寬度的級距，一批放幾張。批次越大越快（送進模型的次數少），但一次的記憶體用量
+// 和寬度成正比，所以用固定的寬度預算換算。
+int recognitionBatchSize(int bucketWidth, int maxBatch);
+
 // CTC 貪婪解碼：每個時間點取機率最大的類別，合併連續重複的類別，再去掉 blank（索引 0）。
 // probabilities 是 timeSteps × characters.size() 的機率。
 Recognition ctcGreedyDecode(std::span<const float> probabilities, int timeSteps,
@@ -55,8 +59,9 @@ public:
     Recognition recognize(const cv::Mat& crop);
 
     // 一次辨識多張：寬度相近的會補齊到同一個級距併成一批。回傳的順序和 crops 相同。
-    // maxBatch 是一批最多幾張（太大反而會因為補 0 而浪費）。
-    std::vector<Recognition> recognize(std::span<const cv::Mat> crops, int maxBatch = 8);
+    // 先分組再切批次，所以批次大小不影響補 0 的量；一批的張數由寬度預算決定
+    // （窄的圖一次可以送很多張，寬的圖少一點），maxBatch 是上限。
+    std::vector<Recognition> recognize(std::span<const cv::Mat> crops, int maxBatch = 64);
 
     const RecognitionModelConfig& config() const { return config_; }
 

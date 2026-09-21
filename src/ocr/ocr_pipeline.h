@@ -33,7 +33,7 @@ struct OcrOptions {
     // 一次辨識多行（DirectML 上逐行呼叫的固定成本很高，見 text_recognizer.h）。
     // 關掉時逐行辨識，結果和 PaddleOCR 官方版完全一致，用來做一致性檢查。
     bool batchRecognition = true;
-    int maxBatch = 8;
+    int maxBatch = 64;  // 一批最多幾行（實際張數由寬度預算決定，見 text_recognizer.h）
 };
 
 class OcrPipeline {
@@ -46,6 +46,9 @@ public:
     std::vector<TextLine> run(const cv::Mat& bgr, OcrTimings* timings = nullptr);
 
     const TextRecognizer& recognizer() const { return recognizer_; }
+
+    // 實際使用的裝置（Auto 會解析成 Cpu 或 DirectML）
+    Device device() const { return detector_.device(); }
 
 private:
     OcrOptions options_;

@@ -115,6 +115,20 @@ TEST(RecognitionWidthBucketTest, IsNeverSmallerThanTheRequestedWidth) {
     }
 }
 
+TEST(RecognitionBatchSizeTest, SendsMoreNarrowCropsThanWideOnes) {
+    // 一批的記憶體和寬度成正比，所以窄的圖一次可以送很多張
+    EXPECT_GT(recognitionBatchSize(160, 64), recognitionBatchSize(1600, 64));
+    EXPECT_LE(recognitionBatchSize(160, 64), 64);
+    EXPECT_GE(recognitionBatchSize(3200, 64), 1);
+}
+
+TEST(RecognitionBatchSizeTest, RespectsTheUpperBoundAndNeverReturnsZero) {
+    EXPECT_EQ(recognitionBatchSize(160, 4), 4);
+    EXPECT_EQ(recognitionBatchSize(3200, 1), 1);
+    EXPECT_GE(recognitionBatchSize(3200, 64), 1);
+    EXPECT_THROW(recognitionBatchSize(0, 8), std::invalid_argument);
+}
+
 TEST(CropTextRegionTest, DegenerateBoxGivesEmptyCrop) {
     cv::Mat image(50, 50, CV_8UC3, cv::Scalar(0, 0, 0));
     const Quad box = {cv::Point(10, 10), cv::Point(10, 10), cv::Point(10, 10), cv::Point(10, 10)};

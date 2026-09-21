@@ -18,6 +18,9 @@ constexpr int kMaxInputWidth = 3200;
 // 級距之間又不能差太多，否則補的 0 太多、浪費算力。
 constexpr std::array<int, 8> kWidthBuckets{160, 256, 384, 512, 768, 1024, 1600, kMaxInputWidth};
 
+// 一批的寬度總和上限（一批的記憶體 ≈ 張數 × 3 × 48 × 寬度 × 4 bytes，32768 約 19 MB）
+constexpr int kBatchWidthBudget = 32768;
+
 // numpy 的 np.linalg.norm（float32）：在 float32 下計算
 float distance(const cv::Point2f& a, const cv::Point2f& b) {
     const float dx = a.x - b.x;
@@ -47,6 +50,13 @@ void writeInput(const cv::Mat& crop, int imageHeight, const RecognitionWidth& wi
 }
 
 }  // namespace
+
+int recognitionBatchSize(int bucketWidth, int maxBatch) {
+    if (bucketWidth <= 0) {
+        throw std::invalid_argument("recognitionBatchSize: empty width");
+    }
+    return std::clamp(kBatchWidthBudget / bucketWidth, 1, std::max(1, maxBatch));
+}
 
 int recognitionWidthBucket(int paddedWidth) {
     for (const int bucket : kWidthBuckets) {
@@ -179,9 +189,9 @@ std::vector<Recognition> TextRecognizer::recognize(std::span<const cv::Mat> crop
     std::vector<float> input;
     for (std::size_t start = 0; start < items.size();) {
         const int bucket = items[start].bucket;
+        const auto perBatch = static_cast<std::size_t>(recognitionBatchSize(bucket, maxBatch));
         std::size_t end = start;
-        while (end < items.size() && items[end].bucket == bucket &&
-               end - start < static_cast<std::size_t>(std::max(1, maxBatch))) {
+        while (end < items.size() && items[end].bucket == bucket && end - start < perBatch) {
             ++end;
         }
         const std::size_t count = end - start;

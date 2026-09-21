@@ -13,6 +13,7 @@ namespace tmw::ocr {
 enum class Device {
     Cpu,
     DirectML,  // GPU（DirectX 12），第一張顯示卡
+    Auto,      // 先試 DirectML，建立失敗（沒有相容的顯示卡、驅動有問題）就改用 CPU
 };
 
 std::string_view deviceName(Device device);
@@ -32,6 +33,7 @@ public:
     OnnxModel(const OnnxModel&) = delete;
     OnnxModel& operator=(const OnnxModel&) = delete;
 
+    // 實際使用的裝置（Auto 會解析成 Cpu 或 DirectML）
     Device device() const;
 
     // 輸入一個 float 張量（例如 NCHW），回傳輸出張量。失敗時丟出 std::runtime_error。

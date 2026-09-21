@@ -44,7 +44,7 @@ struct Arguments {
     Device device = Device::Cpu;
     int repeat = 1;
     bool batchRecognition = true;  // --no-batch：逐行辨識（和官方版一致，用來比對差異）
-    int maxBatch = 8;
+    int maxBatch = 64;
     int fixedWidth = 0;  // --fixed-input W H：偵測固定用這個輸入大小
     int fixedHeight = 0;
     std::filesystem::path output;
@@ -54,7 +54,7 @@ struct Arguments {
 
 void printUsage() {
     std::fputs(
-        "usage: tmw_ocr_cli --det <dir> --rec <dir> [--device cpu|dml] [--repeat N]\n"
+        "usage: tmw_ocr_cli --det <dir> --rec <dir> [--device cpu|dml|auto] [--repeat N]\n"
         "                   [--no-batch] [--max-batch N] [--fixed-input W H]\n"
         "                   --output <result.json> <image> [<image> ...]\n"
         "       tmw_ocr_cli --rec <dir> --dump-characters <characters.json>\n",
@@ -76,6 +76,8 @@ std::optional<Arguments> parseArguments(int argc, wchar_t** argv) {
                 args.device = Device::Cpu;
             } else if (value == L"dml") {
                 args.device = Device::DirectML;
+            } else if (value == L"auto") {
+                args.device = Device::Auto;
             } else {
                 return std::nullopt;
             }
@@ -178,8 +180,9 @@ int run(const Arguments& args) {
     const double loadMs =
         std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - loadStart)
             .count();
-    std::printf("device=%s models loaded in %.0f ms\n", tmw::ocr::deviceName(args.device).data(),
-                loadMs);
+    // --device auto 時，印出實際選到的裝置
+    std::printf("device=%s models loaded in %.0f ms\n",
+                tmw::ocr::deviceName(pipeline.device()).data(), loadMs);
 
     nlohmann::json images = nlohmann::json::array();
     for (const std::filesystem::path& path : args.images) {

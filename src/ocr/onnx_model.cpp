@@ -27,7 +27,15 @@ std::string displayPath(const std::filesystem::path& path) {
 }  // namespace
 
 std::string_view deviceName(Device device) {
-    return device == Device::DirectML ? "dml" : "cpu";
+    switch (device) {
+        case Device::DirectML:
+            return "dml";
+        case Device::Auto:
+            return "auto";
+        case Device::Cpu:
+            break;
+    }
+    return "cpu";
 }
 
 struct OnnxModel::Impl {
@@ -37,18 +45,36 @@ struct OnnxModel::Impl {
     std::string outputName;
 };
 
+namespace {
+
+// Auto：先試 DirectML。建立工作階段就會用到顯示卡和驅動，失敗表示這台電腦跑不了，改用 CPU。
+Ort::Session createSession(const std::filesystem::path& onnxFile, Device device) {
+    Ort::SessionOptions options;
+    if (device == Device::DirectML) {
+        // DirectML 的限制：不能用 memory pattern，也不能平行執行（見 design.md 4.4）
+        options.DisableMemPattern();
+        options.SetExecutionMode(ORT_SEQUENTIAL);
+        Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_DML(options, 0));
+    }
+    return Ort::Session(environment(), onnxFile.c_str(), options);
+}
+
+}  // namespace
+
 OnnxModel::OnnxModel(const std::filesystem::path& onnxFile, Device device)
     : impl_(std::make_unique<Impl>()) {
-    impl_->device = device;
+    impl_->device = device == Device::Auto ? Device::DirectML : device;
     try {
-        Ort::SessionOptions options;
-        if (device == Device::DirectML) {
-            // DirectML 的限制：不能用 memory pattern，也不能平行執行（見 design.md 4.4）
-            options.DisableMemPattern();
-            options.SetExecutionMode(ORT_SEQUENTIAL);
-            Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_DML(options, 0));
+        try {
+            impl_->session = createSession(onnxFile, impl_->device);
+        } catch (const Ort::Exception&) {
+            if (device != Device::Auto) {
+                throw;
+            }
+            // 沒有相容的顯示卡或驅動有問題：改用 CPU（design.md 4.4）
+            impl_->device = Device::Cpu;
+            impl_->session = createSession(onnxFile, Device::Cpu);
         }
-        impl_->session = Ort::Session(environment(), onnxFile.c_str(), options);
 
         if (impl_->session.GetInputCount() != 1 || impl_->session.GetOutputCount() != 1) {
             throw std::runtime_error("expected a model with one input and one output");

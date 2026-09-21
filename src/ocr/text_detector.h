@@ -87,6 +87,9 @@ public:
     // 前處理：縮放並正規化成 NCHW 的 float 資料。
     std::vector<float> preprocess(const cv::Mat& bgr, cv::Size& inputSize) const;
 
+    // 實際使用的裝置（Auto 會解析成 Cpu 或 DirectML）
+    Device device() const { return model_.device(); }
+
 private:
     DetectionModelConfig config_;
     DetectionOptions options_;
