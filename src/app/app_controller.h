@@ -7,10 +7,16 @@
 
 #include "core/auto_trigger.h"
 #include "core/clock.h"
+#include "core/history.h"
+#include "core/pipeline.h"
+#include "core/pipeline_worker.h"
+#include "core/settings.h"
+#include "ocr/ocr_service.h"
 #include "platform/capture_frame_source.h"
 #include "platform/lens_window.h"
 #include "platform/screen_capture.h"
 #include "platform/tray_icon.h"
+#include "ui/result_window.h"
 
 namespace tmw::app {
 
@@ -18,8 +24,10 @@ namespace tmw::app {
 // 並把透鏡、螢幕擷取和自動觸發串起來。
 class AppController {
 public:
-    // dataDirectory：程式寫出的檔案（目前是擷取的 PNG）要放在哪裡
-    AppController(HINSTANCE instance, std::filesystem::path dataDirectory);
+    // dataDirectory：程式寫出的檔案（擷取的 PNG、記錄）要放在哪裡
+    // settingsPath：設定檔的位置，結果視窗的位置和字級會存回去
+    AppController(HINSTANCE instance, std::filesystem::path dataDirectory,
+                  std::filesystem::path settingsPath, core::Settings settings);
     ~AppController();
 
     AppController(const AppController&) = delete;
@@ -37,8 +45,17 @@ private:
     void showTrayMenu(POINT anchor);
     void setLensVisible(bool visible);
 
-    // 畫面穩定後的「處理」。M0-07 是把透鏡範圍存成 PNG；M1 會換成 OCR 和翻譯。
+    // 畫面穩定後的「處理」：擷取透鏡底下的畫面，交給處理管線。
     void process(const core::ProcessRequest& request);
+
+    // 處理管線的結果回到 UI 執行緒之後
+    void onPipelineResult(const core::PipelineResult& result);
+
+    // 建立 OCR、翻譯服務和處理管線。模型或設定有問題時只記錄，程式照常執行（只是不會翻譯）。
+    void setUpPipeline();
+    void showResultWindow();
+    void setPaused(bool paused);
+    void saveSettings();
 
     // 把透鏡範圍擷取下來存成 PNG（開發用的驗證工具）
     bool saveLensCapture();
@@ -52,14 +69,26 @@ private:
     UINT taskbarCreatedMessage_ = 0;
     UINT showLensMessage_ = 0;
     bool captureHotkeyRegistered_ = false;
-    bool autoSave_ = true;
+    bool translateHotkeyRegistered_ = false;
+    bool autoSave_ = false;
     bool flashing_ = false;
+    bool paused_ = false;
+    std::filesystem::path settingsPath_;
+    core::Settings settings_;
 
     // 宣告順序就是建構順序；解構時反過來，透鏡最先消失，不會再觸發回呼
     core::SteadyClock clock_;
     std::unique_ptr<platform::ScreenCapture> capture_;
     std::unique_ptr<platform::CaptureFrameSource> frameSource_;
     std::unique_ptr<core::AutoTrigger> trigger_;
+    // 翻譯：OCR 和引擎鏈建立失敗時這些會是空的，程式照常執行
+    std::unique_ptr<ocr::OcrService> ocr_;
+    std::shared_ptr<core::TranslationService> translation_;
+    std::unique_ptr<core::Pipeline> pipeline_;
+    std::unique_ptr<core::PipelineWorker> worker_;
+    core::History history_;
+    std::unique_ptr<ui::ResultWindow> resultWindow_;
+
     std::unique_ptr<platform::TrayIcon> tray_;
     std::unique_ptr<platform::LensWindow> lens_;
 };

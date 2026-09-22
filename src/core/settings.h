@@ -13,6 +13,8 @@
 #include <string_view>
 #include <vector>
 
+#include "core/geometry.h"
+
 namespace tmw::core {
 
 // 一個翻譯引擎的設定。金鑰以加密後的形式存放（見 platform/secret.h），這裡只當成字串搬運。
@@ -29,6 +31,9 @@ struct ResultWindowSettings {
     double fontScale = 1.0;  // 0.5～3.0
     bool alwaysOnTop = false;
     std::string theme = "system";  // "system"、"light"、"dark"
+    int fontPoints = 10;           // 字級（點）
+    // 上次的位置和大小。空的代表還沒記過，由視窗自己決定。
+    RectI geometry;
 
     friend bool operator==(const ResultWindowSettings&, const ResultWindowSettings&) = default;
 };

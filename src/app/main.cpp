@@ -3,6 +3,7 @@
 #include <shellapi.h>
 #include <winrt/base.h>
 
+#include <QApplication>
 #include <exception>
 #include <filesystem>
 #include <string>
@@ -79,7 +80,12 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
         // 螢幕擷取（WinRT）和 PNG（WIC）都需要 COM。UI 執行緒使用單一執行緒 apartment。
         winrt::init_apartment(winrt::apartment_type::single_threaded);
 
-        tmw::app::AppController controller(instance, dataDirectory);
+        // Qt 的事件迴圈同時處理 Win32 的訊息，所以 QApplication 要先建立起來
+        int argc = 0;
+        const QApplication application(argc, nullptr);
+
+        tmw::app::AppController controller(instance, dataDirectory, settingsPath,
+                                           settings.settings);
         const int code = controller.run();
         tmw::platform::logInfo("結束");
         tmw::platform::shutdownLogging();

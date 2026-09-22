@@ -29,4 +29,38 @@ std::filesystem::path capturesDirectory(const std::filesystem::path& dataDirecto
     return path;
 }
 
+std::filesystem::path executableDirectory() {
+    std::wstring buffer(MAX_PATH, L'\0');
+    while (true) {
+        const DWORD length =
+            GetModuleFileNameW(nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
+        if (length == 0) {
+            return {};
+        }
+        if (length < buffer.size()) {
+            buffer.resize(length);
+            break;
+        }
+        buffer.resize(buffer.size() * 2);
+    }
+    return std::filesystem::path(buffer).parent_path();
+}
+
+std::filesystem::path findModelsDirectory() {
+    std::filesystem::path here = executableDirectory();
+    // 往上找幾層：開發時執行檔在
+    // build\<preset>in\<config>\，模型在倉庫根目錄
+    for (int level = 0; level < 6 && !here.empty(); ++level) {
+        const std::filesystem::path candidate = here / L"models";
+        if (std::filesystem::exists(candidate / L"PP-OCRv6_medium_det")) {
+            return candidate;
+        }
+        if (!here.has_parent_path() || here.parent_path() == here) {
+            break;
+        }
+        here = here.parent_path();
+    }
+    return {};
+}
+
 }  // namespace tmw::platform

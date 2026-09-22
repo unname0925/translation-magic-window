@@ -45,7 +45,18 @@ ResultWindowSettings readResultWindow(const json& object) {
     readNumber(object, "fontScale", window.fontScale);
     read(object, "alwaysOnTop", window.alwaysOnTop);
     read(object, "theme", window.theme);
+    readInt(object, "fontPoints", window.fontPoints);
+    if (const auto it = object.find("geometry"); it != object.end() && it->is_object()) {
+        readInt(*it, "left", window.geometry.left);
+        readInt(*it, "top", window.geometry.top);
+        readInt(*it, "right", window.geometry.right);
+        readInt(*it, "bottom", window.geometry.bottom);
+        if (window.geometry.empty()) {
+            window.geometry = RectI{};  // 壞掉的矩形一律當成「還沒記過」
+        }
+    }
     window.fontScale = std::clamp(window.fontScale, 0.5, 3.0);
+    window.fontPoints = std::clamp(window.fontPoints, 7, 28);
     if (window.theme != "system" && window.theme != "light" && window.theme != "dark") {
         window.theme = ResultWindowSettings{}.theme;
     }
@@ -116,7 +127,13 @@ std::string serializeSettings(const Settings& settings, int schemaVersion) {
         {"resultWindow",
          {{"fontScale", settings.resultWindow.fontScale},
           {"alwaysOnTop", settings.resultWindow.alwaysOnTop},
-          {"theme", settings.resultWindow.theme}}},
+          {"theme", settings.resultWindow.theme},
+          {"fontPoints", settings.resultWindow.fontPoints},
+          {"geometry",
+           {{"left", settings.resultWindow.geometry.left},
+            {"top", settings.resultWindow.geometry.top},
+            {"right", settings.resultWindow.geometry.right},
+            {"bottom", settings.resultWindow.geometry.bottom}}}}},
     };
     return document.dump(2) + "\n";
 }

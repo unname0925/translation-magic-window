@@ -20,6 +20,9 @@ enum Command : UINT {
     kCommandCapture = 3,
     kCommandOpenCaptures = 4,
     kCommandToggleAutoSave = 5,
+    kCommandOpenResults = 6,
+    kCommandTogglePause = 7,
+    kCommandTranslateNow = 8,
 };
 
 }  // namespace tmw::app

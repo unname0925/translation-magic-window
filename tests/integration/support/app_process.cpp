@@ -117,6 +117,50 @@ std::optional<DWORD> AppProcess::waitForExit(std::chrono::milliseconds timeout) 
     return exitCode;
 }
 
+namespace {
+
+struct FindTitleQuery {
+    DWORD processId = 0;
+    const wchar_t* title = nullptr;
+    HWND result = nullptr;
+};
+
+BOOL CALLBACK findTitleCallback(HWND hwnd, LPARAM lParam) {
+    auto* query = reinterpret_cast<FindTitleQuery*>(lParam);
+    DWORD processId = 0;
+    GetWindowThreadProcessId(hwnd, &processId);
+    if (processId != query->processId || IsWindowVisible(hwnd) == FALSE) {
+        return TRUE;
+    }
+    wchar_t title[256]{};
+    GetWindowTextW(hwnd, title, static_cast<int>(std::size(title)));
+    if (wcscmp(title, query->title) != 0) {
+        return TRUE;
+    }
+    query->result = hwnd;
+    return FALSE;
+}
+
+}  // namespace
+
+HWND AppProcess::findWindowByTitle(const wchar_t* title) const {
+    FindTitleQuery query{info_.dwProcessId, title, nullptr};
+    EnumWindows(&findTitleCallback, reinterpret_cast<LPARAM>(&query));
+    return query.result;
+}
+
+HWND AppProcess::waitForWindowByTitle(const wchar_t* title,
+                                      std::chrono::milliseconds timeout) const {
+    HWND hwnd = nullptr;
+    waitUntil(
+        [&] {
+            hwnd = findWindowByTitle(title);
+            return hwnd != nullptr || hasExited();
+        },
+        timeout);
+    return hwnd;
+}
+
 HWND AppProcess::findWindow(const wchar_t* className) const {
     FindWindowQuery query{info_.dwProcessId, className};
     EnumWindows(&findWindowCallback, reinterpret_cast<LPARAM>(&query));

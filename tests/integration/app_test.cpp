@@ -10,6 +10,7 @@
 
 #include <chrono>
 #include <filesystem>
+#include <fstream>
 #include <memory>
 #include <optional>
 #include <sstream>
@@ -140,10 +141,61 @@ protected:
         return target == lens_ || target == pattern.hwnd();
     }
 
+    // 主程式的記錄檔。測試失敗時印出來，才看得到它到底做了什麼。
+    std::string appLog() const {
+        const std::filesystem::path path =
+            dataDirectory_ / L"logs" / L"translation-magic-window.log";
+        std::ifstream file(path, std::ios::binary);
+        if (!file) {
+            return "（沒有記錄檔：" + path.string() + "）";
+        }
+        std::ostringstream buffer;
+        buffer << file.rdbuf();
+        return buffer.str();
+    }
+
     std::filesystem::path dataDirectory_;
     std::unique_ptr<AppProcess> app_;
     HWND lens_ = nullptr;
 };
+
+// M1-12：整條線都接起來了嗎？在透鏡底下放英文文字，按「立即翻譯」，
+// 結果視窗要出現並且有內容。不檢查譯文的內容：翻譯品質由 IT-08 和引擎的契約測試負責，
+// 這裡只確認擷取 → OCR → 翻譯 → 結果視窗這條路沒有斷掉（沒有網路時會是一張標示失敗的卡片）。
+TEST_F(AppTest, TranslateNowOpensTheResultWindowWithACard) {
+    TestWindow::Options options;
+    options.mode = TestWindow::Mode::Text;
+    options.lines = {L"The quick brown fox", L"jumps over the lazy dog"};
+    // 測試視窗要和透鏡對齊，文字才會落在透鏡「裡面」：邊框和把手不算在擷取範圍內，
+    // 所以留的邊要比它們大一些
+    options.margin = 48;
+    TestWindow text(windowRectOf(lens_), options);
+    SetWindowPos(text.hwnd(), lens_, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+    test::waitForComposition();
+
+    // 失敗時要看得到主程式究竟擷取到什麼，所以請它把畫面也存成 PNG
+    ASSERT_TRUE(app_->postCommand(app::kCommandToggleAutoSave));
+    ASSERT_TRUE(app_->postCommand(app::kCommandTranslateNow));
+    const HWND results = app_->waitForWindowByTitle(L"翻譯結果", std::chrono::seconds(60));
+    if (results == nullptr) {
+        // 保留擷取的畫面，方便事後查看
+        std::error_code ignored;
+        std::filesystem::copy(dataDirectory_ / L"captures",
+                              std::filesystem::temp_directory_path() / L"tmw-failed-captures",
+                              std::filesystem::copy_options::recursive |
+                                  std::filesystem::copy_options::overwrite_existing,
+                              ignored);
+    }
+    ASSERT_NE(results, nullptr) << "結果視窗一直沒有出現。主程式的記錄：\n" << appLog();
+    EXPECT_TRUE(IsWindowVisible(results));
+}
+
+// M1-12：系統匣選單的「開啟結果視窗」
+TEST_F(AppTest, OpenResultsCommandShowsTheWindow) {
+    ASSERT_EQ(app_->findWindowByTitle(L"翻譯結果"), nullptr) << "一開始不該顯示";
+    ASSERT_TRUE(app_->postCommand(app::kCommandOpenResults));
+    EXPECT_NE(app_->waitForWindowByTitle(L"翻譯結果", std::chrono::seconds(10)), nullptr);
+}
 
 // IT-01：把真正的透鏡放在測試圖案上，擷取整個透鏡範圍（含邊框和把手），
 // 結果必須和圖案完全相同，差 1 個色階都不行（內側抓取區的 alpha 只有 1/255）。
@@ -252,6 +304,8 @@ TEST_F(AppTest, DraggingCornerResizesLens) {
 // （可見邊框的內緣）的內容，和測試圖案逐像素相同。
 // 同時驗證了：--data-dir、畫面變化後自動觸發、擷取範圍的座標、透鏡和游標都不在擷取結果中。
 TEST_F(AppTest, AutoSavedCaptureMatchesContentUnderLens) {
+    // 自動存 PNG 預設是關的（那是開發用的工具），先從選單打開
+    ASSERT_TRUE(app_->postCommand(app::kCommandToggleAutoSave));
     const auto pattern = placePatternUnderLens();
     const LensGeometry lens = lensGeometry();
     const core::RectI content = lens.toScreen(lens.layout.content);

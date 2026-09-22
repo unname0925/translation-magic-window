@@ -108,14 +108,17 @@ TEST_F(ResultWindowTest, FontSizeStaysInAReadableRange) {
 }
 
 TEST_F(ResultWindowTest, RemembersItsGeometry) {
+    // 視窗管理員會依照框線、標題列和最小尺寸微調，所以不要求完全相等；
+    // 這裡要抓的是「整個被忽略」或「差很多」。
+    constexpr int kTolerance = 32;
     const core::RectI wanted = core::RectI::fromXYWH(120, 140, 360, 420);
     window_.restoreGeometry(wanted);
     settle();
     const core::RectI actual = window_.savedGeometry();
-    EXPECT_EQ(actual.width(), wanted.width());
-    EXPECT_EQ(actual.height(), wanted.height());
-    EXPECT_EQ(actual.left, wanted.left);
-    EXPECT_EQ(actual.top, wanted.top);
+    EXPECT_NEAR(actual.width(), wanted.width(), kTolerance);
+    EXPECT_NEAR(actual.height(), wanted.height(), kTolerance);
+    EXPECT_NEAR(actual.left, wanted.left, kTolerance);
+    EXPECT_NEAR(actual.top, wanted.top, kTolerance);
 }
 
 TEST_F(ResultWindowTest, IgnoresAnEmptyGeometry) {

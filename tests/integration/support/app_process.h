@@ -39,6 +39,10 @@ public:
     // 等到視窗出現。逾時或程序提早結束時回傳 nullptr。
     HWND waitForWindow(const wchar_t* className, std::chrono::milliseconds timeout) const;
 
+    // 這個程序中標題為 title 的可見視窗（Qt 的視窗類別名稱會隨版本改變，所以用標題找）。
+    HWND findWindowByTitle(const wchar_t* title) const;
+    HWND waitForWindowByTitle(const wchar_t* title, std::chrono::milliseconds timeout) const;
+
     // 主控視窗是否在時限內處理了一則訊息，也就是主程式有在處理訊息、不是卡住的。
     // （不用 WaitForInputIdle：主程式初始化時 COM 和系統匣就會處理訊息，它會太早回傳）
     bool isResponsive(std::chrono::milliseconds timeout) const;

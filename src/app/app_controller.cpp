@@ -2,6 +2,7 @@
 
 #include <windowsx.h>
 
+#include <QApplication>
 #include <chrono>
 #include <exception>
 #include <optional>
@@ -9,8 +10,12 @@
 #include <utility>
 
 #include "app/app_identity.h"
+#include "app/translation_setup.h"
+#include "core/opencc_converter.h"
 #include "platform/app_paths.h"
+#include "platform/logging.h"
 #include "platform/png_file.h"
+#include "platform/settings_file.h"
 #include "platform/win_error.h"
 
 namespace tmw::app {
@@ -20,6 +25,7 @@ constexpr wchar_t kShowLensMessageName[] = L"TranslationMagicWindow.ShowLens";
 constexpr UINT kTrayCallbackMessage = WM_APP + 1;
 
 constexpr int kHotkeyCapture = 1;
+constexpr int kHotkeyTranslate = 2;
 constexpr UINT_PTR kTimerRestoreAccent = 1;
 constexpr UINT_PTR kTimerTick = 2;
 constexpr UINT kFlashMilliseconds = 400;
@@ -61,8 +67,11 @@ std::wstring timestampedCaptureName() {
 
 }  // namespace
 
-AppController::AppController(HINSTANCE instance, std::filesystem::path dataDirectory)
-    : dataDirectory_(std::move(dataDirectory)) {
+AppController::AppController(HINSTANCE instance, std::filesystem::path dataDirectory,
+                             std::filesystem::path settingsPath, core::Settings settings)
+    : dataDirectory_(std::move(dataDirectory)),
+      settingsPath_(std::move(settingsPath)),
+      settings_(std::move(settings)) {
     taskbarCreatedMessage_ = RegisterWindowMessageW(L"TaskbarCreated");
     showLensMessage_ = RegisterWindowMessageW(kShowLensMessageName);
 
@@ -109,10 +118,22 @@ AppController::AppController(HINSTANCE instance, std::filesystem::path dataDirec
                                                      LoadIconW(nullptr, IDI_APPLICATION),
                                                      L"Translation Magic Window");
 
-        // 快捷鍵被其他程式佔用時不算錯誤，系統匣選單一樣可以擷取
+        // 快捷鍵被其他程式佔用時不算錯誤，系統匣選單一樣可以操作
         captureHotkeyRegistered_ =
             RegisterHotKey(hwnd_, kHotkeyCapture, MOD_CONTROL | MOD_ALT | MOD_SHIFT | MOD_NOREPEAT,
                            'S') != FALSE;
+        translateHotkeyRegistered_ =
+            RegisterHotKey(hwnd_, kHotkeyTranslate,
+                           MOD_CONTROL | MOD_ALT | MOD_SHIFT | MOD_NOREPEAT, 'T') != FALSE;
+
+        setUpPipeline();
+
+        resultWindow_ = std::make_unique<ui::ResultWindow>();
+        resultWindow_->restoreGeometry(settings_.resultWindow.geometry);
+        resultWindow_->setFontPointSize(settings_.resultWindow.fontPoints);
+        resultWindow_->setAlwaysOnTop(settings_.resultWindow.alwaysOnTop);
+        QObject::connect(resultWindow_.get(), &ui::ResultWindow::settingsChanged,
+                         [this] { saveSettings(); });
 
         SetTimer(hwnd_, kTimerTick, kTickMilliseconds, nullptr);
     } catch (...) {
@@ -128,12 +149,9 @@ AppController::~AppController() {
 }
 
 int AppController::run() {
-    MSG message{};
-    while (GetMessageW(&message, nullptr, 0, 0) > 0) {
-        TranslateMessage(&message);
-        DispatchMessageW(&message);
-    }
-    return static_cast<int>(message.wParam);
+    // Qt 的事件迴圈同時會處理 Win32 的訊息（透鏡視窗和這個主控視窗都靠它），
+    // 所以不需要自己寫訊息迴圈（design.md 3.3：UI 執行緒同時跑兩者）。
+    return QApplication::exec();
 }
 
 void AppController::notifyRunningInstance() {
@@ -211,6 +229,17 @@ LRESULT AppController::handleMessage(UINT message, WPARAM wParam, LPARAM lParam)
                 case kCommandToggleAutoSave:
                     autoSave_ = !autoSave_;
                     break;
+                case kCommandOpenResults:
+                    showResultWindow();
+                    break;
+                case kCommandTogglePause:
+                    setPaused(!paused_);
+                    break;
+                case kCommandTranslateNow:
+                    if (lens_->isVisible() && !paused_) {
+                        trigger_->manualTrigger();
+                    }
+                    break;
                 case kCommandExit:
                     DestroyWindow(hwnd_);
                     break;
@@ -221,6 +250,8 @@ LRESULT AppController::handleMessage(UINT message, WPARAM wParam, LPARAM lParam)
         case WM_HOTKEY:
             if (wParam == kHotkeyCapture && lens_->isVisible()) {
                 flashLens(saveLensCapture() ? kSuccessAccent : kErrorAccent);
+            } else if (wParam == kHotkeyTranslate && lens_->isVisible() && !paused_) {
+                trigger_->manualTrigger();
             }
             return 0;
         case WM_TIMER:
@@ -270,6 +301,11 @@ void AppController::showTrayMenu(POINT anchor) {
     }
     AppendMenuW(menu, MF_STRING | (lens_->isVisible() ? MF_CHECKED : MF_UNCHECKED),
                 kCommandToggleLens, L"顯示透鏡");
+    AppendMenuW(menu, MF_STRING, kCommandOpenResults, L"開啟結果視窗");
+    AppendMenuW(menu, MF_STRING, kCommandTranslateNow,
+                translateHotkeyRegistered_ ? L"立即翻譯	Ctrl+Alt+Shift+T" : L"立即翻譯");
+    AppendMenuW(menu, MF_STRING | (paused_ ? MF_CHECKED : MF_UNCHECKED), kCommandTogglePause,
+                L"暫停");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu, MF_STRING | (autoSave_ ? MF_CHECKED : MF_UNCHECKED), kCommandToggleAutoSave,
                 L"畫面穩定後自動存成 PNG（測試用）");
@@ -298,8 +334,128 @@ void AppController::process(const core::ProcessRequest& request) {
     if (autoSave_ && !saveLensCapture()) {
         flashLens(kErrorAccent);
     }
-    // 目前的處理是同步的，做完馬上回報。M1 改成非同步後，過時的結果會在這裡被丟棄。
-    trigger_->onProcessingFinished(request.generation);
+    const platform::LogContext context{.lens = 1, .sequence = request.generation};
+    if (worker_ == nullptr || !lens_->isVisible()) {
+        platform::log(platform::LogLevel::Info, context,
+                      worker_ == nullptr ? "沒有可用的處理管線，跳過" : "透鏡沒顯示，跳過");
+        trigger_->onProcessingFinished(request.generation);
+        return;
+    }
+    const core::RectI region = lens_->contentScreenRect();
+    std::optional<core::ImageBgra> frame = capture_->readRegion(region);
+    if (!frame) {
+        platform::log(platform::LogLevel::Warn, context, "擷取透鏡範圍失敗，這次不處理");
+        trigger_->onProcessingFinished(request.generation);
+        return;
+    }
+    core::PipelineJob job;
+    job.generation = request.generation;
+    job.lens = 1;
+    job.region = region;
+    job.frame = std::move(*frame);
+    job.manual = request.manual;
+    platform::log(platform::LogLevel::Info, context,
+                  std::string(request.manual ? "手動" : "自動") + "觸發，開始處理");
+    worker_->submit(std::move(job));
+}
+
+void AppController::setUpPipeline() {
+    const std::filesystem::path models = platform::findModelsDirectory();
+    if (models.empty()) {
+        platform::logWarn(
+            "找不到 OCR 模型的資料夾，這次執行不會翻譯"
+            "（請把 models 放在執行檔旁邊，或執行 tools/fetch_models）");
+        return;
+    }
+    try {
+        ocr_ = std::make_unique<ocr::OcrService>(models, ocr::TextLanguage::JapaneseOrEnglish,
+                                                 ocr::Device::Auto);
+    } catch (const std::exception& error) {
+        platform::logError(std::string("OCR 模型載入失敗，這次執行不會翻譯：") + error.what());
+        return;
+    }
+    platform::logInfo(std::string("OCR 裝置：") + std::string(ocr::deviceName(ocr_->device())));
+
+    const std::filesystem::path opencc =
+        core::OpenccConverter::defaultConfig(platform::executableDirectory() / L"opencc");
+    TranslationSetup setup = makeTranslationService(settings_, clock_, opencc);
+    for (const std::string& problem : setup.problems) {
+        platform::logWarn(problem);
+    }
+    translation_ = std::move(setup.service);
+    std::string engines;
+    for (const std::string& id : setup.engineIds) {
+        engines += engines.empty() ? "" : " → ";
+        engines += id;
+    }
+    platform::logInfo("翻譯引擎鏈：" +
+                      (engines.empty() ? std::string("（沒有可用的引擎）") : engines));
+
+    pipeline_ = std::make_unique<core::Pipeline>(*ocr_, *translation_);
+    worker_ =
+        std::make_unique<core::PipelineWorker>(*pipeline_, [this](core::PipelineResult result) {
+            // 這裡是工作執行緒。回到 UI 執行緒才能碰透鏡和結果視窗（design.md 3.3）。
+            QMetaObject::invokeMethod(
+                QApplication::instance(),
+                [this, moved = std::move(result)] { onPipelineResult(moved); },
+                Qt::QueuedConnection);
+        });
+}
+
+void AppController::onPipelineResult(const core::PipelineResult& result) {
+    const platform::LogContext context{.lens = result.lens, .sequence = result.generation};
+    if (!trigger_->onProcessingFinished(result.generation)) {
+        platform::log(platform::LogLevel::Info, context, "結果已經過時，丟棄");
+        return;
+    }
+    if (!result.error.empty()) {
+        platform::log(platform::LogLevel::Warn, context, "翻譯失敗：" + result.error);
+    }
+    platform::log(platform::LogLevel::Info, context,
+                  "辨識到 " + std::to_string(result.groups.size()) + " 組，共 " +
+                      std::to_string(static_cast<int>(result.timings.totalMs())) + " ms");
+    if (result.groups.empty() || result.unchanged) {
+        return;
+    }
+    const std::optional<core::HistoryCard> card =
+        history_.add(result, std::chrono::system_clock::now());
+    if (!card) {
+        return;
+    }
+    for (const core::HistoryGroup& group : card->groups) {
+        platform::log(
+            platform::LogLevel::Info, context,
+            platform::sensitive(group.source) + " → " + platform::sensitive(group.translation));
+    }
+    resultWindow_->addCard(*card);
+    showResultWindow();
+}
+
+void AppController::showResultWindow() {
+    if (resultWindow_ == nullptr) {
+        return;
+    }
+    resultWindow_->show();
+    resultWindow_->raise();
+}
+
+void AppController::setPaused(bool paused) {
+    paused_ = paused;
+    trigger_->setEnabled(!paused_);
+    if (paused_ && worker_ != nullptr) {
+        worker_->cancel(1);
+    }
+    updateAccent();
+}
+
+void AppController::saveSettings() {
+    if (resultWindow_ == nullptr || settingsPath_.empty()) {
+        return;
+    }
+    settings_.resultWindow.geometry = resultWindow_->savedGeometry();
+    settings_.resultWindow.fontPoints = resultWindow_->fontPointSize();
+    settings_.resultWindow.alwaysOnTop = resultWindow_->alwaysOnTop();
+    platform::saveSettings(settingsPath_, settings_);
 }
 
 bool AppController::saveLensCapture() {
