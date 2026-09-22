@@ -6,6 +6,7 @@
 #include <chrono>
 #include <cstdint>
 #include <functional>
+#include <string>
 #include <vector>
 
 #include "core/geometry.h"
@@ -22,7 +23,7 @@ namespace tmw::test {
 // 點擊不會讓它變成前景視窗，測試執行時不會搶走你的鍵盤焦點。
 class TestWindow {
 public:
-    enum class Mode { Pattern, Solid, Animated };
+    enum class Mode { Pattern, Solid, Animated, Text };
 
     struct MouseEvent {
         UINT message = 0;          // WM_LBUTTONDOWN、WM_LBUTTONUP 等
@@ -33,6 +34,10 @@ public:
         Mode mode = Mode::Pattern;
         COLORREF color = RGB(255, 0, 0);  // Solid 模式的顏色
         bool excludeFromCapture = false;
+        // Text 模式：白底黑字，一行一個元素，用來測試 OCR（IT-08）
+        std::vector<std::wstring> lines;
+        int fontHeight = 28;
+        int margin = 24;
     };
 
     TestWindow(core::RectI screenRect, Options options);

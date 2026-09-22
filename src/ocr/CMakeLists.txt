@@ -9,6 +9,8 @@ add_library(tmw_ocr STATIC
     model_config.h
     ocr_pipeline.cpp
     ocr_pipeline.h
+    ocr_service.cpp
+    ocr_service.h
     onnx_model.cpp
     onnx_model.h
     text_detector.cpp

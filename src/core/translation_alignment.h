@@ -26,7 +26,7 @@ std::optional<std::vector<std::string>> parseJsonArray(std::string_view reply);
 std::vector<std::string> splitLines(std::string_view reply);
 
 // 從還沒收完的 JSON 陣列中取出「已經完整」的字串元素。
-// 串流時用來邊收邊顯示（design.md 4.6「邊翻邊顯示」）：收到第一段就先填進結果視窗，
+// 串流時用來邊收邊顯示（design.md 4.7「邊翻邊顯示」）：收到第一段就先填進結果視窗，
 // 不必等整個陣列。還在傳輸中的那一段不會回傳。
 std::vector<std::string> parseJsonArrayPrefix(std::string_view partial);
 

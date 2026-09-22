@@ -19,6 +19,10 @@ add_library(tmw_core STATIC
     lens_layout.h
     opencc_converter.cpp
     opencc_converter.h
+    pipeline.cpp
+    pipeline.h
+    pipeline_worker.cpp
+    pipeline_worker.h
     settings.cpp
     settings.h
     text_converter.h

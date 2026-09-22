@@ -145,6 +145,26 @@ void TestWindow::paint(HDC dc) {
             0, static_cast<UINT>(rect_.height()), patternPixels_.data(), &info, DIB_RGB_COLORS);
         return;
     }
+    if (options_.mode == Mode::Text) {
+        const HBRUSH white = CreateSolidBrush(RGB(255, 255, 255));
+        FillRect(dc, &full, white);
+        DeleteObject(white);
+        // 固定用 Segoe UI：每台機器的預設字型不同，OCR 的結果會跟著變
+        const HFONT font = CreateFontW(
+            -options_.fontHeight, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
+            OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
+        const HGDIOBJ previousFont = SelectObject(dc, font);
+        SetBkMode(dc, TRANSPARENT);
+        SetTextColor(dc, RGB(0, 0, 0));
+        int y = options_.margin;
+        for (const std::wstring& text : options_.lines) {
+            TextOutW(dc, options_.margin, y, text.c_str(), static_cast<int>(text.size()));
+            y += options_.fontHeight * 3 / 2;
+        }
+        SelectObject(dc, previousFont);
+        DeleteObject(font);
+        return;
+    }
     COLORREF color = options_.color;
     if (options_.mode == Mode::Animated) {
         const unsigned f = animationFrame_;

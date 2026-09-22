@@ -8,6 +8,8 @@ add_executable(tmw_unit_tests
     core/language_test.cpp
     core/lens_layout_test.cpp
     core/opencc_converter_test.cpp
+    core/pipeline_test.cpp
+    core/pipeline_worker_test.cpp
     core/settings_test.cpp
     core/text_layout_test.cpp
     core/translation_alignment_test.cpp

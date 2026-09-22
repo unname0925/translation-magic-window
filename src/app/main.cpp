@@ -56,7 +56,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
             options.dataDirectory ? std::filesystem::absolute(*options.dataDirectory)
                                   : tmw::platform::defaultDataDirectory();
 
-        // 設定要先讀，記錄的「詳細診斷」由設定決定（design.md 4.10、4.11）
+        // 設定要先讀，記錄的「詳細診斷」由設定決定（design.md 4.11、4.12）
         const std::filesystem::path settingsPath =
             options.dataDirectory ? tmw::platform::settingsPathIn(dataDirectory)
                                   : tmw::platform::defaultSettingsPath();

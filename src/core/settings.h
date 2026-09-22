@@ -1,4 +1,4 @@
-// 設定檔的內容和解析（見 docs/design.md 4.10）。
+// 設定檔的內容和解析（見 docs/design.md 4.11）。
 //
 // 檔案是 JSON，帶有 schemaVersion：
 // - 版本比目前舊：依序套用遷移函式。
@@ -34,7 +34,7 @@ struct ResultWindowSettings {
 };
 
 struct Settings {
-    // 詳細診斷：打開後才會把擷取到的文字和譯文寫進記錄檔（預設關閉，見 design.md 4.11）
+    // 詳細診斷：打開後才會把擷取到的文字和譯文寫進記錄檔（預設關閉，見 design.md 4.12）
     bool verboseDiagnostics = false;
     // 翻譯引擎的順序就是引擎鏈的順序（design.md 4.5）
     std::vector<EngineSettings> engines;

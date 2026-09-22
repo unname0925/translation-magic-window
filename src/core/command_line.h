@@ -8,7 +8,7 @@
 
 namespace tmw::core {
 
-// 命令列參數（見 docs/design.md 4.10）。
+// 命令列參數（見 docs/design.md 4.11）。
 struct CommandLineOptions {
     // --data-dir <資料夾>：程式自己寫出的檔案（擷取的 PNG，之後還有設定和記錄檔）
     // 改放到這個資料夾。主要給自動化測試用，讓測試不會動到使用者的資料。

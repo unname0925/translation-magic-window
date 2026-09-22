@@ -1,9 +1,9 @@
-// 記錄（見 docs/design.md 4.11）。
+// 記錄（見 docs/design.md 4.12）。
 //
 // - 記錄檔在 <資料夾>\logs\translation-magic-window.log，輪替保留最近幾個檔案。
 // - 每筆記錄都可以帶透鏡編號和流水號，方便追蹤同一次處理的完整過程。
 // - **隱私**：擷取到的文字、譯文和金鑰預設不寫入。要寫這類內容時一律用 sensitive()，
-//   只有使用者打開「詳細診斷」後才會真的寫出去（design.md 4.11）。
+//   只有使用者打開「詳細診斷」後才會真的寫出去（design.md 4.12）。
 #pragma once
 
 #include <filesystem>
@@ -36,7 +36,7 @@ bool verboseDiagnostics();
 // 詳細診斷關閉時寫出「（略）」，打開時才寫出真正的內容。
 std::string sensitive(std::string_view text);
 
-// 一次處理的識別：透鏡編號和流水號（design.md 4.11）
+// 一次處理的識別：透鏡編號和流水號（design.md 4.12）
 struct LogContext {
     int lens = 0;
     std::uint64_t sequence = 0;

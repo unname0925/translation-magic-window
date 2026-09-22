@@ -166,7 +166,7 @@ std::string OpenAiTranslator::send(const std::string& body, std::stop_token canc
                 content += streamedContent(event);
             }
             if (reportSegments && onSegment_) {
-                // 收完一段就先顯示一段（design.md 4.6）
+                // 收完一段就先顯示一段（design.md 4.7）
                 const std::vector<std::string> ready = core::parseJsonArrayPrefix(content);
                 for (; reportedSegments < ready.size(); ++reportedSegments) {
                     onSegment_(reportedSegments, ready[reportedSegments]);
