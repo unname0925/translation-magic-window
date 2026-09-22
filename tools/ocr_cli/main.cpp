@@ -26,7 +26,9 @@
 #include <string>
 #include <vector>
 
+#include "core/text_layout.h"
 #include "ocr/ocr_pipeline.h"
+#include "ocr/ocr_service.h"
 #include "platform/png_file.h"
 #include "platform/text_encoding.h"
 
@@ -146,6 +148,24 @@ bool sameLines(const std::vector<TextLine>& a, const std::vector<TextLine>& b) {
     return true;
 }
 
+// 合併成段落之後的樣子（core 的 text_layout）。診斷「句子被切斷」這類問題時用。
+nlohmann::json blocksToJson(const std::vector<TextLine>& lines) {
+    std::vector<tmw::core::OcrLine> converted;
+    converted.reserve(lines.size());
+    for (const TextLine& line : lines) {
+        converted.push_back(tmw::ocr::toOcrLine(line));
+    }
+    nlohmann::json result = nlohmann::json::array();
+    for (const tmw::core::TextBlock& block : tmw::core::mergeIntoBlocks(converted)) {
+        result.push_back(
+            {{"text", block.text},
+             {"rect", {block.rect.left, block.rect.top, block.rect.right, block.rect.bottom}},
+             {"vertical", block.orientation == tmw::core::Orientation::Vertical},
+             {"lines", block.lines.size()}});
+    }
+    return result;
+}
+
 nlohmann::json toJson(const std::vector<TextLine>& lines) {
     nlohmann::json result = nlohmann::json::array();
     for (const TextLine& line : lines) {
@@ -221,6 +241,7 @@ int run(const Arguments& args) {
              {"width", bgr.cols},
              {"height", bgr.rows},
              {"lines", toJson(first)},
+             {"blocks", blocksToJson(first)},
              {"deterministic", deterministic},
              {"timings_ms", {{"detection", detection}, {"recognition", recognition}}}});
     }

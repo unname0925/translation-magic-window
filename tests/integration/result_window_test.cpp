@@ -8,6 +8,7 @@
 #include <QApplication>
 #include <QListView>
 #include <QScrollBar>
+#include <QTextDocument>
 #include <chrono>
 #include <string>
 
@@ -158,6 +159,18 @@ TEST_F(ResultWindowTest, IsExcludedFromScreenCapture) {
     DWORD affinity = 0;
     ASSERT_TRUE(GetWindowDisplayAffinity(handle, &affinity));
     EXPECT_EQ(affinity, static_cast<DWORD>(WDA_EXCLUDEFROMCAPTURE));
+}
+
+// Qt 的 rich text 不支援 <ruby>：讀音會變成同一行的普通文字，也不會多出放它的空間。
+// 所以結果視窗的 ルビ 必須自己畫（design.md 4.7）。哪天 Qt 支援了，這個測試會失敗，
+// 那時就可以改用它，把自己畫的那段拿掉。
+TEST(QtRichTextTest, DoesNotSupportRuby) {
+    QTextDocument ruby;
+    ruby.setHtml(QStringLiteral("<ruby>漢<rt>かん</rt></ruby>"));
+    QTextDocument plain;
+    plain.setHtml(QStringLiteral("漢"));
+    EXPECT_EQ(ruby.toPlainText(), QStringLiteral("漢かん")) << "讀音被當成一般文字接在後面";
+    EXPECT_DOUBLE_EQ(ruby.size().height(), plain.size().height()) << "沒有多出放讀音的空間";
 }
 
 }  // namespace
