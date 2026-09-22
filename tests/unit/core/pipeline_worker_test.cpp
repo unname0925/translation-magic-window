@@ -28,9 +28,15 @@ using namespace std::chrono_literals;
 // （真正的 OCR 是自己輪詢 token，這裡只是要讓測試不必等逾時）。
 class Latch {
 public:
-    void wait(std::stop_token cancel) {
+    // ignoreCancel：連取消也不放行。用在「要確保這件工作一直卡著」的測試，
+    // 否則取消會馬上把它叫醒，後面排隊的工作就跑掉了。
+    void wait(std::stop_token cancel, bool ignoreCancel) {
         std::unique_lock lock(mutex_);
-        opened_.wait(lock, std::move(cancel), [this] { return open_; });
+        if (ignoreCancel) {
+            opened_.wait_for(lock, 5s, [this] { return open_; });
+        } else {
+            opened_.wait(lock, std::move(cancel), [this] { return open_; });
+        }
     }
 
     void open() {
@@ -50,10 +56,12 @@ private:
 class BlockingOcr final : public IOcrService {
 public:
     std::vector<OcrLine> recognize(const ImageBgra&, std::stop_token cancel) override {
-        ++started;
+        // 先取好閂再宣告「開始了」：測試看到 started 之後才會把 latch 換掉，
+        // 反過來寫的話，Release 版有機會在這中間溜過去，這件工作就不會被擋住
         Latch* waiting = latch.load();
+        ++started;
         if (waiting != nullptr) {
-            waiting->wait(cancel);
+            waiting->wait(cancel, latchIgnoresCancel.load());
         }
         if (cancel.stop_requested()) {
             ++cancelled;
@@ -65,6 +73,7 @@ public:
     std::atomic<int> started{0};
     std::atomic<int> cancelled{0};
     std::atomic<Latch*> latch{nullptr};
+    std::atomic<bool> latchIgnoresCancel{false};
 };
 
 class PassThroughTranslator final : public ITranslator {
@@ -157,6 +166,9 @@ TEST_F(PipelineWorkerTest, ANewJobCancelsTheOneInFlight) {
 
 TEST_F(PipelineWorkerTest, OnlyTheNewestQueuedJobPerLensSurvives) {
     Latch latch;
+    // 第一件要一直卡著。它被取消時如果馬上結束，第 2 件就會在第 3 件送出之前跑完，
+    // 測到的就不是「排隊中只留最新的一件」了。
+    ocr_.latchIgnoresCancel = true;
     ocr_.latch = &latch;
     PipelineWorker worker(pipeline_, collector());
     worker.submit(job(1));  // 開始跑，卡在閂上
@@ -171,6 +183,7 @@ TEST_F(PipelineWorkerTest, OnlyTheNewestQueuedJobPerLensSurvives) {
     const std::vector<PipelineResult> out = results();
     ASSERT_EQ(out.size(), 1u);
     EXPECT_EQ(out[0].generation, 3u) << "中間那件一定過時了，不必做";
+    EXPECT_EQ(ocr_.started, 2) << "第 2 件從頭到尾沒有被做過";
 }
 
 TEST_F(PipelineWorkerTest, JobsForDifferentLensesBothRun) {
