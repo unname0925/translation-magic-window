@@ -19,4 +19,10 @@ char32_t nextCodePoint(std::string_view utf8, std::size_t& index);
 // 把一個字元接到字串後面
 void appendCodePoint(std::string& out, char32_t c);
 
+// 有幾個字（不是幾個位元組）
+int characterCount(std::string_view utf8);
+
+// 第 index 個字在字串中的位元組位置。index 大於等於字數時回傳字串長度。
+std::size_t byteOffsetOfCharacter(std::string_view utf8, int index);
+
 }  // namespace tmw::core

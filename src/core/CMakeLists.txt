@@ -23,6 +23,8 @@ add_library(tmw_core STATIC
     opencc_converter.h
     pipeline.cpp
     pipeline.h
+    ruby.cpp
+    ruby.h
     pipeline_worker.cpp
     pipeline_worker.h
     settings.cpp

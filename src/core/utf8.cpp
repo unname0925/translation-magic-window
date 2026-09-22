@@ -58,4 +58,21 @@ void appendCodePoint(std::string& out, char32_t c) {
     }
 }
 
+int characterCount(std::string_view utf8) {
+    int count = 0;
+    for (std::size_t i = 0; i < utf8.size();) {
+        nextCodePoint(utf8, i);
+        ++count;
+    }
+    return count;
+}
+
+std::size_t byteOffsetOfCharacter(std::string_view utf8, int index) {
+    std::size_t at = 0;
+    for (int seen = 0; seen < index && at < utf8.size(); ++seen) {
+        nextCodePoint(utf8, at);
+    }
+    return at;
+}
+
 }  // namespace tmw::core

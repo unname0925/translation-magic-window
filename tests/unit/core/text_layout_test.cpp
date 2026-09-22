@@ -182,5 +182,73 @@ TEST(EdgeTest, DetectsEveryEdge) {
     EXPECT_FALSE(touchesEdge(RectI::fromXYWH(50, 50, 100, 20), frame));
 }
 
+// 合併是「任意兩行相容就併成一群」，不是只看閱讀順序上相鄰的那兩行。
+// 被擬聲詞或 ルビ 插隊一次就接不回來的話，日文漫畫的句子會碎成一片（design.md 4.4）。
+TEST(MergeIntoBlocksTest, AnInterruptionDoesNotBreakTheRestOfTheChain) {
+    const std::vector<OcrLine> lines{
+        OcrLine{RectI{200, 50, 240, 250}, "ほんきで", 0.9f, Orientation::Vertical, {}},
+        // 字大 3 倍的擬聲詞，在閱讀順序上排在兩欄本文之間
+        OcrLine{RectI{195, 40, 315, 400}, "ドン", 0.9f, Orientation::Vertical, {}},
+        OcrLine{RectI{150, 50, 190, 250}, "たたかうぞ", 0.9f, Orientation::Vertical, {}},
+    };
+    const std::vector<TextBlock> blocks = mergeIntoBlocks(lines);
+    ASSERT_EQ(blocks.size(), 2u) << "擬聲詞自己一段，兩欄本文合成一段";
+    bool merged = false;
+    for (const TextBlock& block : blocks) {
+        merged = merged || block.text == "ほんきでたたかうぞ";
+    }
+    EXPECT_TRUE(merged) << "兩欄本文要併在一起，不該被中間的擬聲詞切斷";
+}
+
+TEST(MergeIntoBlocksTest, VerticalColumnsAllowAWiderGap) {
+    // 實測日文漫畫，被「欄距太遠」擋下的配對欄距中位數是字級的 1.57 倍
+    const std::vector<OcrLine> lines{
+        OcrLine{RectI{200, 50, 240, 250}, "ほんきで", 0.9f, Orientation::Vertical, {}},
+        OcrLine{RectI{100, 50, 140, 250}, "たたかうぞ", 0.9f, Orientation::Vertical, {}},
+    };
+    ASSERT_EQ(mergeIntoBlocks(lines).size(), 1u) << "欄距 1.5 倍字級還算同一段";
+
+    MergeOptions tight;
+    tight.columnGapRatio = 0.8;
+    EXPECT_EQ(mergeIntoBlocks(lines, tight).size(), 2u);
+}
+
+TEST(ResolveAmbiguousOrientationTest, ShortColumnsFollowTheMajority) {
+    // 一兩個字的框接近正方形，從長寬比看不出方向
+    std::vector<OcrLine> lines{
+        OcrLine{RectI{200, 50, 240, 250}, "ほんきで", 0.9f, Orientation::Vertical, {}},
+        OcrLine{RectI{150, 50, 190, 250}, "たたかうぞ", 0.9f, Orientation::Vertical, {}},
+        OcrLine{RectI{100, 50, 140, 92}, "あ", 0.9f, Orientation::Horizontal, {}},
+    };
+    resolveAmbiguousOrientation(lines);
+    EXPECT_EQ(lines[2].orientation, Orientation::Vertical) << "整頁是直排，看不出方向的就算直排";
+    EXPECT_EQ(lines[0].orientation, Orientation::Vertical) << "方向明確的不要動";
+}
+
+TEST(ResolveAmbiguousOrientationTest, LeavesThingsAloneWithoutAMajority) {
+    std::vector<OcrLine> lines{
+        OcrLine{RectI{200, 50, 240, 250}, "たて", 0.9f, Orientation::Vertical, {}},
+        OcrLine{RectI{100, 300, 400, 340}, "yoko", 0.9f, Orientation::Horizontal, {}},
+        OcrLine{RectI{100, 50, 140, 92}, "あ", 0.9f, Orientation::Horizontal, {}},
+    };
+    resolveAmbiguousOrientation(lines);
+    EXPECT_EQ(lines[2].orientation, Orientation::Horizontal) << "一比一，維持原樣";
+}
+
+TEST(MergeIntoBlocksTest, RubyPositionsMoveWithTheText) {
+    // 接成一段之後，ルビ 的位置要換算成整段中的位置
+    OcrLine first{RectI{200, 50, 240, 170}, "ほんき", 0.9f, Orientation::Vertical, {}};
+    first.ruby.push_back(RubyAnnotation{0, 1, "マジ"});
+    OcrLine second{RectI{150, 50, 190, 250}, "でたたかう", 0.9f, Orientation::Vertical, {}};
+    second.ruby.push_back(RubyAnnotation{1, 2, "よみ"});
+
+    const std::vector<OcrLine> lines{std::move(first), std::move(second)};
+    const std::vector<TextBlock> blocks = mergeIntoBlocks(lines);
+    ASSERT_EQ(blocks.size(), 1u);
+    ASSERT_EQ(blocks[0].ruby.size(), 2u);
+    EXPECT_EQ(blocks[0].ruby[0].start, 0);
+    EXPECT_EQ(blocks[0].ruby[1].start, 1 + 3) << "第二行從第 3 個字開始（日文直接相連）";
+}
+
 }  // namespace
 }  // namespace tmw::core

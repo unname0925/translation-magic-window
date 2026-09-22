@@ -4,6 +4,7 @@
 #include <chrono>
 #include <utility>
 
+#include "core/ruby.h"
 #include "core/translator.h"
 
 namespace tmw::core {
@@ -59,7 +60,10 @@ PipelineResult Pipeline::run(const PipelineJob& job, std::stop_token cancel) {
     }
 
     const auto layoutStart = std::chrono::steady_clock::now();
-    std::vector<TextBlock> blocks = mergeIntoBlocks(lines, options_.merge);
+    // ルビ 要先附到本文上：否則它會夾在句子中間，把「這兩欄是同一句」的判斷擋掉
+    // （design.md 4.4 的實測：400 組相鄰配對有 63% 因此合併失敗）
+    const RubyResult withRuby = attachRuby(lines, options_.ruby);
+    std::vector<TextBlock> blocks = mergeIntoBlocks(withRuby.lines, options_.merge);
     if (options_.dropEdgeBlocks) {
         blocks =
             dropEdgeBlocks(blocks, SizeI{job.frame.width, job.frame.height}, options_.edgeMargin);
@@ -90,10 +94,12 @@ PipelineResult Pipeline::run(const PipelineJob& job, std::stop_token cancel) {
     result.unchanged = !text.empty() && text == state.text;
     state.text = text;
 
+    // 送出去翻譯的是帶 ルビ 標記的版本：`{本文|讀音}`（design.md 4.5）。
+    // LLM 會把本文和讀音分別翻譯並保留標記，一般引擎看不懂就當成一般文字。
     std::vector<std::string> sources;
     sources.reserve(blocks.size());
     for (const TextBlock& block : blocks) {
-        sources.push_back(block.text);
+        sources.push_back(markRuby(block.text, block.ruby));
     }
 
     TranslateRequest request;

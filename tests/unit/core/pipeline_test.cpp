@@ -230,6 +230,22 @@ TEST_F(PipelineTest, KeepsOnlyTheMostRecentContext) {
     EXPECT_EQ(engine_->requests.back().context.front().first, "二つ");
 }
 
+TEST_F(PipelineTest, SendsRubyMarkersToTheTranslator) {
+    // ルビ 不是獨立的一段，而是標在本文上一起送出去翻（design.md 4.5）
+    ocr_.lines = {OcrLine{RectI{200, 50, 240, 170}, "本気で戦う", 0.9f, Orientation::Vertical, {}},
+                  OcrLine{RectI{238, 50, 256, 98}, "マジ", 0.9f, Orientation::Vertical, {}}};
+    const PipelineResult result = run(job());
+
+    ASSERT_EQ(result.groups.size(), 1u) << "ルビ 不該自己成為一段";
+    ASSERT_EQ(engine_->batches.size(), 1u);
+    ASSERT_EQ(engine_->batches[0].size(), 1u);
+    EXPECT_NE(engine_->batches[0][0].find("{本気|マジ}"), std::string::npos)
+        << "實際送出：" << engine_->batches[0][0];
+    EXPECT_EQ(result.groups[0].block.text, "本気で戦う") << "原文本身不帶標記";
+    ASSERT_EQ(result.groups[0].block.ruby.size(), 1u);
+    EXPECT_EQ(result.groups[0].block.ruby[0].reading, "マジ");
+}
+
 TEST_F(PipelineTest, MeasuresEachStep) {
     ocr_.lines = {line(20, 20, 300, 44, "こんにちは")};
     const PipelineResult result = run(job());

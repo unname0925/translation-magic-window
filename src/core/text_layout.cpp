@@ -2,7 +2,11 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <functional>
 #include <numeric>
+
+#include "core/utf8.h"
 
 namespace tmw::core {
 namespace {
@@ -87,7 +91,7 @@ bool canMerge(const OcrLine& previous, const OcrLine& next, const MergeOptions& 
 
     // 不同欄：下一欄在左邊（日文漫畫由右到左）
     const int gap = previous.rect.left - next.rect.right;
-    if (gap < -static_cast<int>(size) || gap > size * options.lineGapRatio) {
+    if (gap < -static_cast<int>(size) || gap > size * options.columnGapRatio) {
         return false;
     }
     const double tolerance = size * options.alignRatio;
@@ -135,48 +139,115 @@ void sortReadingOrder(std::vector<OcrLine>& lines) {
     });
 }
 
-std::string joinLines(std::span<const std::string> lines, Language language) {
+std::string joinLines(std::span<const std::string> lines, Language language,
+                      std::vector<int>* startOffsets) {
     std::string result;
+    if (startOffsets != nullptr) {
+        startOffsets->clear();
+        startOffsets->reserve(lines.size());
+    }
+    const auto record = [&] {
+        if (startOffsets != nullptr) {
+            startOffsets->push_back(characterCount(result));
+        }
+    };
     for (const std::string& line : lines) {
         if (result.empty()) {
+            record();
             result = line;
             continue;
         }
         if (language == Language::Japanese) {
+            record();
             result += line;  // 日文直接相連
             continue;
         }
         if (language == Language::English && endsWithHyphenatedWord(result) &&
             startsWithLetter(line)) {
             result.pop_back();  // 去掉行尾的連字號，把被斷開的單字接回去
+            record();
             result += line;
             continue;
         }
         result += ' ';
+        record();
         result += line;
     }
     return result;
+}
+
+void resolveAmbiguousOrientation(std::vector<OcrLine>& lines) {
+    // 長寬比在這個範圍內就算「看不出方向」
+    constexpr double kAmbiguous = 1.5;
+    int vertical = 0;
+    int horizontal = 0;
+    for (const OcrLine& line : lines) {
+        const int width = std::max(1, line.rect.width());
+        const int height = std::max(1, line.rect.height());
+        if (height > width * kAmbiguous) {
+            ++vertical;
+        } else if (width > height * kAmbiguous) {
+            ++horizontal;
+        }
+    }
+    if (vertical == horizontal) {
+        return;  // 沒有多數可以參考，維持原樣
+    }
+    const Orientation majority =
+        vertical > horizontal ? Orientation::Vertical : Orientation::Horizontal;
+    for (OcrLine& line : lines) {
+        const int width = std::max(1, line.rect.width());
+        const int height = std::max(1, line.rect.height());
+        if (height <= width * kAmbiguous && width <= height * kAmbiguous) {
+            line.orientation = majority;
+        }
+    }
 }
 
 std::vector<TextBlock> mergeIntoBlocks(std::span<const OcrLine> lines,
                                        const MergeOptions& options) {
     std::vector<OcrLine> sorted(lines.begin(), lines.end());
     std::erase_if(sorted, [](const OcrLine& line) { return line.text.empty(); });
+    resolveAmbiguousOrientation(sorted);
     sortReadingOrder(sorted);
 
-    std::vector<TextBlock> blocks;
-    for (OcrLine& line : sorted) {
-        if (!blocks.empty() && canMerge(blocks.back().lines.back(), line, options)) {
-            TextBlock& block = blocks.back();
-            block.rect = unite(block.rect, line.rect);
-            block.lines.push_back(std::move(line));
-            continue;
+    // 任意兩行只要相容就併成同一群，不是只看閱讀順序上相鄰的那兩行。
+    // 被 ルビ 或擬聲詞插隊一次，後面整串就接不回來（design.md 4.4 的實測）。
+    const std::size_t count = sorted.size();
+    std::vector<std::size_t> parent(count);
+    for (std::size_t i = 0; i < count; ++i) {
+        parent[i] = i;
+    }
+    const std::function<std::size_t(std::size_t)> find = [&](std::size_t i) {
+        while (parent[i] != i) {
+            parent[i] = parent[parent[i]];
+            i = parent[i];
         }
-        TextBlock block;
-        block.rect = line.rect;
-        block.orientation = line.orientation;
-        block.lines.push_back(std::move(line));
-        blocks.push_back(std::move(block));
+        return i;
+    };
+    for (std::size_t i = 0; i < count; ++i) {
+        for (std::size_t j = i + 1; j < count; ++j) {
+            if (canMerge(sorted[i], sorted[j], options)) {
+                parent[find(i)] = find(j);
+            }
+        }
+    }
+
+    // 每一群的位置由它第一行的閱讀順序決定
+    std::vector<TextBlock> blocks;
+    std::vector<std::size_t> blockOf(count, count);
+    for (std::size_t i = 0; i < count; ++i) {
+        const std::size_t root = find(i);
+        if (blockOf[root] == count) {
+            blockOf[root] = blocks.size();
+            TextBlock block;
+            block.rect = sorted[i].rect;
+            block.orientation = sorted[i].orientation;
+            blocks.push_back(std::move(block));
+        }
+        TextBlock& block = blocks[blockOf[root]];
+        block.rect = unite(block.rect, sorted[i].rect);
+        block.lines.push_back(std::move(sorted[i]));
     }
 
     for (TextBlock& block : blocks) {
@@ -193,7 +264,18 @@ std::vector<TextBlock> mergeIntoBlocks(std::span<const OcrLine> lines,
             joined += text;
         }
         block.language = detectLanguage(joined);
-        block.text = joinLines(texts, block.language);
+        std::vector<int> offsets;
+        block.text = joinLines(texts, block.language, &offsets);
+        // ルビ 的位置是「在那一行中的第幾個字」，接成整段之後要跟著往後移
+        for (std::size_t i = 0; i < block.lines.size() && i < offsets.size(); ++i) {
+            for (const RubyAnnotation& one : block.lines[i].ruby) {
+                block.ruby.push_back(
+                    RubyAnnotation{one.start + offsets[i], one.length, one.reading});
+            }
+        }
+        std::sort(
+            block.ruby.begin(), block.ruby.end(),
+            [](const RubyAnnotation& a, const RubyAnnotation& b) { return a.start < b.start; });
         block.score = static_cast<float>(score / static_cast<double>(block.lines.size()));
     }
     return blocks;

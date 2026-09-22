@@ -26,6 +26,7 @@
 #include <string>
 #include <vector>
 
+#include "core/ruby.h"
 #include "core/text_layout.h"
 #include "ocr/ocr_pipeline.h"
 #include "ocr/ocr_service.h"
@@ -155,12 +156,16 @@ nlohmann::json blocksToJson(const std::vector<TextLine>& lines) {
     for (const TextLine& line : lines) {
         converted.push_back(tmw::ocr::toOcrLine(line));
     }
+    // ルビ 要先附到本文上，否則它會夾在句子中間把合併擋掉（design.md 4.4）
+    const tmw::core::RubyResult withRuby = tmw::core::attachRuby(converted);
     nlohmann::json result = nlohmann::json::array();
-    for (const tmw::core::TextBlock& block : tmw::core::mergeIntoBlocks(converted)) {
+    for (const tmw::core::TextBlock& block : tmw::core::mergeIntoBlocks(withRuby.lines)) {
         result.push_back(
             {{"text", block.text},
+             {"marked", tmw::core::markRuby(block.text, block.ruby)},
              {"rect", {block.rect.left, block.rect.top, block.rect.right, block.rect.bottom}},
              {"vertical", block.orientation == tmw::core::Orientation::Vertical},
+             {"ruby", block.ruby.size()},
              {"lines", block.lines.size()}});
     }
     return result;

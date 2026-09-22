@@ -17,6 +17,7 @@
 #include "core/geometry.h"
 #include "core/image.h"
 #include "core/language.h"
+#include "core/ruby.h"
 #include "core/text_layout.h"
 #include "core/translation_service.h"
 
@@ -74,6 +75,7 @@ public:
 
 struct PipelineOptions {
     MergeOptions merge;
+    RubyOptions ruby;
     // 碰到透鏡邊緣的句子被切掉了一半，翻了也沒意義（design.md 4.4）
     bool dropEdgeBlocks = true;
     int edgeMargin = 2;
