@@ -63,6 +63,43 @@ TEST(ReadingOrderTest, VerticalGoesRightToLeft) {
     EXPECT_EQ(lines[2].text, "左");
 }
 
+TEST(ReadingOrderTest, NarrowColumnsStillGoRightToLeft) {
+    // 欄寬不一致時（欄裡有窄字），不能用「右緣相差多少」判斷是不是同一欄：
+    // 左邊那一欄如果起頭比較高，順序就會顛倒過來（使用者回報的問題）。
+    std::vector<OcrLine> lines = {vertical(170, 0, 35, 200, "ひだりのはしら"),
+                                  vertical(200, 10, 40, 200, "みぎのはしら")};
+
+    sortReadingOrder(lines);
+
+    EXPECT_EQ(lines[0].text, "みぎのはしら") << "直排要由右到左";
+    EXPECT_EQ(lines[1].text, "ひだりのはしら");
+}
+
+TEST(ReadingOrderTest, SameColumnSplitInTwoStaysTopToBottom) {
+    // 同一欄被 OCR 切成上下兩塊時，仍然是上面的先
+    std::vector<OcrLine> lines = {vertical(200, 120, 40, 100, "した"),
+                                  vertical(202, 10, 40, 100, "うえ")};
+
+    sortReadingOrder(lines);
+
+    EXPECT_EQ(lines[0].text, "うえ");
+    EXPECT_EQ(lines[1].text, "した");
+}
+
+TEST(ReadingOrderTest, OneHorizontalLineDoesNotFlipTheWholePage) {
+    // 漫畫頁面幾乎一定有幾行橫排（擬聲詞、頁碼、招牌）。以前只要有一行不是直排，
+    // 整頁就改用「由左到右」，整句話的順序就反了（使用者回報的問題）。
+    std::vector<OcrLine> lines = {
+        vertical(100, 10, 40, 200, "ひだり"), vertical(200, 10, 40, 200, "みぎ"),
+        vertical(150, 10, 40, 200, "まんなか"), horizontal(10, 400, 200, 30, "よこがき")};
+
+    sortReadingOrder(lines);
+
+    EXPECT_EQ(lines[0].text, "みぎ") << "多數是直排，就用直排的閱讀順序";
+    EXPECT_EQ(lines[1].text, "まんなか");
+    EXPECT_EQ(lines[2].text, "ひだり");
+}
+
 TEST(MergeTest, StackedLinesBecomeOneBlock) {
     const std::vector<OcrLine> lines = {horizontal(10, 100, 200, 20, "the first line"),
                                         horizontal(10, 124, 180, 20, "and the second")};

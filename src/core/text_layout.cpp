@@ -136,31 +136,61 @@ void sortReadingOrder(std::vector<OcrLine>& lines) {
     if (lines.empty()) {
         return;
     }
-    // 直排（日文漫畫）：由右到左、同一欄由上到下
-    const bool vertical = std::ranges::all_of(
+    // 直排（日文漫畫）：由右到左、同一欄由上到下。
+    // 用多數決而不是「每一行都是直排」：漫畫頁面幾乎一定有幾行是橫排（擬聲詞、頁碼、招牌），
+    // 只要有一行，整頁的直排欄就會改用「由左到右」排序，整句話的順序就反了。
+    const auto verticalCount = std::ranges::count_if(
         lines, [](const OcrLine& line) { return line.orientation == Orientation::Vertical; });
-    std::vector<int> sizes;
-    sizes.reserve(lines.size());
-    for (const OcrLine& line : lines) {
-        sizes.push_back(crossSize(line));
-    }
-    std::ranges::nth_element(sizes, sizes.begin() + static_cast<std::ptrdiff_t>(sizes.size() / 2));
-    const int typical = sizes[sizes.size() / 2];
+    const bool vertical = verticalCount * 2 > static_cast<std::ptrdiff_t>(lines.size());
 
-    std::ranges::stable_sort(lines, [&](const OcrLine& a, const OcrLine& b) {
-        if (vertical) {
-            // 同一欄（左右差不到一個字）就比上下，否則右邊的先
-            if (std::abs(a.rect.right - b.rect.right) > typical) {
-                return a.rect.right > b.rect.right;
-            }
-            return a.rect.top < b.rect.top;
-        }
-        // 同一行（上下差不到半個字）就比左右，否則上面的先
-        if (std::abs(a.rect.top - b.rect.top) > typical / 2) {
-            return a.rect.top < b.rect.top;
-        }
-        return a.rect.left < b.rect.left;
+    // 先分欄（橫排是分行），再依「第幾欄、欄內由上到下」排序。
+    // 不能直接寫成「右緣相差不到一個字就算同一欄」的比較函式：欄寬不一致時會把不同的欄
+    // 誤判成同一欄，順序就顛倒了；而且那種比較不具備遞移性，std::sort 要求嚴格弱序。
+    std::vector<std::size_t> order(lines.size());
+    std::iota(order.begin(), order.end(), std::size_t{0});
+    // 掃描的方向：直排由右到左，橫排由上到下
+    std::ranges::stable_sort(order, [&](std::size_t a, std::size_t b) {
+        return vertical ? lines[a].rect.right > lines[b].rect.right
+                        : lines[a].rect.top < lines[b].rect.top;
     });
+
+    std::vector<int> group(lines.size(), 0);
+    int current = 0;
+    int currentLow = vertical ? lines[order.front()].rect.left : lines[order.front()].rect.top;
+    int currentHigh = vertical ? lines[order.front()].rect.right : lines[order.front()].rect.bottom;
+    for (const std::size_t index : order) {
+        const RectI& rect = lines[index].rect;
+        const int low = vertical ? rect.left : rect.top;
+        const int high = vertical ? rect.right : rect.bottom;
+        const int shared = overlap(currentLow, currentHigh, low, high);
+        const int narrower = std::max(1, std::min(currentHigh - currentLow, high - low));
+        if (shared * 2 >= narrower) {
+            // 和目前這一欄重疊超過一半：同一欄，範圍跟著擴大
+            currentLow = std::min(currentLow, low);
+            currentHigh = std::max(currentHigh, high);
+        } else {
+            ++current;
+            currentLow = low;
+            currentHigh = high;
+        }
+        group[index] = current;
+    }
+
+    // 排索引再重建：直接排 lines 的話，比較函式拿不到「這個元素原本是第幾個」——
+    // 排序過程中元素會被搬動，用位址算出來的索引馬上就失效了。
+    std::ranges::stable_sort(order, [&](std::size_t a, std::size_t b) {
+        if (group[a] != group[b]) {
+            return group[a] < group[b];
+        }
+        return vertical ? lines[a].rect.top < lines[b].rect.top
+                        : lines[a].rect.left < lines[b].rect.left;
+    });
+    std::vector<OcrLine> sorted;
+    sorted.reserve(lines.size());
+    for (const std::size_t index : order) {
+        sorted.push_back(std::move(lines[index]));
+    }
+    lines = std::move(sorted);
 }
 
 std::string joinLines(std::span<const std::string> lines, Language language,

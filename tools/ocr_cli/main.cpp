@@ -168,7 +168,14 @@ nlohmann::json blocksToJson(const std::vector<TextLine>& lines) {
              {"rect", {block.rect.left, block.rect.top, block.rect.right, block.rect.bottom}},
              {"vertical", block.orientation == tmw::core::Orientation::Vertical},
              {"ruby", block.ruby.size()},
-             {"lines", block.lines.size()}});
+             {"lines", block.lines.size()},
+             {"line_texts", [&] {
+                  nlohmann::json texts = nlohmann::json::array();
+                  for (const tmw::core::OcrLine& line : block.lines) {
+                      texts.push_back(line.text);
+                  }
+                  return texts;
+              }()}});
     }
     return result;
 }
