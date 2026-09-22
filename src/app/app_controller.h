@@ -2,6 +2,7 @@
 
 #include <windows.h>
 
+#include <cstdint>
 #include <filesystem>
 #include <memory>
 #include <optional>
@@ -14,6 +15,7 @@
 #include "core/settings.h"
 #include "ocr/ocr_service.h"
 #include "platform/capture_frame_source.h"
+#include "platform/debug_overlay_window.h"
 #include "platform/lens_window.h"
 #include "platform/screen_capture.h"
 #include "platform/tray_icon.h"
@@ -60,6 +62,9 @@ private:
     // 把「現在發生了什麼」存成一個資料夾：擷取的畫面、OCR、譯文、設定（已移除金鑰）。
     // 回傳資料夾的位置，失敗時是空的。
     std::filesystem::path writeDebugDump();
+    // 除錯覆蓋框：打開／關閉，以及「內容有變才重畫」
+    void setDebugOverlayEnabled(bool enabled);
+    void refreshDebugOverlay();
     // 設定改了之後：存檔、換掉翻譯引擎鏈、更新記錄的詳細程度
     void applySettings(const core::Settings& settings);
     // 重新建立翻譯服務和處理管線（OCR 不用重建）
@@ -100,8 +105,13 @@ private:
     core::History history_;
     std::unique_ptr<ui::ResultWindow> resultWindow_;
     std::unique_ptr<ui::SettingsWindow> settingsWindow_;
-    // 最後一次處理的結果，除錯傾印要用
+    // 最後一次處理的結果，除錯傾印和覆蓋框要用
     std::optional<core::PipelineResult> lastResult_;
+    std::unique_ptr<platform::DebugOverlayWindow> debugOverlay_;
+    // 上一次畫的是什麼，一樣就不重畫（每 100 毫秒會檢查一次）
+    core::LensState debugOverlayState_ = core::LensState::Showing;
+    std::uint64_t debugOverlayGeneration_ = 0;
+    core::RectI debugOverlayRect_{};
 
     std::unique_ptr<platform::TrayIcon> tray_;
     std::unique_ptr<platform::LensWindow> lens_;

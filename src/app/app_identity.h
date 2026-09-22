@@ -25,6 +25,7 @@ enum Command : UINT {
     kCommandTranslateNow = 8,
     kCommandSettings = 9,
     kCommandDebugDump = 10,
+    kCommandToggleDebugOverlay = 11,
 };
 
 }  // namespace tmw::app

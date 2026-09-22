@@ -4,6 +4,7 @@ add_executable(tmw_unit_tests
     core/change_detection_test.cpp
     core/clock_test.cpp
     core/command_line_test.cpp
+    core/debug_overlay_test.cpp
     core/debug_report_test.cpp
     core/geometry_test.cpp
     core/history_test.cpp

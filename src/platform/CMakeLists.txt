@@ -8,6 +8,8 @@ add_library(tmw_platform STATIC
     crash_dump.h
     debug_dump.cpp
     debug_dump.h
+    debug_overlay_window.cpp
+    debug_overlay_window.h
     lens_window.cpp
     lens_window.h
     logging.cpp

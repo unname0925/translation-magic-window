@@ -9,6 +9,8 @@ add_library(tmw_core STATIC
     command_line.cpp
     command_line.h
     color.h
+    debug_overlay.cpp
+    debug_overlay.h
     debug_report.cpp
     debug_report.h
     frame_source.h

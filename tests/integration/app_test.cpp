@@ -20,6 +20,7 @@
 #include "app/app_identity.h"
 #include "core/geometry.h"
 #include "core/lens_layout.h"
+#include "platform/debug_overlay_window.h"
 #include "platform/lens_window.h"
 #include "platform/png_file.h"
 #include "platform/screen_capture.h"
@@ -205,6 +206,32 @@ TEST_F(AppTest, SettingsCommandOpensTheWindow) {
     EXPECT_NE(app_->waitForWindowByTitle(L"設定", std::chrono::seconds(10)), nullptr)
         << "主程式的記錄：\n"
         << appLog();
+}
+
+// M1-14：除錯覆蓋框。它畫在透鏡上面，要是被擷取進去，下一次 OCR 就會讀到自己畫的字，
+// 所以這裡確認它真的排除在擷取之外——和透鏡一樣（IT-01）。
+TEST_F(AppTest, DebugOverlayIsExcludedFromCapture) {
+    const auto pattern = placePatternUnderLens();
+    ASSERT_TRUE(app_->postCommand(app::kCommandToggleDebugOverlay));
+    const HWND overlay =
+        app_->waitForWindow(platform::DebugOverlayWindow::kClassName, std::chrono::seconds(10));
+    ASSERT_NE(overlay, nullptr) << "覆蓋框沒有出現。主程式的記錄：\n" << appLog();
+    ASSERT_TRUE(waitUntil([&] { return IsWindowVisible(overlay) != FALSE; }, kUiTimeout));
+
+    const LensGeometry lens = lensGeometry();
+    platform::ScreenCapture capture;
+    const auto image = capture.readRegion(lens.window, kCaptureTimeout);
+    ASSERT_TRUE(image.has_value());
+    EXPECT_EQ(patternMismatches(*image, lens.window.left - pattern->rect().left,
+                                lens.window.top - pattern->rect().top),
+              0)
+        << "覆蓋框出現在擷取結果中，下一次 OCR 會讀到它";
+
+    // 再按一次就關掉
+    ASSERT_TRUE(app_->postCommand(app::kCommandToggleDebugOverlay));
+    EXPECT_TRUE(waitUntil(
+        [&] { return app_->findWindow(platform::DebugOverlayWindow::kClassName) == nullptr; },
+        kUiTimeout));
 }
 
 // IT-01：把真正的透鏡放在測試圖案上，擷取整個透鏡範圍（含邊框和把手），

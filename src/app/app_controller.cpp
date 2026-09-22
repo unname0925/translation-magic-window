@@ -12,6 +12,7 @@
 
 #include "app/app_identity.h"
 #include "app/translation_setup.h"
+#include "core/debug_overlay.h"
 #include "core/debug_report.h"
 #include "core/opencc_converter.h"
 #include "platform/app_paths.h"
@@ -70,6 +71,20 @@ std::wstring timestampedCaptureName() {
     swprintf_s(name, L"capture-%04u%02u%02u-%02u%02u%02u-%03u.png", now.wYear, now.wMonth, now.wDay,
                now.wHour, now.wMinute, now.wSecond, now.wMilliseconds);
     return name;
+}
+
+const char* stateName(core::LensState state) {
+    switch (state) {
+        case core::LensState::Dragging:
+            return "拖動中";
+        case core::LensState::Settling:
+            return "等待畫面穩定";
+        case core::LensState::Processing:
+            return "處理中";
+        case core::LensState::Showing:
+            break;
+    }
+    return "顯示中";
 }
 
 // 「2026-09-22 13:45:01」，除錯傾印的報告裡用
@@ -267,6 +282,9 @@ LRESULT AppController::handleMessage(UINT message, WPARAM wParam, LPARAM lParam)
                 case kCommandDebugDump:
                     flashLens(writeDebugDump().empty() ? kErrorAccent : kSuccessAccent);
                     break;
+                case kCommandToggleDebugOverlay:
+                    setDebugOverlayEnabled(debugOverlay_ == nullptr);
+                    break;
                 case kCommandTogglePause:
                     setPaused(!paused_);
                     break;
@@ -294,6 +312,7 @@ LRESULT AppController::handleMessage(UINT message, WPARAM wParam, LPARAM lParam)
         case WM_TIMER:
             if (wParam == kTimerTick) {
                 trigger_->tick();
+                refreshDebugOverlay();
             } else if (wParam == kTimerRestoreAccent) {
                 KillTimer(hwnd_, kTimerRestoreAccent);
                 flashing_ = false;
@@ -352,6 +371,8 @@ void AppController::showTrayMenu(POINT anchor) {
     AppendMenuW(menu, MF_STRING, kCommandSettings, L"設定…");
     AppendMenuW(menu, MF_STRING, kCommandDebugDump,
                 debugDumpHotkeyRegistered_ ? L"除錯傾印	Ctrl+Alt+Shift+D" : L"除錯傾印");
+    AppendMenuW(menu, MF_STRING | (debugOverlay_ != nullptr ? MF_CHECKED : MF_UNCHECKED),
+                kCommandToggleDebugOverlay, L"除錯覆蓋框（顯示 OCR 框和耗時）");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu, MF_STRING | (autoSave_ ? MF_CHECKED : MF_UNCHECKED), kCommandToggleAutoSave,
                 L"畫面穩定後自動存成 PNG（測試用）");
@@ -486,6 +507,54 @@ void AppController::applySettings(const core::Settings& settings) {
     rebuildTranslation();
 }
 
+void AppController::setDebugOverlayEnabled(bool enabled) {
+    if (!enabled) {
+        debugOverlay_.reset();
+        return;
+    }
+    if (debugOverlay_ != nullptr) {
+        return;
+    }
+    try {
+        debugOverlay_ = std::make_unique<platform::DebugOverlayWindow>(
+            reinterpret_cast<HINSTANCE>(GetWindowLongPtrW(hwnd_, GWLP_HINSTANCE)));
+        // 剛打開就畫一次，不必等下一個結果
+        debugOverlayGeneration_ = 0;
+        debugOverlayRect_ = {};
+        refreshDebugOverlay();
+        platform::logInfo("打開除錯覆蓋框");
+    } catch (const std::exception& error) {
+        platform::logWarn(std::string("打不開除錯覆蓋框：") + error.what());
+        debugOverlay_.reset();
+    }
+}
+
+void AppController::refreshDebugOverlay() {
+    if (debugOverlay_ == nullptr || lens_ == nullptr) {
+        return;
+    }
+    if (!lens_->isVisible()) {
+        debugOverlay_->hide();
+        return;
+    }
+    const core::RectI rect = lens_->contentScreenRect();
+    const core::LensState state = trigger_->state();
+    const std::uint64_t generation = lastResult_.has_value() ? lastResult_->generation : 0;
+    // 每 100 毫秒都會走到這裡，沒變就不重畫
+    if (state == debugOverlayState_ && generation == debugOverlayGeneration_ &&
+        rect == debugOverlayRect_ && debugOverlay_->isVisible()) {
+        return;
+    }
+    debugOverlayState_ = state;
+    debugOverlayGeneration_ = generation;
+    debugOverlayRect_ = rect;
+
+    const core::DebugOverlay overlay =
+        lastResult_.has_value() ? core::buildDebugOverlay(*lastResult_, rect, stateName(state))
+                                : core::buildDebugOverlay(stateName(state));
+    debugOverlay_->update(rect, overlay);
+}
+
 std::filesystem::path AppController::writeDebugDump() {
     // 擷取當下的畫面。失敗（例如透鏡藏起來了）不算致命，報告照樣寫。
     std::optional<core::ImageBgra> capture;
@@ -528,6 +597,7 @@ void AppController::onPipelineResult(const core::PipelineResult& result) {
         return;
     }
     lastResult_ = result;  // 除錯傾印要的是「最後真的處理過什麼」
+    refreshDebugOverlay();
     if (!result.error.empty()) {
         platform::log(platform::LogLevel::Warn, context, "翻譯失敗：" + result.error);
     }
