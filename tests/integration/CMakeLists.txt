@@ -5,6 +5,7 @@ add_executable(tmw_integration_tests
     app_test.cpp
     main.cpp
     pipeline_test.cpp
+    result_window_test.cpp
     screen_capture_test.cpp
     support/app_process.cpp
     support/app_process.h
@@ -16,12 +17,14 @@ target_include_directories(tmw_integration_tests PRIVATE "${CMAKE_CURRENT_SOURCE
 target_link_libraries(tmw_integration_tests PRIVATE
     tmw_platform
     tmw_ocr
+    tmw_ui
     tmw_core
     tmw_options
     dwmapi
     GTest::gtest)
 tmw_copy_asan_runtime(tmw_integration_tests)
 tmw_copy_onnxruntime(tmw_integration_tests)
+tmw_copy_qt(tmw_integration_tests)
 # app_test.cpp 會啟動同一個資料夾中的主程式，建置測試時要一併建置它
 add_dependencies(tmw_integration_tests tmw_app)
 
