@@ -4,6 +4,7 @@
 
 #include <filesystem>
 #include <memory>
+#include <optional>
 
 #include "core/auto_trigger.h"
 #include "core/clock.h"
@@ -56,6 +57,9 @@ private:
     void setUpPipeline();
     void showResultWindow();
     void openSettings();
+    // 把「現在發生了什麼」存成一個資料夾：擷取的畫面、OCR、譯文、設定（已移除金鑰）。
+    // 回傳資料夾的位置，失敗時是空的。
+    std::filesystem::path writeDebugDump();
     // 設定改了之後：存檔、換掉翻譯引擎鏈、更新記錄的詳細程度
     void applySettings(const core::Settings& settings);
     // 重新建立翻譯服務和處理管線（OCR 不用重建）
@@ -76,6 +80,7 @@ private:
     UINT showLensMessage_ = 0;
     bool captureHotkeyRegistered_ = false;
     bool translateHotkeyRegistered_ = false;
+    bool debugDumpHotkeyRegistered_ = false;
     bool autoSave_ = false;
     bool flashing_ = false;
     bool paused_ = false;
@@ -95,6 +100,8 @@ private:
     core::History history_;
     std::unique_ptr<ui::ResultWindow> resultWindow_;
     std::unique_ptr<ui::SettingsWindow> settingsWindow_;
+    // 最後一次處理的結果，除錯傾印要用
+    std::optional<core::PipelineResult> lastResult_;
 
     std::unique_ptr<platform::TrayIcon> tray_;
     std::unique_ptr<platform::LensWindow> lens_;

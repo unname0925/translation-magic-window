@@ -5,18 +5,23 @@
 #include <QApplication>
 #include <chrono>
 #include <exception>
+#include <fstream>
 #include <optional>
 #include <string>
 #include <utility>
 
 #include "app/app_identity.h"
 #include "app/translation_setup.h"
+#include "core/debug_report.h"
 #include "core/opencc_converter.h"
 #include "platform/app_paths.h"
+#include "platform/crash_dump.h"
+#include "platform/debug_dump.h"
 #include "platform/logging.h"
 #include "platform/png_file.h"
 #include "platform/secret.h"
 #include "platform/settings_file.h"
+#include "platform/text_encoding.h"
 #include "platform/win_error.h"
 
 namespace tmw::app {
@@ -27,6 +32,7 @@ constexpr UINT kTrayCallbackMessage = WM_APP + 1;
 
 constexpr int kHotkeyCapture = 1;
 constexpr int kHotkeyTranslate = 2;
+constexpr int kHotkeyDebugDump = 3;
 constexpr UINT_PTR kTimerRestoreAccent = 1;
 constexpr UINT_PTR kTimerTick = 2;
 constexpr UINT kFlashMilliseconds = 400;
@@ -63,6 +69,25 @@ std::wstring timestampedCaptureName() {
     wchar_t name[64]{};
     swprintf_s(name, L"capture-%04u%02u%02u-%02u%02u%02u-%03u.png", now.wYear, now.wMonth, now.wDay,
                now.wHour, now.wMinute, now.wSecond, now.wMilliseconds);
+    return name;
+}
+
+// 「2026-09-22 13:45:01」，除錯傾印的報告裡用
+std::string localTimeText() {
+    SYSTEMTIME now{};
+    GetLocalTime(&now);
+    char text[32]{};
+    sprintf_s(text, "%04u-%02u-%02u %02u:%02u:%02u", now.wYear, now.wMonth, now.wDay, now.wHour,
+              now.wMinute, now.wSecond);
+    return text;
+}
+
+std::wstring timestampedDumpFolderName() {
+    SYSTEMTIME now{};
+    GetLocalTime(&now);
+    wchar_t name[64]{};
+    swprintf_s(name, L"debug-%04u%02u%02u-%02u%02u%02u", now.wYear, now.wMonth, now.wDay, now.wHour,
+               now.wMinute, now.wSecond);
     return name;
 }
 
@@ -126,6 +151,9 @@ AppController::AppController(HINSTANCE instance, std::filesystem::path dataDirec
         translateHotkeyRegistered_ =
             RegisterHotKey(hwnd_, kHotkeyTranslate,
                            MOD_CONTROL | MOD_ALT | MOD_SHIFT | MOD_NOREPEAT, 'T') != FALSE;
+        debugDumpHotkeyRegistered_ =
+            RegisterHotKey(hwnd_, kHotkeyDebugDump,
+                           MOD_CONTROL | MOD_ALT | MOD_SHIFT | MOD_NOREPEAT, 'D') != FALSE;
 
         setUpPipeline();
 
@@ -236,6 +264,9 @@ LRESULT AppController::handleMessage(UINT message, WPARAM wParam, LPARAM lParam)
                 case kCommandSettings:
                     openSettings();
                     break;
+                case kCommandDebugDump:
+                    flashLens(writeDebugDump().empty() ? kErrorAccent : kSuccessAccent);
+                    break;
                 case kCommandTogglePause:
                     setPaused(!paused_);
                     break;
@@ -256,6 +287,8 @@ LRESULT AppController::handleMessage(UINT message, WPARAM wParam, LPARAM lParam)
                 flashLens(saveLensCapture() ? kSuccessAccent : kErrorAccent);
             } else if (wParam == kHotkeyTranslate && lens_->isVisible() && !paused_) {
                 trigger_->manualTrigger();
+            } else if (wParam == kHotkeyDebugDump) {
+                flashLens(writeDebugDump().empty() ? kErrorAccent : kSuccessAccent);
             }
             return 0;
         case WM_TIMER:
@@ -284,6 +317,12 @@ LRESULT AppController::handleMessage(UINT message, WPARAM wParam, LPARAM lParam)
             if (captureHotkeyRegistered_) {
                 UnregisterHotKey(hwnd_, kHotkeyCapture);
             }
+            if (translateHotkeyRegistered_) {
+                UnregisterHotKey(hwnd_, kHotkeyTranslate);
+            }
+            if (debugDumpHotkeyRegistered_) {
+                UnregisterHotKey(hwnd_, kHotkeyDebugDump);
+            }
             // 依相依關係的反向順序釋放：透鏡的回呼會用到 trigger_，trigger_ 會用到 frameSource_
             lens_.reset();
             tray_.reset();
@@ -311,6 +350,8 @@ void AppController::showTrayMenu(POINT anchor) {
     AppendMenuW(menu, MF_STRING | (paused_ ? MF_CHECKED : MF_UNCHECKED), kCommandTogglePause,
                 L"暫停");
     AppendMenuW(menu, MF_STRING, kCommandSettings, L"設定…");
+    AppendMenuW(menu, MF_STRING, kCommandDebugDump,
+                debugDumpHotkeyRegistered_ ? L"除錯傾印	Ctrl+Alt+Shift+D" : L"除錯傾印");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu, MF_STRING | (autoSave_ ? MF_CHECKED : MF_UNCHECKED), kCommandToggleAutoSave,
                 L"畫面穩定後自動存成 PNG（測試用）");
@@ -445,12 +486,48 @@ void AppController::applySettings(const core::Settings& settings) {
     rebuildTranslation();
 }
 
+std::filesystem::path AppController::writeDebugDump() {
+    // 擷取當下的畫面。失敗（例如透鏡藏起來了）不算致命，報告照樣寫。
+    std::optional<core::ImageBgra> capture;
+    if (lens_ != nullptr && capture_ != nullptr) {
+        try {
+            capture = capture_->readRegion(lens_->contentScreenRect());
+        } catch (const std::exception& error) {
+            platform::logWarn(std::string("除錯傾印擷取不到畫面：") + error.what());
+        }
+    }
+
+    platform::DebugDumpContents contents;
+    contents.report.appVersion = TMW_VERSION;
+    contents.report.time = localTimeText();
+    contents.report.ocrDevice =
+        ocr_ == nullptr ? "（沒有 OCR）" : std::string(ocr::deviceName(ocr_->device()));
+    contents.report.engineStatus =
+        translation_ == nullptr ? "（沒有翻譯引擎）" : translation_->engineStatus();
+    contents.report.settings = settings_;
+    contents.report.lastResult = lastResult_;
+    if (lastResult_.has_value()) {
+        contents.report.lastLines = lastResult_->lines;
+    }
+    contents.capture = capture.has_value() ? &*capture : nullptr;
+    contents.logsDirectory = dataDirectory_ / L"logs";
+
+    const std::filesystem::path folder = platform::writeDebugDump(
+        platform::dumpsDirectory(dataDirectory_), contents, std::chrono::system_clock::now());
+    if (!folder.empty()) {
+        // 使用者按下快捷鍵就是要拿這個資料夾，直接開給他看
+        ShellExecuteW(nullptr, L"open", folder.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    }
+    return folder;
+}
+
 void AppController::onPipelineResult(const core::PipelineResult& result) {
     const platform::LogContext context{.lens = result.lens, .sequence = result.generation};
     if (!trigger_->onProcessingFinished(result.generation)) {
         platform::log(platform::LogLevel::Info, context, "結果已經過時，丟棄");
         return;
     }
+    lastResult_ = result;  // 除錯傾印要的是「最後真的處理過什麼」
     if (!result.error.empty()) {
         platform::log(platform::LogLevel::Warn, context, "翻譯失敗：" + result.error);
     }

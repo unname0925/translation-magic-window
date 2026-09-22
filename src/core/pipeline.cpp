@@ -55,6 +55,7 @@ PipelineResult Pipeline::run(const PipelineJob& job, std::stop_token cancel) {
     const auto ocrStart = std::chrono::steady_clock::now();
     std::vector<OcrLine> lines = ocr_.recognize(job.frame, cancel);
     result.timings.ocrMs = millisecondsSince(ocrStart);
+    result.lines = lines;
     if (cancel.stop_requested()) {
         return result;
     }

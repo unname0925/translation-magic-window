@@ -35,6 +35,28 @@ std::string TranslatorChain::describePaused() const {
     return out;
 }
 
+std::string TranslatorChain::describeEngines() const {
+    const std::lock_guard<std::mutex> lock(mutex_);
+    const TimePoint now = clock_.now();
+    std::string out;
+    for (const State& state : states_) {
+        out += out.empty() ? "" : "；";
+        out += state.engine->id() + "：";
+        if (now < state.pausedUntil) {
+            const auto minutes = std::chrono::duration_cast<std::chrono::minutes>(
+                                     state.pausedUntil - now + std::chrono::minutes(1))
+                                     .count();
+            out += describeTranslateError(state.lastError) + "，約 " + std::to_string(minutes) +
+                   " 分鐘後再試";
+        } else if (state.failures > 0) {
+            out += "失敗過 " + std::to_string(state.failures) + " 次";
+        } else {
+            out += "可以使用";
+        }
+    }
+    return out;
+}
+
 void TranslatorChain::recordFailure(State& state) {
     ++state.failures;
     if (state.failures >= options_.failuresBeforePause) {

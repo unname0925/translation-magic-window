@@ -13,6 +13,7 @@
 #include "app/app_identity.h"
 #include "core/command_line.h"
 #include "platform/app_paths.h"
+#include "platform/crash_dump.h"
 #include "platform/logging.h"
 #include "platform/settings_file.h"
 #include "platform/single_instance.h"
@@ -57,6 +58,10 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
             options.dataDirectory ? std::filesystem::absolute(*options.dataDirectory)
                                   : tmw::platform::defaultDataDirectory();
 
+        // 當機傾印越早裝上越好：從這裡開始，任何一步當掉都留得下線索（design.md 4.12）
+        const bool crashDumps =
+            tmw::platform::installCrashHandler(tmw::platform::dumpsDirectory(dataDirectory));
+
         // 設定要先讀，記錄的「詳細診斷」由設定決定（design.md 4.11、4.12）
         const std::filesystem::path settingsPath =
             options.dataDirectory ? tmw::platform::settingsPathIn(dataDirectory)
@@ -67,6 +72,9 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
              .verboseDiagnostics = settings.settings.verboseDiagnostics});
         tmw::platform::logInfo("Translation Magic Window 啟動，資料夾：" +
                                tmw::platform::pathToUtf8(dataDirectory));
+        if (!crashDumps) {
+            tmw::platform::logWarn("裝不上當機傾印（資料夾的路徑太長），當掉時不會留下 dump");
+        }
         if (!settings.problem.empty()) {
             tmw::platform::logWarn("設定檔改用了預設值：" + settings.problem);
         }

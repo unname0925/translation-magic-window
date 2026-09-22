@@ -4,6 +4,7 @@ add_executable(tmw_unit_tests
     core/change_detection_test.cpp
     core/clock_test.cpp
     core/command_line_test.cpp
+    core/debug_report_test.cpp
     core/geometry_test.cpp
     core/history_test.cpp
     core/language_test.cpp
@@ -33,6 +34,8 @@ add_executable(tmw_unit_tests
     platform/png_file_test.cpp
     platform/secret_test.cpp
     platform/settings_file_test.cpp
+    platform/crash_dump_test.cpp
+    platform/debug_dump_test.cpp
     platform/single_instance_test.cpp
     platform/text_encoding_test.cpp
     platform/win_error_test.cpp

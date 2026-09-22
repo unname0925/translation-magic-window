@@ -24,6 +24,7 @@ enum Command : UINT {
     kCommandTogglePause = 7,
     kCommandTranslateNow = 8,
     kCommandSettings = 9,
+    kCommandDebugDump = 10,
 };
 
 }  // namespace tmw::app

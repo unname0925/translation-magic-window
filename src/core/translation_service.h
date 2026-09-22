@@ -37,6 +37,9 @@ public:
 
     TranslationCache& cache() { return cache_; }
 
+    // 引擎鏈目前的狀況（除錯傾印用）
+    std::string engineStatus() const;
+
 private:
     std::shared_ptr<TranslatorChain> chain_;
     std::shared_ptr<const ITextConverter> converter_;

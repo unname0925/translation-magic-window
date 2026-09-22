@@ -20,6 +20,10 @@ TranslationService::TranslationService(std::shared_ptr<TranslatorChain> chain,
     engineIds_ = chain_->engineIds();
 }
 
+std::string TranslationService::engineStatus() const {
+    return chain_ == nullptr ? std::string("（沒有引擎）") : chain_->describeEngines();
+}
+
 std::vector<std::string> TranslationService::translate(std::span<const std::string> segments,
                                                        const TranslateRequest& request,
                                                        std::stop_token cancel) {

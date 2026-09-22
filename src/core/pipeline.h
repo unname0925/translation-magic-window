@@ -55,6 +55,9 @@ struct PipelineResult {
     RectI region;
     Language language = Language::Unknown;
     std::vector<TranslatedBlock> groups;
+    // OCR 讀到的每一行，合併成段落之前的樣子。除錯覆蓋框和除錯傾印用它
+    // 回答「為什麼這句被切開」（design.md 4.12）。
+    std::vector<OcrLine> lines;
     PipelineTimings timings;
     // 和上一次的結果一模一樣（畫面閃了一下又回到原樣）。不必新增歷史卡片。
     bool unchanged = false;

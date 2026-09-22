@@ -44,6 +44,10 @@ public:
     // 這個引擎現在是不是在暫停中（給設定畫面顯示狀態用）
     bool paused(std::string_view id) const;
 
+    // 每個引擎現在的狀況，一行一個，給除錯傾印看（design.md 4.12）：
+    // 「google：可以使用；openai-compatible：連不上，約 4 分鐘後再試」
+    std::string describeEngines() const;
+
 private:
     struct State {
         std::shared_ptr<ITranslator> engine;

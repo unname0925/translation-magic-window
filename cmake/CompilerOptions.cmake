@@ -20,7 +20,9 @@ target_compile_definitions(tmw_options INTERFACE
     UNICODE
     _UNICODE
     NOMINMAX
-    WIN32_LEAN_AND_MEAN)
+    WIN32_LEAN_AND_MEAN
+    # 除錯傾印和使用者回報問題時要看得出是哪一版（design.md 4.12）
+    TMW_VERSION="${PROJECT_VERSION}")
 
 # AddressSanitizer 必須套用在所有目標（包含 GoogleTest），
 # 否則 MSVC 會因為 STL 容器的 ASan 標註不一致而連結失敗。
