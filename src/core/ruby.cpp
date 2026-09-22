@@ -161,4 +161,30 @@ std::string markRuby(std::string_view text, std::span<const RubyAnnotation> ruby
     return out;
 }
 
+std::string stripRubyMarkup(std::string_view text) {
+    std::string out;
+    out.reserve(text.size());
+    std::size_t at = 0;
+    while (at < text.size()) {
+        const std::size_t open = text.find('{', at);
+        if (open == std::string_view::npos) {
+            break;
+        }
+        const std::size_t bar = text.find('|', open + 1);
+        const std::size_t close = text.find('}', open + 1);
+        const std::size_t nextOpen = text.find('{', open + 1);
+        if (bar == std::string_view::npos || close == std::string_view::npos || bar > close ||
+            (nextOpen != std::string_view::npos && nextOpen < bar)) {
+            out.append(text.substr(at, open - at + 1));  // 沒有配對的大括號照原樣留著
+            at = open + 1;
+            continue;
+        }
+        out.append(text.substr(at, open - at));
+        out.append(text.substr(open + 1, bar - open - 1));  // 只留本文
+        at = close + 1;
+    }
+    out.append(text.substr(at));
+    return out;
+}
+
 }  // namespace tmw::core

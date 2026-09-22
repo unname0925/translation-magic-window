@@ -5,6 +5,7 @@
 #include <nlohmann/json.hpp>
 #include <utility>
 
+#include "core/ruby.h"
 #include "core/translation_alignment.h"
 
 namespace tmw::net {
@@ -127,6 +128,18 @@ std::string GoogleTranslator::requestOnce(std::string_view text,
 std::vector<std::string> GoogleTranslator::translate(std::span<const std::string> segments,
                                                      const core::TranslateRequest& request,
                                                      std::stop_token cancel) {
+    // 這個端點看不懂 `{本文|讀音}`，標記會被它翻掉或弄壞，對齊檢查就會一直判定格式錯誤。
+    // 所以先還原成只有本文（design.md 4.5：一般翻譯引擎看不懂這種標記）。
+    std::vector<std::string> plain;
+    plain.reserve(segments.size());
+    bool hadMarkup = false;
+    for (const std::string& segment : segments) {
+        plain.push_back(core::stripRubyMarkup(segment));
+        hadMarkup = hadMarkup || plain.back() != segment;
+    }
+    const std::span<const std::string> toSend =
+        hadMarkup ? std::span<const std::string>(plain) : segments;
+
     const core::BatchTranslate batch =
         [&](std::span<const std::string> batchSegments) -> std::vector<std::string> {
         const std::string reply = requestOnce(join(batchSegments), request, cancel);
@@ -136,7 +149,8 @@ std::vector<std::string> GoogleTranslator::translate(std::span<const std::string
         return core::splitLines(reply);
     };
     // 這個端點沒有隨機性，整批重送只會多等一秒，所以對不上就直接逐段
-    return core::translateAligned(segments, batch, core::AlignOptions{.batchAttempts = 1});
+    return core::translateAligned(
+        toSend, batch, core::AlignOptions{.batchAttempts = 1, .checkRubyMarkers = false});
 }
 
 }  // namespace tmw::net

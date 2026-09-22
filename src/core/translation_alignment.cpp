@@ -188,7 +188,7 @@ std::string describeAlignmentProblem(AlignmentProblem problem) {
 }
 
 AlignmentProblem checkAlignment(std::span<const std::string> sources,
-                                std::span<const std::string> translations) {
+                                std::span<const std::string> translations, bool checkRuby) {
     if (sources.size() != translations.size()) {
         return AlignmentProblem::WrongCount;
     }
@@ -196,7 +196,7 @@ AlignmentProblem checkAlignment(std::span<const std::string> sources,
         if (!isBlank(sources[i]) && isBlank(translations[i])) {
             return AlignmentProblem::EmptyText;
         }
-        if (countRubyMarkers(sources[i]) != countRubyMarkers(translations[i])) {
+        if (checkRuby && countRubyMarkers(sources[i]) != countRubyMarkers(translations[i])) {
             return AlignmentProblem::RubyMismatch;
         }
     }
@@ -213,7 +213,7 @@ std::vector<std::string> translateAligned(std::span<const std::string> sources,
     for (int attempt = 0; attempt < options.batchAttempts; ++attempt) {
         try {
             std::vector<std::string> out = batch(sources);
-            lastProblem = checkAlignment(sources, out);
+            lastProblem = checkAlignment(sources, out, options.checkRubyMarkers);
             if (lastProblem == AlignmentProblem::None) {
                 return out;
             }

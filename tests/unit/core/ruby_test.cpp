@@ -157,5 +157,25 @@ TEST(MarkRubyTest, IgnoresAnnotationsPastTheEnd) {
     EXPECT_EQ(markRuby("本気", ruby), "本気");
 }
 
+TEST(StripRubyMarkupTest, LeavesOnlyTheBaseText) {
+    EXPECT_EQ(stripRubyMarkup("{本気|マジ}で戦うぞ"), "本気で戦うぞ");
+    EXPECT_EQ(stripRubyMarkup("{本気|マジ}で{戦|たたか}うぞ"), "本気で戦うぞ");
+    EXPECT_EQ(stripRubyMarkup("沒有標記"), "沒有標記");
+    EXPECT_EQ(stripRubyMarkup(""), "");
+}
+
+TEST(StripRubyMarkupTest, KeepsUnmatchedBraces) {
+    // 譯文本身可能有大括號，不能把後面的內容吃掉
+    EXPECT_EQ(stripRubyMarkup("這是{一個測試"), "這是{一個測試");
+    EXPECT_EQ(stripRubyMarkup("沒有直線{的括號}"), "沒有直線{的括號}");
+    EXPECT_EQ(stripRubyMarkup("{壞掉的 然後{好的|讀音}"), "{壞掉的 然後好的");
+}
+
+TEST(StripRubyMarkupTest, UndoesMarkRuby) {
+    const std::vector<RubyAnnotation> ruby{{0, 2, "マジ"}, {3, 1, "たたか"}};
+    const std::string text = "本気で戦うぞ";
+    EXPECT_EQ(stripRubyMarkup(markRuby(text, ruby)), text);
+}
+
 }  // namespace
 }  // namespace tmw::core

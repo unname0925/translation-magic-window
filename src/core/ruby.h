@@ -44,4 +44,8 @@ bool isKanaOnly(std::string_view utf8);
 // ruby 要依 start 由小到大排好，重疊的會被略過。
 std::string markRuby(std::string_view text, std::span<const RubyAnnotation> ruby);
 
+// 把 `{本文|讀音}` 還原成只有本文。看不懂標記的翻譯引擎（Google、DeepL）要先用它，
+// 否則譯文裡的標記數量會對不上，對齊檢查會一直判定格式錯誤（design.md 4.5）。
+std::string stripRubyMarkup(std::string_view text);
+
 }  // namespace tmw::core

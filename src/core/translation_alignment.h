@@ -42,8 +42,10 @@ enum class AlignmentProblem {
 
 std::string describeAlignmentProblem(AlignmentProblem problem);
 
+// checkRuby 為 false 時不檢查 ルビ 標記：看不懂標記的引擎會先把它拿掉，
+// 那時譯文本來就不會有標記。
 AlignmentProblem checkAlignment(std::span<const std::string> sources,
-                                std::span<const std::string> translations);
+                                std::span<const std::string> translations, bool checkRuby = true);
 
 // 送出一批原文並取回等長譯文的動作。失敗時丟出 TranslatorError。
 using BatchTranslate = std::function<std::vector<std::string>(std::span<const std::string>)>;
@@ -51,6 +53,8 @@ using BatchTranslate = std::function<std::vector<std::string>(std::span<const st
 struct AlignOptions {
     // 整批送出的嘗試次數。對不上就再試一次（LLM 有隨機性，重試常常就好了）。
     int batchAttempts = 2;
+    // 引擎看不懂 `{本文|讀音}` 時要關掉，否則每一段都會被判定格式錯誤
+    bool checkRubyMarkers = true;
 };
 
 // 整批送出 → 對不上就重試 → 還是不行就逐段重送。
