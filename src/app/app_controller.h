@@ -17,6 +17,7 @@
 #include "platform/screen_capture.h"
 #include "platform/tray_icon.h"
 #include "ui/result_window.h"
+#include "ui/settings_window.h"
 
 namespace tmw::app {
 
@@ -54,6 +55,11 @@ private:
     // 建立 OCR、翻譯服務和處理管線。模型或設定有問題時只記錄，程式照常執行（只是不會翻譯）。
     void setUpPipeline();
     void showResultWindow();
+    void openSettings();
+    // 設定改了之後：存檔、換掉翻譯引擎鏈、更新記錄的詳細程度
+    void applySettings(const core::Settings& settings);
+    // 重新建立翻譯服務和處理管線（OCR 不用重建）
+    void rebuildTranslation();
     void setPaused(bool paused);
     void saveSettings();
 
@@ -88,6 +94,7 @@ private:
     std::unique_ptr<core::PipelineWorker> worker_;
     core::History history_;
     std::unique_ptr<ui::ResultWindow> resultWindow_;
+    std::unique_ptr<ui::SettingsWindow> settingsWindow_;
 
     std::unique_ptr<platform::TrayIcon> tray_;
     std::unique_ptr<platform::LensWindow> lens_;

@@ -32,6 +32,9 @@ void shutdownLogging();
 // 使用者有沒有打開詳細診斷（沒有初始化時是 false）
 bool verboseDiagnostics();
 
+// 使用者在設定畫面改了「詳細診斷」時呼叫，不必重新啟動
+void setVerboseDiagnostics(bool verbose);
+
 // 會被記錄的一段內容。敏感內容（原文、譯文、金鑰）一律包成 sensitive(...)：
 // 詳細診斷關閉時寫出「（略）」，打開時才寫出真正的內容。
 std::string sensitive(std::string_view text);

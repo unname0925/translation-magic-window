@@ -23,6 +23,7 @@ enum Command : UINT {
     kCommandOpenResults = 6,
     kCommandTogglePause = 7,
     kCommandTranslateNow = 8,
+    kCommandSettings = 9,
 };
 
 }  // namespace tmw::app

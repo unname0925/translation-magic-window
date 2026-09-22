@@ -6,6 +6,7 @@ add_executable(tmw_integration_tests
     main.cpp
     pipeline_test.cpp
     result_window_test.cpp
+    settings_window_test.cpp
     screen_capture_test.cpp
     support/app_process.cpp
     support/app_process.h

@@ -36,6 +36,7 @@ add_executable(tmw_unit_tests
     platform/single_instance_test.cpp
     platform/text_encoding_test.cpp
     platform/win_error_test.cpp
+    ui/engine_choice_test.cpp
     ui/history_model_test.cpp
     ui/qt_runtime_test.cpp
     ui/ruby_text_test.cpp

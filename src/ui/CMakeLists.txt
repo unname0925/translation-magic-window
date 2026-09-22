@@ -7,6 +7,8 @@ add_library(tmw_ui STATIC
     card_delegate.h
     card_text.cpp
     card_text.h
+    engine_choice.cpp
+    engine_choice.h
     history_model.cpp
     history_model.h
     qt_runtime.cpp
@@ -14,7 +16,9 @@ add_library(tmw_ui STATIC
     result_window.cpp
     result_window.h
     ruby_text.cpp
-    ruby_text.h)
+    ruby_text.h
+    settings_window.cpp
+    settings_window.h)
 target_include_directories(tmw_ui PUBLIC "${PROJECT_SOURCE_DIR}/src")
 target_link_libraries(tmw_ui
     PUBLIC Qt6::Widgets tmw_core

@@ -15,6 +15,7 @@
 #include "platform/app_paths.h"
 #include "platform/logging.h"
 #include "platform/png_file.h"
+#include "platform/secret.h"
 #include "platform/settings_file.h"
 #include "platform/win_error.h"
 
@@ -232,6 +233,9 @@ LRESULT AppController::handleMessage(UINT message, WPARAM wParam, LPARAM lParam)
                 case kCommandOpenResults:
                     showResultWindow();
                     break;
+                case kCommandSettings:
+                    openSettings();
+                    break;
                 case kCommandTogglePause:
                     setPaused(!paused_);
                     break;
@@ -306,6 +310,7 @@ void AppController::showTrayMenu(POINT anchor) {
                 translateHotkeyRegistered_ ? L"立即翻譯	Ctrl+Alt+Shift+T" : L"立即翻譯");
     AppendMenuW(menu, MF_STRING | (paused_ ? MF_CHECKED : MF_UNCHECKED), kCommandTogglePause,
                 L"暫停");
+    AppendMenuW(menu, MF_STRING, kCommandSettings, L"設定…");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu, MF_STRING | (autoSave_ ? MF_CHECKED : MF_UNCHECKED), kCommandToggleAutoSave,
                 L"畫面穩定後自動存成 PNG（測試用）");
@@ -375,6 +380,17 @@ void AppController::setUpPipeline() {
         return;
     }
     platform::logInfo(std::string("OCR 裝置：") + std::string(ocr::deviceName(ocr_->device())));
+    rebuildTranslation();
+}
+
+void AppController::rebuildTranslation() {
+    // 解構的順序很重要：工作執行緒握著 pipeline_，pipeline_ 握著 translation_
+    worker_.reset();
+    pipeline_.reset();
+    translation_.reset();
+    if (ocr_ == nullptr) {
+        return;
+    }
 
     const std::filesystem::path opencc =
         core::OpenccConverter::defaultConfig(platform::executableDirectory() / L"opencc");
@@ -400,6 +416,33 @@ void AppController::setUpPipeline() {
                 [this, moved = std::move(result)] { onPipelineResult(moved); },
                 Qt::QueuedConnection);
         });
+}
+
+void AppController::openSettings() {
+    if (settingsWindow_ != nullptr) {
+        settingsWindow_->show();
+        settingsWindow_->raise();
+        settingsWindow_->activateWindow();
+        return;
+    }
+    settingsWindow_ = std::make_unique<ui::SettingsWindow>(
+        settings_, [](const std::string& key) { return platform::encryptSecret(key); });
+    QObject::connect(settingsWindow_.get(), &ui::SettingsWindow::saved, settingsWindow_.get(),
+                     [this](const core::Settings& settings) { applySettings(settings); });
+    settingsWindow_->show();
+}
+
+void AppController::applySettings(const core::Settings& settings) {
+    // 只取設定視窗管的欄位。結果視窗的位置和字級是它自己隨時存回 settings_ 的，
+    // 設定視窗拿到的是打開當下的副本，整包蓋回去會把之後的移動和縮放洗掉。
+    settings_.engines = settings.engines;
+    settings_.verboseDiagnostics = settings.verboseDiagnostics;
+    platform::setVerboseDiagnostics(settings_.verboseDiagnostics);
+    if (!settingsPath_.empty()) {
+        platform::saveSettings(settingsPath_, settings_);
+    }
+    // 換引擎之後馬上生效，不必重新啟動
+    rebuildTranslation();
 }
 
 void AppController::onPipelineResult(const core::PipelineResult& result) {

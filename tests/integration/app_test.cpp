@@ -197,6 +197,16 @@ TEST_F(AppTest, OpenResultsCommandShowsTheWindow) {
     EXPECT_NE(app_->waitForWindowByTitle(L"翻譯結果", std::chrono::seconds(10)), nullptr);
 }
 
+// M1-13：設定視窗。驗收條件是「設定儲存後重新啟動，內容還在，且金鑰是加密的」，
+// 這裡先確認視窗打得開；存檔的部分由 SettingsWindowTest 直接驗證。
+TEST_F(AppTest, SettingsCommandOpensTheWindow) {
+    ASSERT_EQ(app_->findWindowByTitle(L"設定"), nullptr) << "一開始不該顯示";
+    ASSERT_TRUE(app_->postCommand(app::kCommandSettings));
+    EXPECT_NE(app_->waitForWindowByTitle(L"設定", std::chrono::seconds(10)), nullptr)
+        << "主程式的記錄：\n"
+        << appLog();
+}
+
 // IT-01：把真正的透鏡放在測試圖案上，擷取整個透鏡範圍（含邊框和把手），
 // 結果必須和圖案完全相同，差 1 個色階都不行（內側抓取區的 alpha 只有 1/255）。
 // 正向對照：先確認透鏡真的蓋在圖案上面；擷取方法測得出「有視窗蓋住」則由

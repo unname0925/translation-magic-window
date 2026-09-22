@@ -72,6 +72,10 @@ void shutdownLogging() {
     g_verboseDiagnostics.store(false, std::memory_order_relaxed);
 }
 
+void setVerboseDiagnostics(bool verbose) {
+    g_verboseDiagnostics.store(verbose, std::memory_order_relaxed);
+}
+
 bool verboseDiagnostics() {
     return g_verboseDiagnostics.load(std::memory_order_relaxed);
 }
