@@ -157,7 +157,9 @@ nlohmann::json blocksToJson(const std::vector<TextLine>& lines) {
         converted.push_back(tmw::ocr::toOcrLine(line));
     }
     // ルビ 要先附到本文上，否則它會夾在句子中間把合併擋掉（design.md 4.4）
-    const tmw::core::RubyResult withRuby = tmw::core::attachRuby(converted);
+    tmw::core::RubyResult withRuby = tmw::core::attachRuby(converted);
+    // 診斷分段問題時要拿到「和合併看到的一模一樣」的行
+    tmw::core::resolveAmbiguousOrientation(withRuby.lines);
     nlohmann::json result = nlohmann::json::array();
     for (const tmw::core::TextBlock& block : tmw::core::mergeIntoBlocks(withRuby.lines)) {
         result.push_back(
@@ -167,6 +169,26 @@ nlohmann::json blocksToJson(const std::vector<TextLine>& lines) {
              {"vertical", block.orientation == tmw::core::Orientation::Vertical},
              {"ruby", block.ruby.size()},
              {"lines", block.lines.size()}});
+    }
+    return result;
+}
+
+// ルビ 附著和方向多數決之後的行。診斷「為什麼沒合併」時用。
+nlohmann::json textLinesToJson(const std::vector<TextLine>& lines) {
+    std::vector<tmw::core::OcrLine> converted;
+    converted.reserve(lines.size());
+    for (const TextLine& line : lines) {
+        converted.push_back(tmw::ocr::toOcrLine(line));
+    }
+    tmw::core::RubyResult withRuby = tmw::core::attachRuby(converted);
+    tmw::core::resolveAmbiguousOrientation(withRuby.lines);
+    nlohmann::json result = nlohmann::json::array();
+    for (const tmw::core::OcrLine& line : withRuby.lines) {
+        result.push_back(
+            {{"text", line.text},
+             {"rect", {line.rect.left, line.rect.top, line.rect.right, line.rect.bottom}},
+             {"vertical", line.orientation == tmw::core::Orientation::Vertical},
+             {"ruby", line.ruby.size()}});
     }
     return result;
 }
@@ -247,6 +269,7 @@ int run(const Arguments& args) {
              {"height", bgr.rows},
              {"lines", toJson(first)},
              {"blocks", blocksToJson(first)},
+             {"text_lines", textLinesToJson(first)},
              {"deterministic", deterministic},
              {"timings_ms", {{"detection", detection}, {"recognition", recognition}}}});
     }

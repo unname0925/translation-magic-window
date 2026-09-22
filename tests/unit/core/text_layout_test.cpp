@@ -48,9 +48,11 @@ TEST(ReadingOrderTest, SlightlyMisalignedLinesStillCountAsTheSameRow) {
 }
 
 TEST(ReadingOrderTest, VerticalGoesRightToLeft) {
-    // 日文漫畫：直排的欄位由右到左，同一欄由上到下
-    std::vector<OcrLine> lines = {vertical(100, 10, 20, 80, "左"),
-                                  vertical(200, 60, 20, 80, "右下"),
+    // 日文漫畫：直排的欄位由右到左，同一欄由上到下。
+    // 直排的字級是「欄長 ÷ 字數」，所以測試資料的長度要和字數相符，
+    // 否則就等於在說「這兩欄的字大小不同」，本來就不該合併。
+    std::vector<OcrLine> lines = {vertical(100, 10, 20, 20, "左"),
+                                  vertical(200, 60, 20, 40, "右下"),
                                   vertical(200, 10, 20, 40, "右上")};
 
     sortReadingOrder(lines);

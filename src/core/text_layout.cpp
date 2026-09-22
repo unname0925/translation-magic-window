@@ -11,9 +11,30 @@
 namespace tmw::core {
 namespace {
 
-// 橫排看高度、直排看寬度：都是「一個字的大小」
+// 一個字有多大。
+// 橫排看行高就準。直排不能看框的寬度：欄裡只要有「ー」「っ」或標點，框就會被拉窄，
+// 同一個對話框的兩欄常常差兩倍以上，合併就被「字級差太多」擋掉。
+// 改用「欄長 ÷ 字數」之後，10 頁真實漫畫正確復原的區塊從 86 個增加到 93 個、
+// 合併過頭從 7 個降到 4 個（見 docs/design.md 4.4）。
+// 垂直於書寫方向的大小：直排是欄寬、橫排是行高。
+// 排序判斷「是不是同一欄／同一行」要用它，不能用 fontSize——後者是沿書寫方向算的。
+int crossSize(const OcrLine& line) {
+    return line.orientation == Orientation::Vertical ? std::max(1, line.rect.width())
+                                                     : std::max(1, line.rect.height());
+}
+
+// 兩段之間的空隙，重疊時是負的。分群時任意兩行都會互相比較，
+// 不能假設誰在前誰在後，所以一律用對稱的算法。
+int gapBetween(int a1, int a2, int b1, int b2) {
+    return std::max(a1, b1) - std::min(a2, b2);
+}
+
 int fontSize(const OcrLine& line) {
-    return line.orientation == Orientation::Vertical ? line.rect.width() : line.rect.height();
+    if (line.orientation == Orientation::Horizontal) {
+        return std::max(1, line.rect.height());
+    }
+    const int characters = std::max(1, characterCount(line.text));
+    return std::max(1, line.rect.height() / characters);
 }
 
 RectI unite(const RectI& a, const RectI& b) {
@@ -62,8 +83,9 @@ bool canMerge(const OcrLine& previous, const OcrLine& next, const MergeOptions& 
     }
 
     if (previous.orientation == Orientation::Horizontal) {
-        const int gap = next.rect.top - previous.rect.bottom;
-        if (gap < -static_cast<int>(size) || gap > size * options.lineGapRatio) {
+        const int gap =
+            gapBetween(previous.rect.top, previous.rect.bottom, next.rect.top, next.rect.bottom);
+        if (gap > size * options.lineGapRatio) {
             return false;
         }
         // 左邊對齊、右邊對齊，或其中一行包含另一行（置中的對白）
@@ -85,13 +107,15 @@ bool canMerge(const OcrLine& previous, const OcrLine& next, const MergeOptions& 
         overlap(previous.rect.left, previous.rect.right, next.rect.left, next.rect.right);
     const int narrower = std::max(1, std::min(previous.rect.width(), next.rect.width()));
     if (sameColumnOverlap >= narrower * options.overlapRatio) {
-        const int verticalGap = next.rect.top - previous.rect.bottom;
-        return verticalGap >= -static_cast<int>(size) && verticalGap <= size * options.lineGapRatio;
+        const int verticalGap =
+            gapBetween(previous.rect.top, previous.rect.bottom, next.rect.top, next.rect.bottom);
+        return verticalGap <= size * options.lineGapRatio;
     }
 
-    // 不同欄：下一欄在左邊（日文漫畫由右到左）
-    const int gap = previous.rect.left - next.rect.right;
-    if (gap < -static_cast<int>(size) || gap > size * options.columnGapRatio) {
+    // 不同欄：兩欄之間的距離（誰在左誰在右都一樣）
+    const int gap =
+        gapBetween(previous.rect.left, previous.rect.right, next.rect.left, next.rect.right);
+    if (gap > size * options.columnGapRatio) {
         return false;
     }
     const double tolerance = size * options.alignRatio;
@@ -118,7 +142,7 @@ void sortReadingOrder(std::vector<OcrLine>& lines) {
     std::vector<int> sizes;
     sizes.reserve(lines.size());
     for (const OcrLine& line : lines) {
-        sizes.push_back(std::max(1, fontSize(line)));
+        sizes.push_back(crossSize(line));
     }
     std::ranges::nth_element(sizes, sizes.begin() + static_cast<std::ptrdiff_t>(sizes.size() / 2));
     const int typical = sizes[sizes.size() / 2];
