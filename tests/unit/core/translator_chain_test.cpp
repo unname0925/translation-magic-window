@@ -181,6 +181,11 @@ TEST_F(TranslatorChainTest, ReportsUnavailableWhenEveryEngineIsPaused) {
         FAIL() << "全部暫停時應該丟例外";
     } catch (const TranslatorError& error) {
         EXPECT_EQ(error.kind(), TranslateError::Unavailable);
+        // 只說「沒有可用的引擎」看不出是被限流還是連不上，也不知道何時會恢復
+        const std::string message = error.what();
+        EXPECT_NE(message.find("first"), std::string::npos) << message;
+        EXPECT_NE(message.find("連線失敗"), std::string::npos) << message;
+        EXPECT_NE(message.find("分鐘"), std::string::npos) << message;
     }
 }
 

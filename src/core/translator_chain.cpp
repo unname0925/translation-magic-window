@@ -1,8 +1,10 @@
 #include "core/translator_chain.h"
 
+#include <chrono>
 #include <cstddef>
 #include <exception>
 #include <optional>
+#include <string>
 #include <utility>
 
 namespace tmw::core {
@@ -14,6 +16,23 @@ TranslatorChain::TranslatorChain(std::vector<std::shared_ptr<ITranslator>> engin
     for (std::shared_ptr<ITranslator>& engine : engines) {
         states_.push_back(State{std::move(engine), 0, TimePoint{}});
     }
+}
+
+std::string TranslatorChain::describePaused() const {
+    const TimePoint now = clock_.now();
+    std::string out;
+    for (const State& state : states_) {
+        if (now >= state.pausedUntil) {
+            continue;
+        }
+        const auto minutes = std::chrono::duration_cast<std::chrono::minutes>(
+                                 state.pausedUntil - now + std::chrono::minutes(1))
+                                 .count();
+        out += out.empty() ? "" : "；";
+        out += state.engine->id() + "：" + describeTranslateError(state.lastError) + "，約 " +
+               std::to_string(minutes) + " 分鐘後再試";
+    }
+    return out;
 }
 
 void TranslatorChain::recordFailure(State& state) {
@@ -64,6 +83,10 @@ ChainResult TranslatorChain::translate(std::span<const std::string> segments,
                 throw;
             }
             lastError = error;
+            {
+                const std::lock_guard lock(mutex_);
+                states_[i].lastError = error.kind();
+            }
         } catch (const std::exception& error) {
             // 引擎應該丟 TranslatorError，但第三方程式庫（JSON、HTTP）可能丟別的
             lastError = TranslatorError(TranslateError::BadResponse, error.what());
@@ -73,8 +96,12 @@ ChainResult TranslatorChain::translate(std::span<const std::string> segments,
     }
 
     if (!tried) {
+        if (states_.empty()) {
+            throw TranslatorError(TranslateError::Unavailable, "沒有設定任何翻譯引擎");
+        }
+        const std::lock_guard lock(mutex_);
         throw TranslatorError(TranslateError::Unavailable,
-                              states_.empty() ? "沒有設定任何翻譯引擎" : "所有翻譯引擎都在暫停中");
+                              "所有翻譯引擎都在暫停中（" + describePaused() + "）");
     }
     throw lastError.value();
 }

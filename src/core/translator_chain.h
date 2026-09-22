@@ -49,7 +49,12 @@ private:
         std::shared_ptr<ITranslator> engine;
         int failures = 0;
         TimePoint pausedUntil{};
+        // 為什麼被暫停。使用者看到「沒有可用的引擎」時才知道是被限流還是連不上。
+        TranslateError lastError = TranslateError::Unavailable;
     };
+
+    // 「google：被限流或額度用完，約 4 分鐘後再試」
+    std::string describePaused() const;
 
     // 呼叫端要先取得 mutex_
     void recordFailure(State& state);
