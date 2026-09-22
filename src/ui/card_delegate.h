@@ -11,6 +11,8 @@ class QAbstractItemView;
 
 namespace tmw::ui {
 
+class RubyText;
+
 class CardDelegate : public QStyledItemDelegate {
     Q_OBJECT
 
@@ -25,9 +27,25 @@ public:
     QSize sizeHint(const QStyleOptionViewItem& option, const QModelIndex& index) const override;
 
 private:
-    // 把一張卡片排版成 HTML。寬度會影響換行，所以要一起指定。
-    std::unique_ptr<QTextDocument> layout(const QModelIndex& index, const QFont& font,
-                                          const QPalette& palette, int width) const;
+    // 一張卡片排好版之後的樣子。paint 和 sizeHint 都用它，兩邊才不會對不上。
+    struct Layout {
+        struct Group {
+            std::shared_ptr<RubyText> source;
+            std::shared_ptr<RubyText> translation;
+            int top = 0;
+            int translationTop = 0;
+        };
+        QString header;
+        QString error;
+        int headerHeight = 0;
+        int errorHeight = 0;
+        int width = 0;
+        int height = 0;
+        std::vector<Group> groups;
+    };
+
+    // 寬度會影響換行，所以要一起指定
+    Layout layout(const QModelIndex& index, const QFont& font, int width) const;
     // 排版可以用的寬度
     int availableWidth(const QStyleOptionViewItem& option) const;
 

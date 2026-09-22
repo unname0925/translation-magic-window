@@ -101,6 +101,29 @@ TEST_F(ResultWindowTest, EveryCardHasAHeight) {
     EXPECT_GT(view->sizeHintForRow(1), 0);
 }
 
+TEST_F(ResultWindowTest, RubyTakesUpSpaceAboveTheText) {
+    // ルビ 畫在對應文字的正上方，所以那一列會比沒有 ルビ 的高（design.md 4.7）
+    core::HistoryCard withRuby;
+    withRuby.language = core::Language::Japanese;
+    withRuby.time = std::chrono::system_clock::now();
+    withRuby.groups.push_back(core::HistoryGroup{"{本気|マジ}で戦うぞ", "我要{認真|玩真的}打一場"});
+    core::HistoryCard withoutRuby;
+    withoutRuby.language = core::Language::Japanese;
+    withoutRuby.time = withRuby.time;
+    withoutRuby.groups.push_back(core::HistoryGroup{"本気で戦うぞ", "我要認真打一場"});
+
+    window_.addCard(withoutRuby);
+    window_.addCard(withRuby);
+    settle();
+
+    auto* view = window_.findChild<QListView*>();
+    ASSERT_NE(view, nullptr);
+    const int plainHeight = view->sizeHintForRow(0);
+    const int rubyHeight = view->sizeHintForRow(1);
+    ASSERT_GT(plainHeight, 0);
+    EXPECT_GT(rubyHeight, plainHeight) << "有 ルビ 的那一張要高一些";
+}
+
 TEST_F(ResultWindowTest, FontSizeStaysInAReadableRange) {
     window_.setFontPointSize(1);
     EXPECT_GE(window_.fontPointSize(), 7);

@@ -38,6 +38,7 @@ add_executable(tmw_unit_tests
     platform/win_error_test.cpp
     ui/history_model_test.cpp
     ui/qt_runtime_test.cpp
+    ui/ruby_text_test.cpp
     sanitizer_canary_test.cpp)
 target_include_directories(tmw_unit_tests PRIVATE "${PROJECT_SOURCE_DIR}/tests")
 # OpenCC 的字典檔不必複製到測試旁邊，直接讀 vcpkg 安裝的位置（見 cmake/Opencc.cmake）

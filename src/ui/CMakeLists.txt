@@ -12,7 +12,9 @@ add_library(tmw_ui STATIC
     qt_runtime.cpp
     qt_runtime.h
     result_window.cpp
-    result_window.h)
+    result_window.h
+    ruby_text.cpp
+    ruby_text.h)
 target_include_directories(tmw_ui PUBLIC "${PROJECT_SOURCE_DIR}/src")
 target_link_libraries(tmw_ui
     PUBLIC Qt6::Widgets tmw_core

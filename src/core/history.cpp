@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <utility>
 
+#include "core/ruby.h"
 #include "core/translation_cache.h"
 
 namespace tmw::core {
@@ -49,7 +50,9 @@ std::optional<HistoryCard> History::add(const PipelineResult& result,
         const bool isNew =
             std::find(memory->seen.begin(), memory->seen.end(), key) == memory->seen.end();
         if (isNew) {
-            card.groups.push_back(HistoryGroup{group.block.text, group.translation});
+            // 原文存成帶標記的版本（`{本文|讀音}`），結果視窗才畫得出 ルビ
+            card.groups.push_back(
+                HistoryGroup{markRuby(group.block.text, group.block.ruby), group.translation});
         }
         seen.push_back(std::move(key));
     }
