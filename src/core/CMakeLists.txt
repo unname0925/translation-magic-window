@@ -25,6 +25,8 @@ add_library(tmw_core STATIC
     lens_layout.h
     opencc_converter.cpp
     opencc_converter.h
+    perf_stats.cpp
+    perf_stats.h
     pipeline.cpp
     pipeline.h
     ruby.cpp

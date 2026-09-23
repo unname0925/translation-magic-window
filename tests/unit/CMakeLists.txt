@@ -11,6 +11,7 @@ add_executable(tmw_unit_tests
     core/language_test.cpp
     core/lens_layout_test.cpp
     core/opencc_converter_test.cpp
+    core/perf_stats_test.cpp
     core/pipeline_test.cpp
     core/pipeline_worker_test.cpp
     core/ruby_test.cpp

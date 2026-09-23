@@ -5,6 +5,7 @@
 #include <cwchar>
 #include <exception>
 #include <fstream>
+#include <iterator>
 #include <string>
 
 #include "platform/logging.h"

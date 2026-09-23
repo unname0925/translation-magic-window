@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <span>
 #include <string>
+#include <vector>
 
 #include "platform/text_encoding.h"
 #include "platform/win_error.h"

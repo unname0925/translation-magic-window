@@ -137,6 +137,13 @@ TEST(DebugReportTest, WorksBeforeAnythingHasBeenTranslated) {
     EXPECT_TRUE(report["ocrLines"].empty());
 }
 
+TEST(DebugReportTest, CarriesThePerformanceSummary) {
+    DebugReportInput input = inputWithAResult();
+    input.perfReport = "共 12 次\nOCR 83.0 ms";
+    const json report = json::parse(buildDebugReport(input));
+    EXPECT_EQ(report["perf"], "共 12 次\nOCR 83.0 ms");
+}
+
 TEST(DebugReportTest, SaysWhyTheTranslationFailed) {
     DebugReportInput input = inputWithAResult();
     input.lastResult->error = "所有引擎都暫停中";

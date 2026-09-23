@@ -112,6 +112,7 @@ std::string buildDebugReport(const DebugReportInput& input) {
         lines.push_back(toJson(line));
     }
     report["ocrLines"] = std::move(lines);
+    report["perf"] = input.perfReport;
 
     return report.dump(2) + "\n";
 }

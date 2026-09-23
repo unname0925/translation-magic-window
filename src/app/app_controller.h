@@ -10,6 +10,7 @@
 #include "core/auto_trigger.h"
 #include "core/clock.h"
 #include "core/history.h"
+#include "core/perf_stats.h"
 #include "core/pipeline.h"
 #include "core/pipeline_worker.h"
 #include "core/settings.h"
@@ -107,6 +108,8 @@ private:
     std::unique_ptr<ui::SettingsWindow> settingsWindow_;
     // 最後一次處理的結果，除錯傾印和覆蓋框要用
     std::optional<core::PipelineResult> lastResult_;
+    // 每個步驟的耗時，除錯傾印會附上統計（M1-15）
+    core::PerfStats perf_;
     std::unique_ptr<platform::DebugOverlayWindow> debugOverlay_;
     // 上一次畫的是什麼，一樣就不重畫（每 100 毫秒會檢查一次）
     core::LensState debugOverlayState_ = core::LensState::Showing;

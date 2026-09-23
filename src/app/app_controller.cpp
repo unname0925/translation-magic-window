@@ -5,7 +5,6 @@
 #include <QApplication>
 #include <chrono>
 #include <exception>
-#include <fstream>
 #include <optional>
 #include <string>
 #include <utility>
@@ -435,8 +434,13 @@ void AppController::setUpPipeline() {
         return;
     }
     try {
+        // 固定偵測的輸入大小。透鏡可以調整大小，但形狀一變，DirectML 上那個大小的
+        // 每一次推論都會永久慢 3～5 倍，暖機也白做了（M1-03；M1-15 量出整張漫畫頁
+        // 371 ms → 189 ms，偵測 100 ms → 20 ms）。
+        ocr::OcrOptions ocrOptions;
+        ocrOptions.detection.fixedInput = ocr::lensDetectionInput();
         ocr_ = std::make_unique<ocr::OcrService>(models, ocr::TextLanguage::JapaneseOrEnglish,
-                                                 ocr::Device::Auto);
+                                                 ocr::Device::Auto, ocrOptions);
     } catch (const std::exception& error) {
         platform::logError(std::string("OCR 模型載入失敗，這次執行不會翻譯：") + error.what());
         return;
@@ -575,6 +579,7 @@ std::filesystem::path AppController::writeDebugDump() {
         translation_ == nullptr ? "（沒有翻譯引擎）" : translation_->engineStatus();
     contents.report.settings = settings_;
     contents.report.lastResult = lastResult_;
+    contents.report.perfReport = perf_.report();
     if (lastResult_.has_value()) {
         contents.report.lastLines = lastResult_->lines;
     }
@@ -597,6 +602,7 @@ void AppController::onPipelineResult(const core::PipelineResult& result) {
         return;
     }
     lastResult_ = result;  // 除錯傾印要的是「最後真的處理過什麼」
+    perf_.add(result.timings);
     refreshDebugOverlay();
     if (!result.error.empty()) {
         platform::log(platform::LogLevel::Warn, context, "翻譯失敗：" + result.error);

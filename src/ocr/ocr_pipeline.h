@@ -27,6 +27,11 @@ struct OcrTimings {
     int boxes = 0;               // 偵測到的文字框數
 };
 
+// 產品用的偵測輸入大小。透鏡可以調整大小，但模型的輸入形狀必須固定：DirectML 上
+// 一個工作階段只有「第一次看到的大小」跑得快，之後每換一種大小，那個大小的每一次推論
+// 都永久慢 3～5 倍（M1-03，design.md 第 5 節）。暖機和產品都用這個值，才不會各用各的。
+cv::Size lensDetectionInput();
+
 struct OcrOptions {
     DetectionOptions detection;
     float recognitionScoreThreshold = 0.0f;  // 分數低於這個值的結果捨棄

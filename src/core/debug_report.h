@@ -31,6 +31,8 @@ struct DebugReportInput {
     std::optional<PipelineResult> lastResult;
     // 合併成段落之前，OCR 讀到的每一行。查「為什麼這句被切開」時最有用。
     std::vector<OcrLine> lastLines;
+    // 各步驟耗時的統計（core/perf_stats.h 的報告）。空的就不寫進去。
+    std::string perfReport;
 };
 
 // 整理成 JSON（縮排過，人看得懂）

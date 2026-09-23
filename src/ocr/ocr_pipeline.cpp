@@ -25,11 +25,15 @@ OcrPipeline::OcrPipeline(const std::filesystem::path& detectionModelDir,
     }
 }
 
+cv::Size lensDetectionInput() {
+    return {960, 544};
+}
+
 void OcrPipeline::warmUp() {
     // 偵測：用固定輸入的大小（沒設定時用透鏡常見的大小），辨識：最常見的寬度級距
     const cv::Size detectionSize = options_.detection.fixedInput.area() > 0
                                        ? options_.detection.fixedInput
-                                       : cv::Size(960, 544);
+                                       : lensDetectionInput();
     const cv::Mat frame(detectionSize, CV_8UC3, cv::Scalar(255, 255, 255));
     detector_.detect(frame);
 
