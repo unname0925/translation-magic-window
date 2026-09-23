@@ -12,6 +12,7 @@
 #include "app/app_controller.h"
 #include "app/app_identity.h"
 #include "core/command_line.h"
+#include "ocr/onnx_model.h"
 #include "platform/app_paths.h"
 #include "platform/crash_dump.h"
 #include "platform/logging.h"
@@ -92,8 +93,13 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
         int argc = 0;
         const QApplication application(argc, nullptr);
 
-        tmw::app::AppController controller(instance, dataDirectory, settingsPath,
-                                           settings.settings);
+        const tmw::ocr::Device ocrDevice = !options.ocrDevice            ? tmw::ocr::Device::Auto
+                                           : *options.ocrDevice == "cpu" ? tmw::ocr::Device::Cpu
+                                           : *options.ocrDevice == "dml"
+                                               ? tmw::ocr::Device::DirectML
+                                               : tmw::ocr::Device::Auto;
+        tmw::app::AppController controller(instance, dataDirectory, settingsPath, settings.settings,
+                                           ocrDevice);
         const int code = controller.run();
         tmw::platform::logInfo("結束");
         tmw::platform::shutdownLogging();

@@ -50,5 +50,40 @@ TEST(CommandLineTest, UnknownOptionMessageIsUtf8) {
     }
 }
 
+TEST(CommandLineTest, OcrDeviceDefaultsToNothing) {
+    EXPECT_FALSE(parse({}).ocrDevice.has_value()) << "沒指定就是 auto，由程式自己決定";
+}
+
+TEST(CommandLineTest, OcrDeviceTakesTheThreeDevices) {
+    EXPECT_EQ(parse({L"--ocr-device", L"cpu"}).ocrDevice, std::optional<std::string>("cpu"));
+    EXPECT_EQ(parse({L"--ocr-device", L"dml"}).ocrDevice, std::optional<std::string>("dml"));
+    EXPECT_EQ(parse({L"--ocr-device", L"auto"}).ocrDevice, std::optional<std::string>("auto"));
+}
+
+TEST(CommandLineTest, OcrDeviceRejectsSomethingElse) {
+    // 打錯字時要當場說清楚，而不是安靜地用 auto——測「沒有顯示卡的電腦」時
+    // 以為在用 CPU 其實在用 GPU，整個測試就白做了
+    try {
+        parse({L"--ocr-device", L"gpu"});
+        FAIL() << "expected CommandLineError";
+    } catch (const CommandLineError& error) {
+        EXPECT_NE(std::string(error.what()).find("gpu"), std::string::npos) << error.what();
+    }
+}
+
+TEST(CommandLineTest, OcrDeviceNeedsAValue) {
+    EXPECT_THROW(parse({L"--ocr-device"}), CommandLineError);
+}
+
+TEST(CommandLineTest, OcrDeviceCannotBeGivenTwice) {
+    EXPECT_THROW(parse({L"--ocr-device", L"cpu", L"--ocr-device", L"dml"}), CommandLineError);
+}
+
+TEST(CommandLineTest, OcrDeviceAndDataDirectoryGoTogether) {
+    const CommandLineOptions options = parse({L"--data-dir", L"C:\temp", L"--ocr-device", L"cpu"});
+    EXPECT_EQ(options.dataDirectory, std::filesystem::path("C:\temp"));
+    EXPECT_EQ(options.ocrDevice, std::optional<std::string>("cpu"));
+}
+
 }  // namespace
 }  // namespace tmw::core

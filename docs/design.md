@@ -825,6 +825,8 @@ Ollama、llama.cpp、LM Studio，所以只要一份實作，使用者只需要�
 | 當機傾印、除錯傾印 | `%LOCALAPPDATA%\TranslationMagicWindow\dumps\` |
 | 擷取的 PNG（開發用，M0） | `%LOCALAPPDATA%\TranslationMagicWindow\captures\` |
 
+**命令列參數 `--ocr-device cpu|dml|auto`**：強迫 OCR 用哪個裝置，預設 `auto`（先試 DirectML，建立失敗就用 CPU）。手動測試矩陣裡的「用 CPU 模式執行，模擬沒有顯示卡的電腦」靠它；打錯字會當場報錯而不是安靜地用 auto，否則會以為在測 CPU 其實在用 GPU。
+
 **命令列參數 `--data-dir <資料夾>`**：把程式寫出的檔案（目前是擷取的 PNG，之後還有設定和記錄檔）改放到指定的資料夾。主要給自動化測試用，讓測試不會動到使用者的資料。模型的位置不受影響，M1 決定是否另外提供參數。參數不認得、缺少值或重複時，程式會顯示錯誤訊息並結束。
 
 設定檔帶有 `schemaVersion` 欄位。讀到舊版本時自動遷移；讀到壞掉的檔案時，先備份原檔，再改用預設值。

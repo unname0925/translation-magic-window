@@ -31,8 +31,10 @@ class AppController {
 public:
     // dataDirectory：程式寫出的檔案（擷取的 PNG、記錄）要放在哪裡
     // settingsPath：設定檔的位置，結果視窗的位置和字級會存回去
+    // ocrDevice：OCR 要用哪個裝置（--ocr-device）。預設 Auto：先試 DirectML，失敗改用 CPU。
     AppController(HINSTANCE instance, std::filesystem::path dataDirectory,
-                  std::filesystem::path settingsPath, core::Settings settings);
+                  std::filesystem::path settingsPath, core::Settings settings,
+                  ocr::Device ocrDevice = ocr::Device::Auto);
     ~AppController();
 
     AppController(const AppController&) = delete;
@@ -92,6 +94,7 @@ private:
     bool paused_ = false;
     std::filesystem::path settingsPath_;
     core::Settings settings_;
+    ocr::Device ocrDevice_ = ocr::Device::Auto;
 
     // 宣告順序就是建構順序；解構時反過來，透鏡最先消失，不會再觸發回呼
     core::SteadyClock clock_;

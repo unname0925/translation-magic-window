@@ -108,10 +108,12 @@ std::wstring timestampedDumpFolderName() {
 }  // namespace
 
 AppController::AppController(HINSTANCE instance, std::filesystem::path dataDirectory,
-                             std::filesystem::path settingsPath, core::Settings settings)
+                             std::filesystem::path settingsPath, core::Settings settings,
+                             ocr::Device ocrDevice)
     : dataDirectory_(std::move(dataDirectory)),
       settingsPath_(std::move(settingsPath)),
-      settings_(std::move(settings)) {
+      settings_(std::move(settings)),
+      ocrDevice_(ocrDevice) {
     taskbarCreatedMessage_ = RegisterWindowMessageW(L"TaskbarCreated");
     showLensMessage_ = RegisterWindowMessageW(kShowLensMessageName);
 
@@ -440,7 +442,7 @@ void AppController::setUpPipeline() {
         ocr::OcrOptions ocrOptions;
         ocrOptions.detection.fixedInput = ocr::lensDetectionInput();
         ocr_ = std::make_unique<ocr::OcrService>(models, ocr::TextLanguage::JapaneseOrEnglish,
-                                                 ocr::Device::Auto, ocrOptions);
+                                                 ocrDevice_, ocrOptions);
     } catch (const std::exception& error) {
         platform::logError(std::string("OCR 模型載入失敗，這次執行不會翻譯：") + error.what());
         return;

@@ -23,6 +23,18 @@ CommandLineOptions parseCommandLine(std::span<const std::wstring> args) {
                 throw CommandLineError("--data-dir requires a folder path");
             }
             options.dataDirectory = std::filesystem::path(args[++i]);
+        } else if (arg == L"--ocr-device") {
+            if (options.ocrDevice) {
+                throw CommandLineError("--ocr-device is specified more than once");
+            }
+            if (i + 1 >= args.size()) {
+                throw CommandLineError("--ocr-device requires cpu, dml or auto");
+            }
+            const std::string value = toUtf8(args[++i]);
+            if (value != "cpu" && value != "dml" && value != "auto") {
+                throw CommandLineError("--ocr-device must be cpu, dml or auto, not " + value);
+            }
+            options.ocrDevice = value;
         } else {
             throw CommandLineError("unknown command-line option: " + toUtf8(arg));
         }
