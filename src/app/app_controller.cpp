@@ -624,7 +624,11 @@ void AppController::onPipelineResult(const core::PipelineResult& result) {
             platform::sensitive(group.source) + " → " + platform::sensitive(group.translation));
     }
     resultWindow_->addCard(*card);
-    showResultWindow();
+    // 視窗還沒開著才把它叫出來。透鏡放在一直變的內容上（遊戲、網頁漫畫）時，
+    // 每隔幾秒把結果視窗拉到遊戲畫面前面是不能用的；要一直在最上層的話有「置頂」可以開。
+    if (!resultWindow_->isVisible()) {
+        showResultWindow();
+    }
 }
 
 void AppController::showResultWindow() {
