@@ -3,6 +3,7 @@
 #include <windows.h>
 
 #include <d3d11_4.h>
+#include <d3d11sdklayers.h>
 #include <dxgi1_2.h>
 #include <windows.graphics.capture.interop.h>
 #include <windows.graphics.directx.direct3d11.interop.h>
@@ -200,7 +201,32 @@ struct ScreenCapture::Impl {
         shared->d3d = createD3D();
     }
 
-    ~Impl() { stopSession(); }
+    ~Impl() {
+        stopSession();
+        releaseCaches();
+#ifndef NDEBUG
+        // 除錯版：把 D3D 全部放掉之後列出還活著的物件（execution-plan 5.7）。
+        // 訊息會送到除錯輸出（Visual Studio 的「輸出」視窗，或 DebugView）。
+        // 沒安裝「圖形工具」選用功能時除錯層建立不起來，try_as 會是空的，就跳過。
+        const auto debug = shared->d3d.device.try_as<ID3D11Debug>();
+        shared->d3d = {};
+        if (debug) {
+            debug->ReportLiveDeviceObjects(
+                static_cast<D3D11_RLDO_FLAGS>(D3D11_RLDO_SUMMARY | D3D11_RLDO_IGNORE_INTERNAL));
+        }
+#endif
+    }
+
+    // 放掉為了重複使用而留著的材質。平常不做（留著才不用每次重建），
+    // 只有要問「還有什麼沒被釋放」的時候才需要先清乾淨。
+    void releaseCaches() {
+        std::lock_guard lock(shared->mutex);
+        shared->regionStaging = {};
+        shared->thumbnailStaging = {};
+        shared->mipView = nullptr;
+        shared->mipTexture = nullptr;
+        shared->mipSize = {};
+    }
 
     void stopSession() {
         {
@@ -502,6 +528,18 @@ std::optional<core::ImageBgra> ScreenCapture::readThumbnail(const core::RectI& s
 
 void ScreenCapture::reset() {
     impl_->stopSession();
+}
+
+unsigned long ScreenCapture::d3dDeviceReferences() const {
+    std::lock_guard lock(impl_->shared->mutex);
+    ID3D11Device* device = impl_->shared->d3d.device.get();
+    if (device == nullptr) {
+        return 0;
+    }
+    // 每一個沒被釋放的材質、表面或工作階段都抓著裝置，所以參考計數就是「還有多少東西活著」。
+    // 看的是「跑完一輪前後有沒有變」，絕對值取決於 D3D 內部怎麼實作，沒有意義。
+    device->AddRef();
+    return device->Release();
 }
 
 CaptureStats ScreenCapture::stats() const {

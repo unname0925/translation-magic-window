@@ -65,6 +65,11 @@ public:
 
     CaptureStats stats() const;
 
+    // D3D 裝置目前的參考計數。**給測試用**：每一個沒被釋放的材質、表面或工作階段都會
+    // 抓著裝置，所以「重複擷取幾輪之後這個數字有沒有變」就是「有沒有漏掉 D3D 物件」
+    // （docs/execution-plan.md 5.7）。絕對值取決於 D3D 內部怎麼實作，只有變化量有意義。
+    unsigned long d3dDeviceReferences() const;
+
 private:
     struct Impl;
     std::unique_ptr<Impl> impl_;

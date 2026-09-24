@@ -236,6 +236,41 @@ TEST_F(ScreenCaptureTest, ResetStartsNewSession) {
     EXPECT_EQ(patternMismatches(*image, 0, 0), 0);
 }
 
+// execution-plan.md 5.7：「程式結束時列出沒有釋放的 D3D 物件，數量必須為 0」。
+//
+// 用參考計數來問，而不是去數除錯層的報告：每一個沒被釋放的材質、表面或工作階段都會
+// 抓著 D3D 裝置，所以「重複擷取幾輪之後裝置的參考計數有沒有變」就等於「有沒有漏掉東西」。
+// 這樣不必安裝「圖形工具」選用功能，也不用去解析報告的文字。
+// 絕對值取決於 D3D 內部怎麼實作，所以比的是變化量。
+//
+// **抓得到什麼**：實測把 `pool.Close()` 拿掉（每輪留下一個沒關的 frame pool）之後，
+// 參考計數從 24 變成 64，測試失敗。
+// **抓不到什麼**：已經 `Close()` 過、只是物件本身還留著的東西。Close() 就是放掉資源，
+// 之後它不再抓著裝置——那種情況是記憶體浪費，不是 D3D 物件洩漏，要靠耐久測試看出來。
+TEST_F(ScreenCaptureTest, RepeatedCapturesDoNotLeakD3DObjects) {
+    const TestWindow window(target_);
+    test::waitForComposition();
+
+    ScreenCapture capture;
+    // 先跑完整的一輪，讓該建立的都建立起來（工作階段、畫面複本、暫存材質、mipmap），
+    // 再取基準；否則量到的只是「第一次的配置」，不是洩漏。
+    ASSERT_TRUE(capture.readRegion(target_, kTimeout).has_value());
+    ASSERT_TRUE(capture.readThumbnail(target_, 64, kTimeout).has_value());
+    capture.reset();
+    ASSERT_TRUE(capture.readRegion(target_, kTimeout).has_value());
+    ASSERT_TRUE(capture.readThumbnail(target_, 64, kTimeout).has_value());
+    const unsigned long baseline = capture.d3dDeviceReferences();
+    ASSERT_GT(baseline, 0u) << "問不到參考計數，這個測試測不出東西";
+
+    for (int round = 0; round < 5; ++round) {
+        capture.reset();
+        ASSERT_TRUE(capture.readRegion(target_, kTimeout).has_value()) << "第 " << round << " 輪";
+        ASSERT_TRUE(capture.readThumbnail(target_, 64, kTimeout).has_value());
+    }
+    EXPECT_EQ(capture.d3dDeviceReferences(), baseline)
+        << "跑了 5 輪之後還有東西抓著 D3D 裝置，有物件沒被釋放";
+}
+
 // IT-07：游標停在擷取範圍內時，擷取結果必須和圖案完全相同。
 // 正向對照：開啟游標擷取時，同一個位置必須看得到游標，
 // 證明游標真的在範圍內、而且是顯示中的，這個測試測得出差異。
