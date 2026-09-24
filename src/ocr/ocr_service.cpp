@@ -45,20 +45,31 @@ OcrService::OcrService(const std::filesystem::path& modelsDirectory, TextLanguag
                 recognitionModelPath(modelsDirectory, chooseModels(language, device)), device,
                 options) {}
 
-std::vector<core::OcrLine> OcrService::recognize(const core::ImageBgra& frame,
-                                                 std::stop_token cancel) {
+OcrService::OcrService(const std::filesystem::path& modelsDirectory, Device device,
+                       const OcrOptions& options)
+    // 兩種語言的偵測模型是同一個（M0-11：v6 的偵測對韓文也最好），只有辨識模型不同
+    : pipeline_(detectionModelPath(modelsDirectory,
+                                   chooseModels(TextLanguage::JapaneseOrEnglish, device)),
+                recognitionModelPath(modelsDirectory,
+                                     chooseModels(TextLanguage::JapaneseOrEnglish, device)),
+                recognitionModelPath(modelsDirectory, chooseModels(TextLanguage::Korean, device)),
+                device, options) {}
+
+core::OcrResult OcrService::recognize(const core::ImageBgra& frame, core::Language script,
+                                      std::stop_token cancel) {
     if (frame.empty() || cancel.stop_requested()) {
         return {};
     }
     const cv::Mat bgr = toBgr(frame);
-    const std::vector<TextLine> lines = pipeline_.run(bgr, &lastTimings_);
+    const OcrRun run = pipeline_.run(bgr, script, &lastTimings_);
     if (cancel.stop_requested()) {
         return {};
     }
-    std::vector<core::OcrLine> out;
-    out.reserve(lines.size());
-    for (const TextLine& line : lines) {
-        out.push_back(toOcrLine(line));
+    core::OcrResult out;
+    out.script = run.script;
+    out.lines.reserve(run.lines.size());
+    for (const TextLine& line : run.lines) {
+        out.lines.push_back(toOcrLine(line));
     }
     return out;
 }

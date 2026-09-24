@@ -55,7 +55,7 @@ private:
 
 class BlockingOcr final : public IOcrService {
 public:
-    std::vector<OcrLine> recognize(const ImageBgra&, std::stop_token cancel) override {
+    OcrResult recognize(const ImageBgra&, Language, std::stop_token cancel) override {
         // 先取好閂再宣告「開始了」：測試看到 started 之後才會把 latch 換掉，
         // 反過來寫的話，Release 版有機會在這中間溜過去，這件工作就不會被擋住
         Latch* waiting = latch.load();
@@ -67,7 +67,8 @@ public:
             ++cancelled;
             return {};
         }
-        return {OcrLine{RectI{20, 20, 300, 44}, "こんにちは", 0.9f, Orientation::Horizontal}};
+        return {{OcrLine{RectI{20, 20, 300, 44}, "こんにちは", 0.9f, Orientation::Horizontal}},
+                Language::Japanese};
     }
 
     std::atomic<int> started{0};

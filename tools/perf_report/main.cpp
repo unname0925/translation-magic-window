@@ -45,6 +45,8 @@ struct Arguments {
     tmw::ocr::Device device = tmw::ocr::Device::Auto;
     tmw::ocr::TextLanguage language = tmw::ocr::TextLanguage::JapaneseOrEnglish;
     int repeat = 10;
+    // --language auto：主模型和韓文模型都載入，每張圖自己判斷（M2-04）
+    bool autoLanguage = false;
     int fixedWidth = 0;  // --fixed-input W H：偵測固定用這個輸入大小
     int fixedHeight = 0;
     int cropWidth = 0;  // --crop W H：從中間裁一塊，模擬透鏡實際擷取到的範圍
@@ -91,6 +93,7 @@ std::optional<Arguments> parseArguments(int argc, wchar_t** argv) {
             if (!value) {
                 return std::nullopt;
             }
+            args.autoLanguage = *value == L"auto";
             args.language = *value == L"ko" ? tmw::ocr::TextLanguage::Korean
                                             : tmw::ocr::TextLanguage::JapaneseOrEnglish;
         } else if (option == L"--fixed-input") {
@@ -171,7 +174,13 @@ int wmain(int argc, wchar_t** argv) {
     try {
         tmw::ocr::OcrOptions options;
         options.detection.fixedInput = {args->fixedWidth, args->fixedHeight};
-        tmw::ocr::OcrService ocr(args->models, args->language, args->device, options);
+        std::optional<tmw::ocr::OcrService> ocrHolder;
+        if (args->autoLanguage) {
+            ocrHolder.emplace(args->models, args->device, options);
+        } else {
+            ocrHolder.emplace(args->models, args->language, args->device, options);
+        }
+        tmw::ocr::OcrService& ocr = *ocrHolder;
         std::printf("裝置：%s\n", std::string(tmw::ocr::deviceName(ocr.device())).c_str());
 
         tmw::core::PerfStats overall;
@@ -187,13 +196,18 @@ int wmain(int argc, wchar_t** argv) {
             std::vector<double> detection;
             std::vector<double> recognition;
             int boxes = 0;
+            tmw::core::Language chosen = tmw::core::Language::Unknown;
 
             // 第一次是暖機：模型第一次看到這個輸入大小時特別慢（design.md 4.4）
             for (int run = 0; run <= args->repeat; ++run) {
                 tmw::core::PipelineTimings timings;
 
                 const auto ocrStart = std::chrono::steady_clock::now();
-                std::vector<tmw::core::OcrLine> lines = ocr.recognize(frame, std::stop_token{});
+                // 每張圖都從 Unknown 開始：量的就是「自己判斷」那條路的成本
+                tmw::core::OcrResult recognized =
+                    ocr.recognize(frame, tmw::core::Language::Unknown, std::stop_token{});
+                std::vector<tmw::core::OcrLine> lines = std::move(recognized.lines);
+                chosen = recognized.script;
                 timings.ocrMs = millisecondsSince(ocrStart);
                 const tmw::ocr::OcrTimings inside = ocr.lastTimings();
 
@@ -204,6 +218,11 @@ int wmain(int argc, wchar_t** argv) {
                 timings.layoutMs = millisecondsSince(layoutStart);
 
                 if (run == 0) {
+                    const std::string code = tmw::core::languageCode(chosen);
+                    std::printf("判定的語言：%s\n", code.empty() ? "不確定" : code.c_str());
+                    for (const tmw::core::OcrLine& one : lines) {
+                        std::printf("    [%s]\n", one.text.c_str());
+                    }
                     std::printf("%s：%d×%d，%zu 行 → %zu 段\n",
                                 tmw::platform::wideToUtf8(image.filename().wstring()).c_str(),
                                 frame.width, frame.height, lines.size(), blocks.size());

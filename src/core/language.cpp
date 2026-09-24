@@ -87,4 +87,23 @@ Language detectLanguage(std::string_view utf8) {
     return Language::Unknown;
 }
 
+Language chooseScript(std::string_view mainText, std::string_view koreanText) {
+    const ScriptCounts main = countScripts(mainText);
+    const ScriptCounts korean = countScripts(koreanText);
+
+    // 韓文模型讀到的韓文字母，比主模型讀到的假名和漢字還多，就是韓文那一邊。
+    // 韓文畫面上主模型幾乎讀不出東西（實測整頁只剩空字串），所以這個比較很乾脆。
+    if (korean.hangul > 0 && korean.hangul >= main.kana + main.han) {
+        return Language::Korean;
+    }
+    if (main.kana + main.han > 0) {
+        return Language::Japanese;
+    }
+    if (main.latin > 0) {
+        return Language::English;
+    }
+    // 兩邊都只有數字和符號：分不出來，交給呼叫端沿用上一次的決定
+    return Language::Unknown;
+}
+
 }  // namespace tmw::core

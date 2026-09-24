@@ -67,13 +67,24 @@ struct PipelineResult {
     bool empty() const { return groups.empty(); }
 };
 
+struct OcrResult {
+    // 畫面座標（相對於 frame 左上角）的文字行
+    std::vector<OcrLine> lines;
+    // 實際採用的辨識模型（Korean，或主模型的 Japanese／English）。
+    // 呼叫端記下來下次傳回去，就不用每次都判斷（design.md 4.4「語言判斷」）。
+    Language script = Language::Unknown;
+};
+
 // OCR 服務。正式程式接 ocr 模組的模型，測試時換成假的。
 class IOcrService {
 public:
     virtual ~IOcrService() = default;
 
-    // 回傳畫面座標（相對於 frame 左上角）的文字行。取消時可以提早回傳。
-    virtual std::vector<OcrLine> recognize(const ImageBgra& frame, std::stop_token cancel) = 0;
+    // script：上一次判斷出來的語言，沿用它就只跑那一個辨識模型。
+    // Unknown 表示「請重新判斷」——兩個模型都要跑，慢一點但會挑對。
+    // 取消時可以提早回傳。
+    virtual OcrResult recognize(const ImageBgra& frame, Language script,
+                                std::stop_token cancel) = 0;
 };
 
 struct PipelineOptions {
@@ -101,7 +112,13 @@ private:
     struct LensMemory {
         std::string text;                                         // 上一次的原文（接起來）
         std::vector<std::pair<std::string, std::string>> recent;  // 最近幾組原文和譯文
+        // 上一次判斷出來的語言，沿用到透鏡移動（forget）或這個模型讀不出東西為止
+        Language script = Language::Unknown;
     };
+
+    // 記住這次用的語言；但如果讀出來的內容根本不含這個模型該讀的文字
+    // （例如畫面從日文換成韓文條漫，日文模型只讀得出空字串），就忘掉它重新判斷。
+    void rememberScript(int lens, Language script, const std::vector<OcrLine>& lines);
 
     LensMemory& memory(int lens);
 

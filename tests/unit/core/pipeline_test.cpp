@@ -24,18 +24,23 @@ OcrLine line(int left, int top, int right, int bottom, std::string text) {
 // 假的 OCR：回傳事先準備好的文字行，並記下被呼叫幾次
 class FakeOcr final : public IOcrService {
 public:
-    std::vector<OcrLine> recognize(const ImageBgra& frame, std::stop_token cancel) override {
+    OcrResult recognize(const ImageBgra& frame, Language script, std::stop_token cancel) override {
         ++calls;
         lastSize = SizeI{frame.width, frame.height};
+        askedWith.push_back(script);
         if (cancel.stop_requested()) {
             return {};
         }
-        return lines;
+        return {lines, reports};
     }
 
     std::vector<OcrLine> lines;
+    // 假裝是用這個模型讀出來的（Pipeline 會記下來，下次沿用）
+    Language reports = Language::Japanese;
     int calls = 0;
     SizeI lastSize;
+    // 每次被呼叫時，呼叫端說「上次是哪個語言」
+    std::vector<Language> askedWith;
 };
 
 class FakeTranslator final : public ITranslator {
@@ -259,6 +264,74 @@ TEST_F(PipelineTest, PassesTheFrameToOcr) {
     ocr_.lines = {line(20, 20, 300, 44, "こんにちは")};
     run(job(640, 480));
     EXPECT_EQ(ocr_.lastSize, (SizeI{640, 480}));
+}
+
+// M2-04：語言判斷的結果沿用到透鏡移動或畫面換語言為止（design.md 4.4）
+TEST_F(PipelineTest, AsksTheOcrToDecideTheFirstTime) {
+    ocr_.lines = {line(20, 20, 200, 44, "こんにちは")};
+    ocr_.reports = Language::Japanese;
+    run(job());
+    ASSERT_EQ(ocr_.askedWith.size(), 1u);
+    EXPECT_EQ(ocr_.askedWith[0], Language::Unknown) << "第一次沒有前例，要請它自己判斷";
+}
+
+TEST_F(PipelineTest, ReusesTheLanguageItAlreadyDecided) {
+    ocr_.lines = {line(20, 20, 200, 44, "こんにちは")};
+    ocr_.reports = Language::Japanese;
+    run(job());
+    ocr_.lines = {line(20, 20, 200, 44, "さようなら")};
+    run(job());
+    ASSERT_EQ(ocr_.askedWith.size(), 2u);
+    EXPECT_EQ(ocr_.askedWith[1], Language::Japanese) << "第二次要沿用，否則每次都要跑兩個辨識模型";
+}
+
+TEST_F(PipelineTest, ForgettingTheLensAlsoForgetsTheLanguage) {
+    ocr_.lines = {line(20, 20, 200, 44, "こんにちは")};
+    ocr_.reports = Language::Japanese;
+    run(job());
+    pipeline_.forget(1);  // 透鏡被拖到別的地方
+    run(job());
+    ASSERT_EQ(ocr_.askedWith.size(), 2u);
+    EXPECT_EQ(ocr_.askedWith[1], Language::Unknown) << "換地方了，要重新判斷";
+}
+
+TEST_F(PipelineTest, ADeadEndLanguageIsForgottenSoItCanSwitch) {
+    // 日文漫畫看到一半換成韓文條漫：日文模型讀韓文只讀得出空字串和網址，
+    // 沒忘掉的話會一直用錯的模型，永遠翻不出東西
+    ocr_.lines = {line(20, 20, 200, 44, "こんにちは")};
+    ocr_.reports = Language::Japanese;
+    run(job());
+    // 韓文頁面上的網址浮水印：日文模型讀得到它，卻讀不到任何假名或漢字
+    ocr_.lines = {line(20, 20, 200, 44, "novelagit.xyz")};
+    run(job());
+    ASSERT_EQ(ocr_.askedWith.size(), 2u);
+    EXPECT_EQ(ocr_.askedWith[1], Language::Japanese) << "這一次還是沿用，換不換要看它讀到什麼";
+
+    run(job());
+    ASSERT_EQ(ocr_.askedWith.size(), 3u);
+    EXPECT_EQ(ocr_.askedWith[2], Language::Unknown)
+        << "日文判定卻讀不到假名或漢字，要重新判斷——不然那串網址會讓它永遠切不到韓文";
+}
+
+TEST_F(PipelineTest, AnEnglishDecisionIsNotThrownAwayForHavingNoKana) {
+    // 英文頁面本來就沒有假名和漢字。拿日文的標準去檢查它，會變成每次都跑兩個模型。
+    ocr_.lines = {line(20, 20, 200, 44, "Hello there")};
+    ocr_.reports = Language::English;
+    run(job());
+    run(job());
+    ASSERT_EQ(ocr_.askedWith.size(), 2u);
+    EXPECT_EQ(ocr_.askedWith[1], Language::English);
+}
+
+TEST_F(PipelineTest, AKoreanDecisionIsForgottenWhenNoHangulComesBack) {
+    ocr_.lines = {line(20, 20, 200, 44, "요건 어때?")};
+    ocr_.reports = Language::Korean;
+    run(job());
+    ocr_.lines = {line(20, 20, 200, 44, "こんにちは")};
+    run(job());
+    run(job());
+    ASSERT_EQ(ocr_.askedWith.size(), 3u);
+    EXPECT_EQ(ocr_.askedWith[2], Language::Unknown) << "韓文模型讀不到韓文字母了，換回去";
 }
 
 }  // namespace

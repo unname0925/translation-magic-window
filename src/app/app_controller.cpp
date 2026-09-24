@@ -441,8 +441,9 @@ void AppController::setUpPipeline() {
         // 371 ms → 189 ms，偵測 100 ms → 20 ms）。
         ocr::OcrOptions ocrOptions;
         ocrOptions.detection.fixedInput = ocr::lensDetectionInput();
-        ocr_ = std::make_unique<ocr::OcrService>(models, ocr::TextLanguage::JapaneseOrEnglish,
-                                                 ocrDevice_, ocrOptions);
+        // 主模型和韓文模型都載入，語言自動判斷（design.md 4.4）。只載日文模型的話，
+        // 韓文畫面讀出來的是一整頁空字串。
+        ocr_ = std::make_unique<ocr::OcrService>(models, ocrDevice_, ocrOptions);
     } catch (const std::exception& error) {
         platform::logError(std::string("OCR 模型載入失敗，這次執行不會翻譯：") + error.what());
         return;

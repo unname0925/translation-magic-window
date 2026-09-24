@@ -39,6 +39,36 @@ Pipeline::LensMemory& Pipeline::memory(int lens) {
     return memories_.back().second;
 }
 
+void Pipeline::rememberScript(int lens, Language script, const std::vector<OcrLine>& lines) {
+    if (script == Language::Unknown) {
+        return;  // 這次也判斷不出來（畫面上只有數字和符號），維持原樣
+    }
+    std::string text;
+    for (const OcrLine& line : lines) {
+        text += line.text;
+    }
+    const ScriptCounts counts = countScripts(text);
+    // 這次讀出來的東西裡，完全沒有「這個判定該有的文字」，就表示畫面換語言了
+    // （日文漫畫翻到韓文條漫）：忘掉，下一次重新判斷。否則會一直用錯的模型讀出一堆空字串。
+    //
+    // 每種判定各看各的文字：日文判定不能把拉丁字母算進去——韓文頁面上常有網址浮水印，
+    // 日文模型讀韓文本文只會得到空字串，卻讀得到那串網址，算進去就永遠切不過去。
+    const bool readSomething = [&counts, script] {
+        switch (script) {
+            case Language::Korean:
+                return counts.hangul > 0;
+            case Language::English:
+                return counts.latin > 0;
+            case Language::Japanese:
+                return counts.kana + counts.han > 0;
+            case Language::Unknown:
+                break;
+        }
+        return false;
+    }();
+    memory(lens).script = readSomething ? script : Language::Unknown;
+}
+
 void Pipeline::forget(int lens) {
     std::erase_if(memories_, [lens](const auto& entry) { return entry.first == lens; });
 }
@@ -53,7 +83,10 @@ PipelineResult Pipeline::run(const PipelineJob& job, std::stop_token cancel) {
     }
 
     const auto ocrStart = std::chrono::steady_clock::now();
-    std::vector<OcrLine> lines = ocr_.recognize(job.frame, cancel);
+    // 沿用這個透鏡上一次判斷出來的語言：只有它是 Unknown 時，兩個辨識模型才都要跑
+    OcrResult recognized = ocr_.recognize(job.frame, memory(job.lens).script, cancel);
+    std::vector<OcrLine> lines = std::move(recognized.lines);
+    rememberScript(job.lens, recognized.script, lines);
     result.timings.ocrMs = millisecondsSince(ocrStart);
     result.lines = lines;
     if (cancel.stop_requested()) {

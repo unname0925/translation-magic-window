@@ -37,4 +37,15 @@ struct ScriptCounts {
 
 ScriptCounts countScripts(std::string_view utf8);
 
+// 兩個辨識模型都跑過之後，**整張畫面一起**決定要用哪一邊的結果
+// （design.md 4.4「語言判斷」，M0-11 實測最好的策略）。
+//
+// 為什麼不逐行決定、也不看分數：PP-OCRv6 讀韓文時會給亂讀出來的結果很高的分數，
+// 「分數低於門檻才換模型」在韓文遊戲上還有 18% 的錯誤率。整張一起看就沒有這個問題。
+//
+// mainText：主模型（日文／英文）讀到的全部文字；koreanText：韓文模型讀到的全部文字。
+// 回傳 Korean 表示採用韓文模型那一邊，Japanese 或 English 表示採用主模型那一邊。
+// 兩邊都沒讀到任何文字時回傳 Unknown，呼叫端沿用上一次的決定。
+Language chooseScript(std::string_view mainText, std::string_view koreanText);
+
 }  // namespace tmw::core

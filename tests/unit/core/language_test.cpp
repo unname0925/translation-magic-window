@@ -60,5 +60,41 @@ TEST(LanguageTest, CodesMatchTheEnginesAndGroundTruth) {
     EXPECT_EQ(languageCode(Language::Unknown), "");
 }
 
+// 兩個辨識模型都跑過之後，整張一起決定用哪一邊（M2-04、design.md 4.4）
+TEST(ChooseScriptTest, KoreanPagesPickTheKoreanModel) {
+    // 實測：日文模型讀韓文漫畫只讀得出空字串和網址浮水印，韓文模型讀得出內容
+    EXPECT_EQ(chooseScript("  novelagit.xyz", "요건 어때? 아지문소설 novelagit.xyz"),
+              Language::Korean);
+}
+
+TEST(ChooseScriptTest, JapanesePagesKeepTheMainModel) {
+    // 韓文模型讀日文會亂讀，可能吐出幾個韓文字母，但假名和漢字的數量遠遠更多
+    EXPECT_EQ(chooseScript("今日はいい天気ですね", "오늘"), Language::Japanese);
+}
+
+TEST(ChooseScriptTest, EnglishPagesKeepTheMainModel) {
+    EXPECT_EQ(chooseScript("The quick brown fox", "The quick brown fox"), Language::English);
+}
+
+TEST(ChooseScriptTest, NoHangulMeansTheMainModel) {
+    EXPECT_EQ(chooseScript("こんにちは", ""), Language::Japanese);
+}
+
+TEST(ChooseScriptTest, NothingReadableIsUnknown) {
+    // 只有數字和符號：分不出來，呼叫端會沿用上一次的決定
+    EXPECT_EQ(chooseScript("123 -- 456", "123 -- 456"), Language::Unknown);
+    EXPECT_EQ(chooseScript("", ""), Language::Unknown);
+}
+
+TEST(ChooseScriptTest, ATieGoesToKorean) {
+    // 韓文畫面上主模型常常讀出幾個假名的雜訊。一樣多的時候相信韓文那一邊，
+    // 因為主模型讀韓文的錯誤率（94%）遠高於韓文模型讀日文時我們會損失的部分。
+    EXPECT_EQ(chooseScript("あい", "가나"), Language::Korean);
+}
+
+TEST(ChooseScriptTest, MoreKanaThanHangulKeepsTheMainModel) {
+    EXPECT_EQ(chooseScript("あいうえお", "가"), Language::Japanese);
+}
+
 }  // namespace
 }  // namespace tmw::core
