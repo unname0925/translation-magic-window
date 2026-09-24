@@ -83,6 +83,9 @@ std::string buildChatRequest(const OpenAiTranslator::Options& options,
     nlohmann::json body;
     body["model"] = options.model;
     body["temperature"] = options.temperature;
+    if (options.maxTokens > 0) {
+        body["max_tokens"] = options.maxTokens;
+    }
     body["stream"] = options.stream;
     body["messages"] = nlohmann::json::array(
         {{{"role", "system"}, {"content", std::string(asJsonArray ? kSystemPrompt : kPlainPrompt)}},

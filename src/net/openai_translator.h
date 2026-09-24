@@ -34,6 +34,10 @@ public:
         std::string model = "gpt-4o-mini";
         std::string apiKey;  // 本機服務通常不用
         double temperature = 0.2;
+        // 回覆的長度上限。原生的 Claude API 要求一定要帶，OpenAI 沒有；
+        // 兩邊都接受這個欄位，所以一律送出。0 表示不送。
+        // 8192 對「一個透鏡範圍的文字」非常寬裕，同時也擋住失控的長回覆。
+        int maxTokens = 8192;
         bool stream = true;
         std::chrono::milliseconds timeout{60000};
     };

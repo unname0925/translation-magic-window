@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <memory>
+#include <nlohmann/json.hpp>
 #include <span>
 #include <stop_token>
 #include <string>
@@ -87,6 +88,32 @@ TEST_F(OpenAiTranslatorTest, PutsThePromptAndTheSegmentsInTheRequest) {
     EXPECT_EQ(sent.method, HttpMethod::Post);
     EXPECT_NE(sent.body.find("hy-mt2"), std::string::npos);
     EXPECT_NE(sent.body.find("翻譯引擎"), std::string::npos);
+}
+
+TEST_F(OpenAiTranslatorTest, SendsMaxTokens) {
+    // 原生的 Claude API 要求一定要帶 max_tokens（OpenAI 沒有），兩邊都接受這個欄位
+    http_->replyFromFile("net/openai_ja_batch.json");
+    OpenAiTranslator::Options options;
+    options.stream = false;
+    OpenAiTranslator translator = makeTranslator(std::move(options));
+    translate(translator, {"こんにちは"});
+
+    ASSERT_EQ(http_->requests.size(), 1u);
+    const nlohmann::json body = nlohmann::json::parse(http_->requests[0].body);
+    EXPECT_EQ(body["max_tokens"], 8192);
+}
+
+TEST_F(OpenAiTranslatorTest, LeavesOutMaxTokensWhenItIsZero) {
+    // 有些本機服務對 max_tokens 很挑，所以留一條「完全不送」的路
+    http_->replyFromFile("net/openai_ja_batch.json");
+    OpenAiTranslator::Options options;
+    options.stream = false;
+    options.maxTokens = 0;
+    OpenAiTranslator translator = makeTranslator(std::move(options));
+    translate(translator, {"こんにちは"});
+
+    ASSERT_EQ(http_->requests.size(), 1u);
+    EXPECT_FALSE(nlohmann::json::parse(http_->requests[0].body).contains("max_tokens"));
 }
 
 TEST_F(OpenAiTranslatorTest, SendsTheKeyOnlyWhenThereIsOne) {
