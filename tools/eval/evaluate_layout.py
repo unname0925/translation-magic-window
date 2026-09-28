@@ -7,6 +7,9 @@
             而且那個段落沒有混進別的區塊的行。
   合併過頭：我們的一個段落裡混到了兩個以上的正確區塊。
 
+正確答案裡標了 `同句:` 的幾個區塊（一句話拆在相連的對話框裡）算同一個單位：
+把它們接成一段是正確復原，拆開算被切開——翻譯要整句一起翻才準。
+
     tools/eval/.venv/Scripts/python tools/eval/evaluate_layout.py \
         --ocr <ocr_cli 產生的 result.json> --ground-truth testdata/private/ja-manga/ground_truth.txt
 
@@ -32,14 +35,24 @@ def read_ground_truth(path: Path) -> dict[str, list[dict]]:
         if line.startswith("== "):
             current = line[3:].strip()
             pages[current] = []
+        if line.startswith("同句:") and current and pages[current]:
+            pages[current][-1]["sentence"] = line[3:].strip()
+            continue
         found = re.match(r"^\[(\S+)\s+(\S+)\s+(\S+)\s+(\d+),(\d+),(\d+),(\d+)\]", line)
         if found and current:
             pages[current].append({
+                "sentence": "",
                 "kind": found.group(1),
                 "l": int(found.group(4)), "t": int(found.group(5)),
                 "r": int(found.group(6)), "b": int(found.group(7)),
             })
     return pages
+
+
+def units(blocks: list[dict]) -> list[tuple]:
+    """每個正確區塊屬於哪個評分單位：標了同一個 `同句:` 的區塊是同一個單位，其餘各自一個。"""
+    return [("句", block["sentence"]) if block.get("sentence") else ("塊", index)
+            for index, block in enumerate(blocks)]
 
 
 def overlap(a1: int, a2: int, b1: int, b2: int) -> int:
@@ -53,7 +66,8 @@ def evaluate(pages: dict[str, list[dict]], images: dict[str, dict]) -> dict:
         image = images.get(name)
         if image is None:
             continue
-        totals["正確區塊"] += len(blocks)
+        unit_of = units(blocks)
+        totals["正確區塊"] += len(set(unit_of))
 
         # 每一行落在哪個正確區塊裡（至少一半的面積）
         lines = []
@@ -84,19 +98,20 @@ def evaluate(pages: dict[str, list[dict]], images: dict[str, dict]) -> dict:
         by_gt = collections.defaultdict(list)
         for line in lines:
             if line["gt"] is not None and line["ours"] is not None:
-                by_gt[line["gt"]].append(line)
+                by_gt[unit_of[line["gt"]]].append(line)
         by_ours = collections.defaultdict(set)
         for line in lines:
             if line["ours"] is not None and line["gt"] is not None:
-                by_ours[line["ours"]].add(line["gt"])
+                by_ours[line["ours"]].add(unit_of[line["gt"]])
 
-        for gt_index, members in by_gt.items():
+        for unit, members in by_gt.items():
             ours = {x["ours"] for x in members}
             if len(ours) == 1 and len(by_ours[next(iter(ours))]) == 1:
                 totals["正確復原"] += 1
             elif len(ours) > 1:
                 totals["被切開"] += 1
-                split_kinds[blocks[gt_index]["kind"]] += 1
+                first = next(i for i, u in enumerate(unit_of) if u == unit)
+                split_kinds[blocks[first]["kind"]] += 1
         totals["合併過頭"] += sum(1 for gts in by_ours.values() if len(gts) > 1)
     return {"totals": dict(totals), "被切開的種類": dict(split_kinds)}
 

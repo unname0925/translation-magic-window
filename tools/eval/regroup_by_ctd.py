@@ -30,7 +30,7 @@ from pathlib import Path
 from PIL import Image
 
 from comic_text_detector import ComicTextDetector
-from evaluate_layout import overlap, read_ground_truth
+from evaluate_layout import overlap, read_ground_truth, units
 
 
 def area(rect) -> int:
@@ -105,7 +105,9 @@ def score(gt_blocks: list[dict], lines: list[dict], groups: list) -> collections
                 best, best_shared = index, s
         gt_of.append(best if best_shared >= area(rect) * 0.5 else None)
 
-    totals["正確區塊"] += len(gt_blocks)
+    unit_of = units(gt_blocks)
+    gt_of = [unit_of[g] if g is not None else None for g in gt_of]
+    totals["正確區塊"] += len(set(unit_of))
     totals["我們的段落"] += len({g for g in groups if g is not None})
     by_gt = collections.defaultdict(set)
     by_ours = collections.defaultdict(set)

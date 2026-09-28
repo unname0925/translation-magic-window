@@ -21,6 +21,9 @@
 - `參考:` 另一種語言版本的對應譯文；`語言:` 這個區塊的語言和整張截圖不同時填寫（例如 ja）；
   `備註:` 給校對者看的說明；以「不評測」開頭的區塊（例如散落一整片、無法逐字標註的擬聲詞）
   評測時略過。
+- `同句:` 一句話被拆在兩個以上相連的對話框裡時，這幾個區塊填同一個編號（同一頁內）。
+  評分時它們算同一個單位：接成一段才算正確復原（翻譯要整句一起翻才準）。
+  判斷依據寫在 `備註:`，例如「和上一框是同一句，英文版也是一句」。
 - 區塊外 `#` 開頭的行是註解；區塊內的 `#` 開頭的行是文字（網頁上「#今日のおすすめ」這類標題）。
 """
 
@@ -35,7 +38,7 @@ KINDS = ("對白", "旁白", "擬聲詞", "註", "標題", "介面", "其他")
 DIRECTIONS = {"直": "vertical", "橫": "horizontal"}
 SIZES = {"小": "small", "中": "normal", "大": "large"}
 _HEADER = re.compile(r"^\[(\S+) (\S+) (\S+) (-?\d+),(-?\d+),(-?\d+),(-?\d+)\]$")
-_FIELDS = ("ルビ:", "參考:", "語言:", "備註:")
+_FIELDS = ("ルビ:", "參考:", "語言:", "備註:", "同句:")
 _QUOTES = str.maketrans({"“": '"', "”": '"', "„": '"', "‟": '"', "‘": "'", "’": "'", "‚": "'",
                          "‛": "'", "〜": "~"})
 
@@ -62,6 +65,7 @@ class Block:
     reference: str = ""
     language: str = ""
     note: str = ""
+    sentence: str = ""  # 同句：同一頁上編號相同的區塊是同一句話
 
     @property
     def excluded(self) -> bool:
@@ -138,9 +142,13 @@ def parse(text: str) -> list[Page]:
             block.language = line[3:].strip()
         elif line.startswith("備註:"):
             block.note = line[3:].strip()
+        elif line.startswith("同句:"):
+            block.sentence = line[3:].strip()
+            if not block.sentence:
+                raise FormatError(f"{where}: 同句 needs an id")
         else:
-            if block.ruby or block.reference or block.language or block.note:
-                raise FormatError(f"{where}: text line after ルビ/參考/語言/備註")
+            if block.ruby or block.reference or block.language or block.note or block.sentence:
+                raise FormatError(f"{where}: text line after ルビ/參考/語言/備註/同句")
             block.lines.append(line.strip())
     for page in pages:
         for i, block in enumerate(page.blocks, start=1):
@@ -184,6 +192,8 @@ def dump(pages: list[Page]) -> str:
                 out.append(f"參考: {block.reference}")
             if block.note:
                 out.append(f"備註: {block.note}")
+            if block.sentence:
+                out.append(f"同句: {block.sentence}")
         out.append("")
     return "\n".join(out) + "\n"
 

@@ -30,6 +30,19 @@ SAMPLE = """# 註解
 """
 
 
+SENTENCE_SAMPLE = """== a.png
+
+[對白 直 中 0,0,10,10]
+やはり
+同句: 1
+
+[對白 直 中 20,0,30,10]
+同じ音にするのは
+備註: 英文版是一句
+同句: 1
+"""
+
+
 class ParseTest(unittest.TestCase):
     def test_parses_pages_blocks_and_fields(self):
         pages = gt.parse(SAMPLE)
@@ -46,6 +59,16 @@ class ParseTest(unittest.TestCase):
                           ("行", "い", False)])
         self.assertEqual(first.reference, "UM... TOMORROW WE'RE ALL GOING TO TOKYO.")
         self.assertEqual(pages[0].blocks[1].note, "斜著畫")
+
+    def test_sentence_groups(self):
+        sample = SENTENCE_SAMPLE
+        pages = gt.parse(sample)
+        self.assertEqual([b.sentence for b in pages[0].blocks], ["1", "1"])
+        self.assertEqual(gt.parse(gt.dump(pages)), pages)
+        with self.assertRaises(gt.FormatError):
+            gt.parse("== a.png\n[對白 直 中 0,0,1,1]\nあ\n同句:\n")
+        with self.assertRaises(gt.FormatError):
+            gt.parse("== a.png\n[對白 直 中 0,0,1,1]\nあ\n同句: 1\nい\n")
 
     def test_meaningful_ruby_is_marked_with_exclamation(self):
         ruby = gt.parse(SAMPLE)[1].blocks[0].ruby[0]
