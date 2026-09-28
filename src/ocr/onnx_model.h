@@ -23,11 +23,15 @@ struct Tensor {
     std::vector<float> data;
 };
 
-// 一個 ONNX 模型的推論工作階段。只有一個輸入和一個輸出（PP-OCR 的偵測和辨識模型都是）。
+// 一個 ONNX 模型的推論工作階段。只有一個輸入；輸出只取一個
+// （PP-OCR 的偵測和辨識模型都只有一個輸出，comic-text-detector 有三個，用 outputName 指定）。
 // 建立失敗時丟出 std::runtime_error。不是執行緒安全的：同一個物件不要同時從多個執行緒呼叫。
 class OnnxModel {
 public:
-    OnnxModel(const std::filesystem::path& onnxFile, Device device);
+    // outputName：模型有好幾個輸出時要取哪一個。空字串表示模型必須剛好只有一個輸出，
+    // 多了就當成放錯模型（例如把 comic-text-detector 當成 PP-OCR 載入）。
+    OnnxModel(const std::filesystem::path& onnxFile, Device device,
+              std::string_view outputName = {});
     ~OnnxModel();
 
     OnnxModel(const OnnxModel&) = delete;

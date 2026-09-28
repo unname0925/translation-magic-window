@@ -28,6 +28,7 @@
 
 #include "core/ruby.h"
 #include "core/text_layout.h"
+#include "ocr/comic_text_detector.h"
 #include "ocr/ocr_pipeline.h"
 #include "ocr/ocr_service.h"
 #include "platform/png_file.h"
@@ -49,6 +50,8 @@ struct Arguments {
     bool batchRecognition = true;  // --no-batch：逐行辨識（和官方版一致，用來比對差異）
     int maxBatch = 64;
     bool warmUp = true;  // --no-warmup：不要在載入時先空跑一次
+    // --comic-text <模型>：另外跑 comic-text-detector，輸出對話框區塊（M2-02）
+    std::filesystem::path comicTextModel;
     int fixedWidth = 0;  // --fixed-input W H：偵測固定用這個輸入大小
     int fixedHeight = 0;
     std::filesystem::path output;
@@ -60,6 +63,7 @@ void printUsage() {
     std::fputs(
         "usage: tmw_ocr_cli --det <dir> --rec <dir> [--device cpu|dml|auto] [--repeat N]\n"
         "                   [--no-batch] [--no-warmup] [--max-batch N] [--fixed-input W H]\n"
+        "                   [--comic-text <comictextdetector.onnx>]\n"
         "                   --output <result.json> <image> [<image> ...]\n"
         "       tmw_ocr_cli --rec <dir> --dump-characters <characters.json>\n",
         stderr);
@@ -96,6 +100,8 @@ std::optional<Arguments> parseArguments(int argc, wchar_t** argv) {
         } else if (arg == L"--fixed-input" && i + 2 < argc) {
             args.fixedWidth = std::max(1, _wtoi(argv[++i]));
             args.fixedHeight = std::max(1, _wtoi(argv[++i]));
+        } else if (arg == L"--comic-text" && hasValue) {
+            args.comicTextModel = argv[++i];
         } else if (arg == L"--output" && hasValue) {
             args.output = argv[++i];
         } else if (arg == L"--dump-characters" && hasValue) {
@@ -235,6 +241,10 @@ int run(const Arguments& args) {
     options.detection.fixedInput = cv::Size(args.fixedWidth, args.fixedHeight);
     options.warmUpOnStart = args.warmUp;
     OcrPipeline pipeline(args.detectionModel, args.recognitionModel, args.device, options);
+    std::optional<tmw::ocr::ComicTextDetector> comicText;
+    if (!args.comicTextModel.empty()) {
+        comicText.emplace(args.comicTextModel, args.device);
+    }
     const double loadMs =
         std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - loadStart)
             .count();
@@ -265,6 +275,15 @@ int run(const Arguments& args) {
                 recognitionMs.push_back(timings.recognitionMs);
             }
         }
+        nlohmann::json comicBlocks = nlohmann::json::array();
+        if (comicText) {
+            for (const tmw::ocr::ComicTextBlock& block : comicText->detect(bgr)) {
+                comicBlocks.push_back(
+                    {{"rect",
+                      {block.rect.left, block.rect.top, block.rect.right, block.rect.bottom}},
+                     {"score", block.score}});
+            }
+        }
         const double detection = median(detectionMs);
         const double recognition = median(recognitionMs);
         std::printf("%s: %zu lines, %d boxes, det %.1f ms, rec %.1f ms%s\n",
@@ -277,6 +296,7 @@ int run(const Arguments& args) {
              {"lines", toJson(first)},
              {"blocks", blocksToJson(first)},
              {"text_lines", textLinesToJson(first)},
+             {"comic_blocks", comicBlocks},
              {"deterministic", deterministic},
              {"timings_ms", {{"detection", detection}, {"recognition", recognition}}}});
     }

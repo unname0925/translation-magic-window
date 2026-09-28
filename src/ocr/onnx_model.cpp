@@ -61,7 +61,8 @@ Ort::Session createSession(const std::filesystem::path& onnxFile, Device device)
 
 }  // namespace
 
-OnnxModel::OnnxModel(const std::filesystem::path& onnxFile, Device device)
+OnnxModel::OnnxModel(const std::filesystem::path& onnxFile, Device device,
+                     std::string_view outputName)
     : impl_(std::make_unique<Impl>()) {
     impl_->device = device == Device::Auto ? Device::DirectML : device;
     try {
@@ -76,12 +77,29 @@ OnnxModel::OnnxModel(const std::filesystem::path& onnxFile, Device device)
             impl_->session = createSession(onnxFile, Device::Cpu);
         }
 
-        if (impl_->session.GetInputCount() != 1 || impl_->session.GetOutputCount() != 1) {
-            throw std::runtime_error("expected a model with one input and one output");
+        if (impl_->session.GetInputCount() != 1) {
+            throw std::runtime_error("expected a model with one input");
         }
         Ort::AllocatorWithDefaultOptions allocator;
         impl_->inputName = impl_->session.GetInputNameAllocated(0, allocator).get();
-        impl_->outputName = impl_->session.GetOutputNameAllocated(0, allocator).get();
+        const std::size_t outputs = impl_->session.GetOutputCount();
+        if (outputName.empty()) {
+            if (outputs != 1) {
+                throw std::runtime_error("expected a model with one output");
+            }
+            impl_->outputName = impl_->session.GetOutputNameAllocated(0, allocator).get();
+        } else {
+            for (std::size_t i = 0; i < outputs && impl_->outputName.empty(); ++i) {
+                const std::string name = impl_->session.GetOutputNameAllocated(i, allocator).get();
+                if (name == outputName) {
+                    impl_->outputName = name;
+                }
+            }
+            if (impl_->outputName.empty()) {
+                throw std::runtime_error("the model has no output named " +
+                                         std::string(outputName));
+            }
+        }
     } catch (const Ort::Exception& error) {
         throw std::runtime_error("cannot load " + displayPath(onnxFile) + " on " +
                                  std::string(deviceName(device)) + ": " + error.what());

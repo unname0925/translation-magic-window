@@ -3,6 +3,8 @@ find_package(OpenCV CONFIG REQUIRED COMPONENTS core imgproc)
 find_package(yaml-cpp CONFIG REQUIRED)
 
 add_library(tmw_ocr STATIC
+    comic_text_detector.cpp
+    comic_text_detector.h
     model_choice.cpp
     model_choice.h
     model_config.cpp

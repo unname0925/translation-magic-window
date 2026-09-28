@@ -28,6 +28,7 @@ add_executable(tmw_unit_tests
     net/google_translator_test.cpp
     net/openai_translator_test.cpp
     net/rate_limiter_test.cpp
+    ocr/comic_text_detector_test.cpp
     ocr/model_choice_test.cpp
     ocr/model_config_test.cpp
     ocr/text_detector_test.cpp
