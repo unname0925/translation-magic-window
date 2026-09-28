@@ -26,6 +26,7 @@ enum Command : UINT {
     kCommandSettings = 9,
     kCommandDebugDump = 10,
     kCommandToggleDebugOverlay = 11,
+    kCommandToggleMangaMode = 12,
 };
 
 }  // namespace tmw::app

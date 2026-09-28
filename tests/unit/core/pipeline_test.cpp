@@ -31,12 +31,14 @@ public:
         if (cancel.stop_requested()) {
             return {};
         }
-        return {lines, reports};
+        return {lines, reports, bubbles};
     }
 
     std::vector<OcrLine> lines;
     // 假裝是用這個模型讀出來的（Pipeline 會記下來，下次沿用）
     Language reports = Language::Japanese;
+    // 漫畫模式時 OCR 會回報的對話框
+    std::vector<RectI> bubbles;
     int calls = 0;
     SizeI lastSize;
     // 每次被呼叫時，呼叫端說「上次是哪個語言」
@@ -332,6 +334,19 @@ TEST_F(PipelineTest, AKoreanDecisionIsForgottenWhenNoHangulComesBack) {
     run(job());
     ASSERT_EQ(ocr_.askedWith.size(), 3u);
     EXPECT_EQ(ocr_.askedWith[2], Language::Unknown) << "韓文模型讀不到韓文字母了，換回去";
+}
+
+// M2-02：漫畫模式時，同一個對話框裡的行就是同一段
+TEST_F(PipelineTest, GroupsByTheBubblesTheOcrReports) {
+    // 兩行隔得很遠，只看距離會是兩段
+    ocr_.lines = {line(20, 20, 200, 44, "Hello there"), line(20, 150, 200, 174, "friend")};
+    ASSERT_EQ(run(job()).groups.size(), 2u) << "前提：沒有對話框時是兩段";
+
+    pipeline_.forget(1);
+    ocr_.bubbles = {RectI{10, 10, 220, 190}};
+    const PipelineResult result = run(job());
+    ASSERT_EQ(result.groups.size(), 1u) << "它們在同一個對話框裡";
+    EXPECT_EQ(result.groups[0].block.text, "Hello there friend");
 }
 
 }  // namespace

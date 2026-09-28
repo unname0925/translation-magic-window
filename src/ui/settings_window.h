@@ -49,6 +49,7 @@ private:
     QLabel* keyNote_ = nullptr;
     QCheckBox* fallback_ = nullptr;
     QCheckBox* verbose_ = nullptr;
+    QCheckBox* mangaMode_ = nullptr;
 };
 
 }  // namespace tmw::ui

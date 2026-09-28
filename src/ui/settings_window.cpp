@@ -56,6 +56,11 @@ SettingsWindow::SettingsWindow(core::Settings settings, Encrypt encrypt, QWidget
     verbose_ = new QCheckBox(
         QStringLiteral("詳細診斷（記錄檔會包含辨識到的文字和譯文，回報問題時再打開）"), this);
     verbose_->setObjectName(QStringLiteral("verbose"));
+    mangaMode_ = new QCheckBox(
+        QStringLiteral(
+            "漫畫模式（同一個對話框裡的字當成同一句；每次多約 40 ms，網頁和遊戲不用開）"),
+        this);
+    mangaMode_->setObjectName(QStringLiteral("mangaMode"));
 
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel, this);
     buttons->setObjectName(QStringLiteral("buttons"));
@@ -64,6 +69,7 @@ SettingsWindow::SettingsWindow(core::Settings settings, Encrypt encrypt, QWidget
 
     auto* layout = new QVBoxLayout(this);
     layout->addWidget(engines);
+    layout->addWidget(mangaMode_);
     layout->addWidget(verbose_);
     layout->addWidget(buttons);
 
@@ -86,6 +92,7 @@ void SettingsWindow::applyToWidgets() {
     model_->setText(QString::fromStdString(choice.model));
     fallback_->setChecked(choice.fallbackToGoogle);
     verbose_->setChecked(settings_.verboseDiagnostics);
+    mangaMode_->setChecked(settings_.mangaMode);
     key_->clear();
     keyNote_->setText(choice.hasKey ? QStringLiteral("已經設定過金鑰。留空表示不更改。")
                                     : QStringLiteral("本機服務（Ollama、LM Studio）不用填金鑰。"));
@@ -113,6 +120,7 @@ void SettingsWindow::collectFromWidgets() {
 
     settings_.engines = enginesFor(choice, settings_, encrypted);
     settings_.verboseDiagnostics = verbose_->isChecked();
+    settings_.mangaMode = mangaMode_->isChecked();
     key_->clear();
 }
 

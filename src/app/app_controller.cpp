@@ -283,6 +283,10 @@ LRESULT AppController::handleMessage(UINT message, WPARAM wParam, LPARAM lParam)
                 case kCommandDebugDump:
                     flashLens(writeDebugDump().empty() ? kErrorAccent : kSuccessAccent);
                     break;
+                case kCommandToggleMangaMode:
+                    setMangaMode(!settings_.mangaMode);
+                    saveSettings();
+                    break;
                 case kCommandToggleDebugOverlay:
                     setDebugOverlayEnabled(debugOverlay_ == nullptr);
                     break;
@@ -369,6 +373,8 @@ void AppController::showTrayMenu(POINT anchor) {
                 translateHotkeyRegistered_ ? L"立即翻譯	Ctrl+Alt+Shift+T" : L"立即翻譯");
     AppendMenuW(menu, MF_STRING | (paused_ ? MF_CHECKED : MF_UNCHECKED), kCommandTogglePause,
                 L"暫停");
+    AppendMenuW(menu, MF_STRING | (settings_.mangaMode ? MF_CHECKED : MF_UNCHECKED),
+                kCommandToggleMangaMode, L"漫畫模式（依對話框分段）");
     AppendMenuW(menu, MF_STRING, kCommandSettings, L"設定…");
     AppendMenuW(menu, MF_STRING, kCommandDebugDump,
                 debugDumpHotkeyRegistered_ ? L"除錯傾印	Ctrl+Alt+Shift+D" : L"除錯傾印");
@@ -449,7 +455,27 @@ void AppController::setUpPipeline() {
         return;
     }
     platform::logInfo(std::string("OCR 裝置：") + std::string(ocr::deviceName(ocr_->device())));
+    if (settings_.mangaMode) {
+        setMangaMode(true);
+    }
     rebuildTranslation();
+}
+
+void AppController::setMangaMode(bool enabled) {
+    if (ocr_ == nullptr) {
+        settings_.mangaMode = false;
+        return;
+    }
+    if (!ocr_->setMangaMode(enabled)) {
+        platform::logWarn("漫畫模式打不開：找不到或載入不了 " +
+                          platform::pathToUtf8(ocr::OcrService::comicTextModelPath(
+                              platform::findModelsDirectory())) +
+                          "（執行 tools/fetch_models 下載 comic-text-detector）");
+        settings_.mangaMode = false;
+        return;
+    }
+    settings_.mangaMode = enabled;
+    platform::logInfo(enabled ? "漫畫模式：開（依對話框分段）" : "漫畫模式：關");
 }
 
 void AppController::rebuildTranslation() {
@@ -507,6 +533,9 @@ void AppController::applySettings(const core::Settings& settings) {
     settings_.engines = settings.engines;
     settings_.verboseDiagnostics = settings.verboseDiagnostics;
     platform::setVerboseDiagnostics(settings_.verboseDiagnostics);
+    if (settings.mangaMode != settings_.mangaMode) {
+        setMangaMode(settings.mangaMode);  // 載入失敗時它會把 settings_.mangaMode 留在 false
+    }
     if (!settingsPath_.empty()) {
         platform::saveSettings(settingsPath_, settings_);
     }

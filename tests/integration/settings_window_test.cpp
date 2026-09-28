@@ -160,5 +160,17 @@ TEST_F(SettingsWindowTest, CancellingChangesNothing) {
     EXPECT_EQ(platform::loadSettings(path()).settings, settings);
 }
 
+TEST_F(SettingsWindowTest, MangaModeSurvivesARestart) {
+    SettingsWindow first(core::Settings{}, platform::encryptSecret);
+    auto* manga = first.findChild<QCheckBox*>(QStringLiteral("mangaMode"));
+    ASSERT_NE(manga, nullptr);
+    EXPECT_FALSE(manga->isChecked()) << "預設關閉";
+    manga->setChecked(true);
+    save(first);
+
+    SettingsWindow second(platform::loadSettings(path()).settings, platform::encryptSecret);
+    EXPECT_TRUE(second.findChild<QCheckBox*>(QStringLiteral("mangaMode"))->isChecked());
+}
+
 }  // namespace
 }  // namespace tmw::ui

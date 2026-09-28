@@ -3,14 +3,17 @@
 // core 不認得 OpenCV，也不該認得模型；這一層負責影像格式轉換和座標整理。
 #pragma once
 
+#include <atomic>
 #include <filesystem>
 #include <memory>
+#include <mutex>
 #include <stop_token>
 #include <vector>
 
 #include "core/image.h"
 #include "core/pipeline.h"
 #include "core/text_layout.h"
+#include "ocr/comic_text_detector.h"
 #include "ocr/model_choice.h"
 #include "ocr/ocr_pipeline.h"
 
@@ -35,9 +38,26 @@ public:
     Device device() const { return pipeline_.device(); }
     const OcrTimings& lastTimings() const { return lastTimings_; }
 
+    // 漫畫模式：辨識時另外跑 comic-text-detector，把對話框放進 OcrResult::bubbles（M2-02）。
+    // 第一次打開時才載入模型（沒用漫畫模式的人不必付載入時間和記憶體）。
+    // 模型不在 models/comic-text-detector 或載入失敗時回傳 false，漫畫模式維持關閉。
+    //
+    // 可以在辨識進行中從別的執行緒切換：模型一旦載入就不會被釋放，關閉只是不再使用它，
+    // 所以不會有「工作執行緒正在用、UI 執行緒把它拆掉」的問題。
+    bool setMangaMode(bool enabled);
+    bool mangaMode() const { return mangaMode_.load(std::memory_order_acquire); }
+
+    // comic-text-detector 的模型檔位置
+    static std::filesystem::path comicTextModelPath(const std::filesystem::path& modelsDirectory);
+
 private:
+    std::filesystem::path modelsDirectory_;
     OcrPipeline pipeline_;
     OcrTimings lastTimings_;
+
+    std::mutex comicTextLoading_;  // 只保護「載入」這件事
+    std::unique_ptr<ComicTextDetector> comicText_;
+    std::atomic<bool> mangaMode_{false};
 };
 
 // BGRA（每列緊密排列）轉成 OCR 要的 BGR。空畫面回傳空矩陣。

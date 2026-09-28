@@ -98,6 +98,7 @@ SettingsLoad parseSettings(std::string_view json_text,
 
     Settings settings;
     read(document, "verboseDiagnostics", settings.verboseDiagnostics);
+    read(document, "mangaMode", settings.mangaMode);
     if (const auto it = document.find("engines"); it != document.end() && it->is_array()) {
         for (const json& entry : *it) {
             if (entry.is_object()) {
@@ -123,6 +124,7 @@ std::string serializeSettings(const Settings& settings, int schemaVersion) {
     const json document = {
         {"schemaVersion", schemaVersion},
         {"verboseDiagnostics", settings.verboseDiagnostics},
+        {"mangaMode", settings.mangaMode},
         {"engines", std::move(engines)},
         {"resultWindow",
          {{"fontScale", settings.resultWindow.fontScale},

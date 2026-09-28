@@ -125,5 +125,17 @@ TEST(SettingsTest, DefaultsSurviveAWriteAndReadCycle) {
     EXPECT_EQ(load.settings, Settings{});
 }
 
+TEST(SettingsTest, MangaModeIsOffUnlessTurnedOn) {
+    // 舊的設定檔沒有這個欄位：一定是關閉的，不能因為升級就突然多跑一個模型
+    EXPECT_FALSE(parseSettings(R"({"schemaVersion": 1})").settings.mangaMode);
+    EXPECT_TRUE(parseSettings(R"({"schemaVersion": 1, "mangaMode": true})").settings.mangaMode);
+}
+
+TEST(SettingsTest, MangaModeSurvivesARoundTrip) {
+    Settings settings;
+    settings.mangaMode = true;
+    EXPECT_TRUE(parseSettings(serializeSettings(settings)).settings.mangaMode);
+}
+
 }  // namespace
 }  // namespace tmw::core

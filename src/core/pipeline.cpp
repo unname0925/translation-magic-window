@@ -97,7 +97,10 @@ PipelineResult Pipeline::run(const PipelineJob& job, std::stop_token cancel) {
     // ルビ 要先附到本文上：否則它會夾在句子中間，把「這兩欄是同一句」的判斷擋掉
     // （design.md 4.4 的實測：400 組相鄰配對有 63% 因此合併失敗）
     const RubyResult withRuby = attachRuby(lines, options_.ruby);
-    std::vector<TextBlock> blocks = mergeIntoBlocks(withRuby.lines, options_.merge);
+    // 漫畫模式時 OCR 會一併找出對話框：同一個對話框裡的行就是同一段（M2-02）。
+    // 沒有對話框時和只看距離的分段完全一樣。
+    std::vector<TextBlock> blocks =
+        mergeIntoBlocks(withRuby.lines, recognized.bubbles, options_.merge);
     if (options_.dropEdgeBlocks) {
         blocks =
             dropEdgeBlocks(blocks, SizeI{job.frame.width, job.frame.height}, options_.edgeMargin);

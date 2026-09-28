@@ -2,6 +2,9 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <exception>
+#include <filesystem>
+#include <mutex>
 #include <opencv2/imgproc.hpp>
 #include <utility>
 
@@ -41,14 +44,16 @@ core::OcrLine toOcrLine(const TextLine& line) {
 
 OcrService::OcrService(const std::filesystem::path& modelsDirectory, TextLanguage language,
                        Device device, const OcrOptions& options)
-    : pipeline_(detectionModelPath(modelsDirectory, chooseModels(language, device)),
+    : modelsDirectory_(modelsDirectory),
+      pipeline_(detectionModelPath(modelsDirectory, chooseModels(language, device)),
                 recognitionModelPath(modelsDirectory, chooseModels(language, device)), device,
                 options) {}
 
 OcrService::OcrService(const std::filesystem::path& modelsDirectory, Device device,
                        const OcrOptions& options)
     // 兩種語言的偵測模型是同一個（M0-11：v6 的偵測對韓文也最好），只有辨識模型不同
-    : pipeline_(detectionModelPath(modelsDirectory,
+    : modelsDirectory_(modelsDirectory),
+      pipeline_(detectionModelPath(modelsDirectory,
                                    chooseModels(TextLanguage::JapaneseOrEnglish, device)),
                 recognitionModelPath(modelsDirectory,
                                      chooseModels(TextLanguage::JapaneseOrEnglish, device)),
@@ -67,11 +72,44 @@ core::OcrResult OcrService::recognize(const core::ImageBgra& frame, core::Langua
     }
     core::OcrResult out;
     out.script = run.script;
+    // acquire 對應 setMangaMode 裡的 release：看到 true 就一定看得到載入好的模型
+    if (mangaMode_.load(std::memory_order_acquire) && !cancel.stop_requested()) {
+        for (const ComicTextBlock& block : comicText_->detect(bgr)) {
+            out.bubbles.push_back(block.rect);
+        }
+    }
     out.lines.reserve(run.lines.size());
     for (const TextLine& line : run.lines) {
         out.lines.push_back(toOcrLine(line));
     }
     return out;
+}
+
+std::filesystem::path OcrService::comicTextModelPath(const std::filesystem::path& modelsDirectory) {
+    return modelsDirectory / "comic-text-detector" / "comictextdetector.pt.onnx";
+}
+
+bool OcrService::setMangaMode(bool enabled) {
+    if (!enabled) {
+        mangaMode_.store(false, std::memory_order_release);
+        return true;
+    }
+    {
+        const std::lock_guard<std::mutex> lock(comicTextLoading_);
+        if (comicText_ == nullptr) {
+            const std::filesystem::path model = comicTextModelPath(modelsDirectory_);
+            if (!std::filesystem::exists(model)) {
+                return false;
+            }
+            try {
+                comicText_ = std::make_unique<ComicTextDetector>(model, pipeline_.device());
+            } catch (const std::exception&) {
+                return false;
+            }
+        }
+    }
+    mangaMode_.store(true, std::memory_order_release);
+    return true;
 }
 
 }  // namespace tmw::ocr

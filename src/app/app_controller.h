@@ -67,6 +67,8 @@ private:
     std::filesystem::path writeDebugDump();
     // 除錯覆蓋框：打開／關閉，以及「內容有變才重畫」
     void setDebugOverlayEnabled(bool enabled);
+    // 漫畫模式：同一個對話框裡的行就是同一段（M2-02）。模型載入失敗時維持關閉並記錄原因。
+    void setMangaMode(bool enabled);
     void refreshDebugOverlay();
     // 設定改了之後：存檔、換掉翻譯引擎鏈、更新記錄的詳細程度
     void applySettings(const core::Settings& settings);

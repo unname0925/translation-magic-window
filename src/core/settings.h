@@ -41,6 +41,9 @@ struct ResultWindowSettings {
 struct Settings {
     // 詳細診斷：打開後才會把擷取到的文字和譯文寫進記錄檔（預設關閉，見 design.md 4.12）
     bool verboseDiagnostics = false;
+    // 漫畫模式：另外跑 comic-text-detector，同一個對話框裡的行就是同一段（M2-02）。
+    // 每次多 37 ms，而且在網頁、遊戲上沒有幫助、還可能把整塊介面框在一起，所以預設關閉。
+    bool mangaMode = false;
     // 翻譯引擎的順序就是引擎鏈的順序（design.md 4.5）
     std::vector<EngineSettings> engines;
     ResultWindowSettings resultWindow;

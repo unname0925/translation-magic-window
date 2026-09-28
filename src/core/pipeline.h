@@ -73,6 +73,9 @@ struct OcrResult {
     // 實際採用的辨識模型（Korean，或主模型的 Japanese／English）。
     // 呼叫端記下來下次傳回去，就不用每次都判斷（design.md 4.4「語言判斷」）。
     Language script = Language::Unknown;
+    // 漫畫模式時 comic-text-detector 找到的對話框（畫面座標）。分段時同一個對話框裡的行
+    // 就是同一段（M2-02）。不是漫畫模式時是空的。
+    std::vector<RectI> bubbles;
 };
 
 // OCR 服務。正式程式接 ocr 模組的模型，測試時換成假的。
