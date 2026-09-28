@@ -52,7 +52,8 @@ struct Arguments {
     bool warmUp = true;  // --no-warmup：不要在載入時先空跑一次
     // --comic-text <模型>：另外跑 comic-text-detector，輸出對話框區塊（M2-02）
     std::filesystem::path comicTextModel;
-    int fixedWidth = 0;  // --fixed-input W H：偵測固定用這個輸入大小
+    double comicScale = 0.0;  // --comic-scale S：實驗用，固定送進 comic-text-detector 的倍數
+    int fixedWidth = 0;       // --fixed-input W H：偵測固定用這個輸入大小
     int fixedHeight = 0;
     std::filesystem::path output;
     std::filesystem::path dumpCharacters;
@@ -102,6 +103,8 @@ std::optional<Arguments> parseArguments(int argc, wchar_t** argv) {
             args.fixedHeight = std::max(1, _wtoi(argv[++i]));
         } else if (arg == L"--comic-text" && hasValue) {
             args.comicTextModel = argv[++i];
+        } else if (arg == L"--comic-scale" && hasValue) {
+            args.comicScale = _wtof(argv[++i]);
         } else if (arg == L"--output" && hasValue) {
             args.output = argv[++i];
         } else if (arg == L"--dump-characters" && hasValue) {
@@ -156,7 +159,9 @@ bool sameLines(const std::vector<TextLine>& a, const std::vector<TextLine>& b) {
 }
 
 // 合併成段落之後的樣子（core 的 text_layout）。診斷「句子被切斷」這類問題時用。
-nlohmann::json blocksToJson(const std::vector<TextLine>& lines) {
+// bubbles 不是空的時候依對話框分段（--comic-text，M2-02）
+nlohmann::json blocksToJson(const std::vector<TextLine>& lines,
+                            const std::vector<tmw::core::RectI>& bubbles) {
     std::vector<tmw::core::OcrLine> converted;
     converted.reserve(lines.size());
     for (const TextLine& line : lines) {
@@ -167,7 +172,7 @@ nlohmann::json blocksToJson(const std::vector<TextLine>& lines) {
     // 診斷分段問題時要拿到「和合併看到的一模一樣」的行
     tmw::core::resolveAmbiguousOrientation(withRuby.lines);
     nlohmann::json result = nlohmann::json::array();
-    for (const tmw::core::TextBlock& block : tmw::core::mergeIntoBlocks(withRuby.lines)) {
+    for (const tmw::core::TextBlock& block : tmw::core::mergeIntoBlocks(withRuby.lines, bubbles)) {
         result.push_back(
             {{"text", block.text},
              {"marked", tmw::core::markRuby(block.text, block.ruby)},
@@ -276,8 +281,19 @@ int run(const Arguments& args) {
             }
         }
         nlohmann::json comicBlocks = nlohmann::json::array();
+        std::vector<tmw::core::RectI> bubbles;
+        double comicMs = 0.0;
         if (comicText) {
-            for (const tmw::ocr::ComicTextBlock& block : comicText->detect(bgr)) {
+            // 量第二次：第一次包含 DirectML 遇到新形狀時的編譯
+            comicText->detect(bgr, args.comicScale);
+            const auto comicStart = std::chrono::steady_clock::now();
+            const std::vector<tmw::ocr::ComicTextBlock> found =
+                comicText->detect(bgr, args.comicScale);
+            comicMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() -
+                                                                comicStart)
+                          .count();
+            for (const tmw::ocr::ComicTextBlock& block : found) {
+                bubbles.push_back(block.rect);
                 comicBlocks.push_back(
                     {{"rect",
                       {block.rect.left, block.rect.top, block.rect.right, block.rect.bottom}},
@@ -286,15 +302,18 @@ int run(const Arguments& args) {
         }
         const double detection = median(detectionMs);
         const double recognition = median(recognitionMs);
-        std::printf("%s: %zu lines, %d boxes, det %.1f ms, rec %.1f ms%s\n",
-                    utf8(path.filename()).c_str(), first.size(), boxes, detection, recognition,
-                    deterministic ? "" : "  [NOT DETERMINISTIC]");
+        std::printf("%s: %zu lines, %d boxes, det %.1f ms, rec %.1f ms",
+                    utf8(path.filename()).c_str(), first.size(), boxes, detection, recognition);
+        if (comicText) {
+            std::printf(", comic %zu blocks %.1f ms", bubbles.size(), comicMs);
+        }
+        std::printf("%s\n", deterministic ? "" : "  [NOT DETERMINISTIC]");
         images.push_back(
             {{"image", utf8(path.filename())},
              {"width", bgr.cols},
              {"height", bgr.rows},
              {"lines", toJson(first)},
-             {"blocks", blocksToJson(first)},
+             {"blocks", blocksToJson(first, bubbles)},
              {"text_lines", textLinesToJson(first)},
              {"comic_blocks", comicBlocks},
              {"deterministic", deterministic},

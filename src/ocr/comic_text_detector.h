@@ -51,7 +51,9 @@ public:
                       const ComicTextOptions& options = {});
 
     // bgr：CV_8UC3。回傳原圖座標的文字區塊。
-    std::vector<ComicTextBlock> detect(const cv::Mat& bgr);
+    // scale：送進模型前乘上的倍數。0 表示照參考實作把長邊縮放到 1024；
+    // 指定的話會再壓到不超過 1024（模型的輸入是固定的）。
+    std::vector<ComicTextBlock> detect(const cv::Mat& bgr, double scale = 0.0);
 
     Device device() const { return model_.device(); }
 

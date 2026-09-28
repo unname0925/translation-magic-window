@@ -3,8 +3,11 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <functional>
+#include <map>
 #include <numeric>
+#include <optional>
 
 #include "core/utf8.h"
 
@@ -258,16 +261,24 @@ void resolveAmbiguousOrientation(std::vector<OcrLine>& lines) {
     }
 }
 
-std::vector<TextBlock> mergeIntoBlocks(std::span<const OcrLine> lines,
-                                       const MergeOptions& options) {
-    std::vector<OcrLine> sorted(lines.begin(), lines.end());
-    std::erase_if(sorted, [](const OcrLine& line) { return line.text.empty(); });
-    resolveAmbiguousOrientation(sorted);
-    sortReadingOrder(sorted);
+namespace {
+
+// 排序好、去掉空白之後的行，以及用「行和行之間的距離」併出來的群（union-find 的根）
+struct Clustered {
+    std::vector<OcrLine> sorted;
+    std::vector<std::size_t> root;
+};
+
+Clustered clusterByDistance(std::span<const OcrLine> lines, const MergeOptions& options) {
+    Clustered out;
+    out.sorted.assign(lines.begin(), lines.end());
+    std::erase_if(out.sorted, [](const OcrLine& line) { return line.text.empty(); });
+    resolveAmbiguousOrientation(out.sorted);
+    sortReadingOrder(out.sorted);
 
     // 任意兩行只要相容就併成同一群，不是只看閱讀順序上相鄰的那兩行。
     // 被 ルビ 或擬聲詞插隊一次，後面整串就接不回來（design.md 4.4 的實測）。
-    const std::size_t count = sorted.size();
+    const std::size_t count = out.sorted.size();
     std::vector<std::size_t> parent(count);
     for (std::size_t i = 0; i < count; ++i) {
         parent[i] = i;
@@ -281,25 +292,31 @@ std::vector<TextBlock> mergeIntoBlocks(std::span<const OcrLine> lines,
     };
     for (std::size_t i = 0; i < count; ++i) {
         for (std::size_t j = i + 1; j < count; ++j) {
-            if (canMerge(sorted[i], sorted[j], options)) {
+            if (canMerge(out.sorted[i], out.sorted[j], options)) {
                 parent[find(i)] = find(j);
             }
         }
     }
-
-    // 每一群的位置由它第一行的閱讀順序決定
-    std::vector<TextBlock> blocks;
-    std::vector<std::size_t> blockOf(count, count);
+    out.root.resize(count);
     for (std::size_t i = 0; i < count; ++i) {
-        const std::size_t root = find(i);
-        if (blockOf[root] == count) {
-            blockOf[root] = blocks.size();
+        out.root[i] = find(i);
+    }
+    return out;
+}
+
+// 同一個 key 的行組成一段。每一段的位置由它第一行的閱讀順序決定。
+std::vector<TextBlock> buildBlocks(std::vector<OcrLine> sorted, std::span<const std::size_t> key) {
+    std::vector<TextBlock> blocks;
+    std::map<std::size_t, std::size_t> blockOf;
+    for (std::size_t i = 0; i < sorted.size(); ++i) {
+        const auto [found, inserted] = blockOf.try_emplace(key[i], blocks.size());
+        if (inserted) {
             TextBlock block;
             block.rect = sorted[i].rect;
             block.orientation = sorted[i].orientation;
             blocks.push_back(std::move(block));
         }
-        TextBlock& block = blocks[blockOf[root]];
+        TextBlock& block = blocks[found->second];
         block.rect = unite(block.rect, sorted[i].rect);
         block.lines.push_back(std::move(sorted[i]));
     }
@@ -333,6 +350,57 @@ std::vector<TextBlock> mergeIntoBlocks(std::span<const OcrLine> lines,
         block.score = static_cast<float>(score / static_cast<double>(block.lines.size()));
     }
     return blocks;
+}
+
+std::int64_t areaOf(const RectI& rect) {
+    return static_cast<std::int64_t>(std::max(0, rect.width())) * std::max(0, rect.height());
+}
+
+std::int64_t sharedArea(const RectI& a, const RectI& b) {
+    const int width = std::min(a.right, b.right) - std::max(a.left, b.left);
+    const int height = std::min(a.bottom, b.bottom) - std::max(a.top, b.top);
+    return width > 0 && height > 0 ? static_cast<std::int64_t>(width) * height : 0;
+}
+
+}  // namespace
+
+std::vector<TextBlock> mergeIntoBlocks(std::span<const OcrLine> lines,
+                                       const MergeOptions& options) {
+    Clustered clustered = clusterByDistance(lines, options);
+    return buildBlocks(std::move(clustered.sorted), clustered.root);
+}
+
+std::optional<std::size_t> bubbleOf(const RectI& line, std::span<const RectI> bubbles) {
+    std::optional<std::size_t> best;
+    std::int64_t bestShared = 0;
+    for (std::size_t i = 0; i < bubbles.size(); ++i) {
+        const std::int64_t shared = sharedArea(line, bubbles[i]);
+        if (shared > bestShared) {
+            best = i;
+            bestShared = shared;
+        }
+    }
+    // 至少蓋住這一行的一半：只擦到邊的不算，免得隔壁對話框把它搶走
+    if (best && bestShared * 2 >= std::max<std::int64_t>(1, areaOf(line))) {
+        return best;
+    }
+    return std::nullopt;
+}
+
+std::vector<TextBlock> mergeIntoBlocks(std::span<const OcrLine> lines,
+                                       std::span<const RectI> bubbles,
+                                       const MergeOptions& options) {
+    Clustered clustered = clusterByDistance(lines, options);
+    // 在對話框裡的行：同一個對話框就是同一段。不在任何對話框裡的（擬聲詞、旁白），
+    // 照原本用距離併出來的群。key 的範圍錯開：距離群的根是 0～count-1，對話框從 count 開始。
+    const std::size_t count = clustered.sorted.size();
+    std::vector<std::size_t> key = clustered.root;
+    for (std::size_t i = 0; i < count; ++i) {
+        if (const std::optional<std::size_t> bubble = bubbleOf(clustered.sorted[i].rect, bubbles)) {
+            key[i] = count + *bubble;
+        }
+    }
+    return buildBlocks(std::move(clustered.sorted), key);
 }
 
 bool touchesEdge(const RectI& rect, const SizeI& frame, int margin) {

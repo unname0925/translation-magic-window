@@ -95,11 +95,12 @@ ComicTextDetector::ComicTextDetector(const std::filesystem::path& modelFile, Dev
                                      const ComicTextOptions& options)
     : options_(options), model_(modelFile, device, "blk") {}
 
-std::vector<ComicTextBlock> ComicTextDetector::detect(const cv::Mat& bgr) {
+std::vector<ComicTextBlock> ComicTextDetector::detect(const cv::Mat& bgr, double requestedScale) {
     if (bgr.empty()) {
         return {};
     }
-    const double scale = static_cast<double>(kInputSize) / std::max(bgr.cols, bgr.rows);
+    const double fit = static_cast<double>(kInputSize) / std::max(bgr.cols, bgr.rows);
+    const double scale = requestedScale > 0.0 ? std::min(requestedScale, fit) : fit;
     const cv::Size scaled{std::max(1, roundHalfEven(bgr.cols * scale)),
                           std::max(1, roundHalfEven(bgr.rows * scale))};
 

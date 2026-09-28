@@ -6,6 +6,8 @@
 // 這裡是純邏輯，不依賴 OpenCV 或 Windows：OCR 的結果由呼叫端轉成 OcrLine。
 #pragma once
 
+#include <cstddef>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -82,6 +84,17 @@ void sortReadingOrder(std::vector<OcrLine>& lines);
 // 把相鄰的行合併成段落。lines 不需要事先排序。
 std::vector<TextBlock> mergeIntoBlocks(std::span<const OcrLine> lines,
                                        const MergeOptions& options = {});
+
+// 有對話框的位置時（漫畫，comic-text-detector 找到的區塊，M2-02）：
+// 同一個對話框裡的行就是同一段，不管它們之間的距離；不在任何對話框裡的行（擬聲詞、旁白）
+// 照上面的距離規則分段。10 頁日文漫畫上，正確復原的區塊從 106 變成 112、被切開的從 13 變成 6
+// （tools/eval/regroup_by_ctd.py）。bubbles 是空的時候和上面那個一樣。
+std::vector<TextBlock> mergeIntoBlocks(std::span<const OcrLine> lines,
+                                       std::span<const RectI> bubbles,
+                                       const MergeOptions& options = {});
+
+// 這一行屬於哪個對話框：重疊最多、而且蓋住這一行至少一半面積的那個。沒有就回傳 nullopt。
+std::optional<std::size_t> bubbleOf(const RectI& line, std::span<const RectI> bubbles);
 
 // 依語言把多行接成一段文字：
 // - 英文、韓文：用空格接；英文行尾的連字號（trans- / lation）要接回同一個字

@@ -3,6 +3,8 @@
 
 #include <gtest/gtest.h>
 
+#include <cstddef>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -287,6 +289,65 @@ TEST(MergeIntoBlocksTest, RubyPositionsMoveWithTheText) {
     ASSERT_EQ(blocks[0].ruby.size(), 2u);
     EXPECT_EQ(blocks[0].ruby[0].start, 0);
     EXPECT_EQ(blocks[0].ruby[1].start, 1 + 3) << "第二行從第 3 個字開始（日文直接相連）";
+}
+
+// M2-02：有對話框的位置時，同一個對話框就是同一段
+TEST(BubbleMergeTest, ColumnsTooFarApartStillJoinInsideOneBubble) {
+    // 兩欄隔了將近 3 個字寬，距離規則會把它們切開——但它們在同一個對話框裡
+    const std::vector<OcrLine> lines = {vertical(300, 100, 30, 150, "約束の時間に"),
+                                        vertical(210, 100, 30, 150, "間に合わない")};
+    ASSERT_EQ(mergeIntoBlocks(lines).size(), 2u) << "前提：只看距離會切開";
+
+    const std::vector<RectI> bubbles = {RectI{190, 80, 350, 270}};
+    const auto blocks = mergeIntoBlocks(lines, bubbles);
+    ASSERT_EQ(blocks.size(), 1u);
+    EXPECT_EQ(blocks[0].text, "約束の時間に間に合わない") << "直排由右到左接起來";
+}
+
+TEST(BubbleMergeTest, AdjacentColumnsInDifferentBubblesStayApart) {
+    // 兩個對話框靠得很近，距離規則會把兩欄併成一段（合併過頭）
+    const std::vector<OcrLine> lines = {vertical(300, 100, 30, 150, "こんにちは"),
+                                        vertical(260, 100, 30, 150, "さようなら")};
+    ASSERT_EQ(mergeIntoBlocks(lines).size(), 1u) << "前提：只看距離會併在一起";
+
+    const std::vector<RectI> bubbles = {RectI{290, 90, 340, 260}, RectI{250, 90, 295, 260}};
+    EXPECT_EQ(mergeIntoBlocks(lines, bubbles).size(), 2u);
+}
+
+TEST(BubbleMergeTest, LinesOutsideEveryBubbleKeepTheDistanceRule) {
+    // 擬聲詞和旁白不在對話框裡：它們照原本的方式分段
+    const std::vector<OcrLine> lines = {horizontal(10, 10, 200, 20, "Narration line one"),
+                                        horizontal(10, 34, 200, 20, "continues here"),
+                                        horizontal(500, 500, 100, 20, "Inside")};
+    const std::vector<RectI> bubbles = {RectI{480, 480, 620, 540}};
+    const auto blocks = mergeIntoBlocks(lines, bubbles);
+    EXPECT_EQ(texts(blocks),
+              (std::vector<std::string>{"Narration line one continues here", "Inside"}));
+}
+
+TEST(BubbleMergeTest, NoBubblesIsTheSameAsBefore) {
+    const std::vector<OcrLine> lines = {vertical(300, 100, 30, 150, "約束の時間に"),
+                                        vertical(210, 100, 30, 150, "間に合わない"),
+                                        horizontal(10, 10, 200, 20, "Hello")};
+    EXPECT_EQ(texts(mergeIntoBlocks(lines, std::vector<RectI>{})), texts(mergeIntoBlocks(lines)));
+}
+
+TEST(BubbleOfTest, NeedsToCoverAtLeastHalfTheLine) {
+    const RectI line{0, 0, 100, 20};
+    EXPECT_EQ(bubbleOf(line, std::vector<RectI>{{0, 0, 50, 20}}), std::optional<std::size_t>(0))
+        << "剛好一半算";
+    EXPECT_FALSE(bubbleOf(line, std::vector<RectI>{{0, 0, 49, 20}}).has_value())
+        << "不到一半：只是擦到邊，不能被隔壁的對話框搶走";
+}
+
+TEST(BubbleOfTest, PicksTheBubbleThatCoversMost) {
+    const RectI line{0, 0, 100, 20};
+    const std::vector<RectI> bubbles = {RectI{0, 0, 55, 20}, RectI{40, 0, 100, 20}};
+    EXPECT_EQ(bubbleOf(line, bubbles), std::optional<std::size_t>(1));
+}
+
+TEST(BubbleOfTest, NoBubblesNoAnswer) {
+    EXPECT_FALSE(bubbleOf(RectI{0, 0, 10, 10}, {}).has_value());
 }
 
 }  // namespace
