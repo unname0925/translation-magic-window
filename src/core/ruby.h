@@ -51,6 +51,14 @@ bool isKanaOnly(std::string_view utf8);
 // ruby 要依 start 由小到大排好，重疊的會被略過。
 std::string markRuby(std::string_view text, std::span<const RubyAnnotation> ruby);
 
+// 一段文字上標好的 ルビ，搬到同一段話的另一個版本上（manga-ocr 重讀出來的文字，M2-03）。
+// 位置是「第幾個字」，兩個版本的字數不一定一樣（PP-OCR 多讀或少讀了字），所以不能照抄位置：
+// 拿每個 ルビ 的本文（例如「楓林」）到新的文字裡找，從上一個 ルビ 之後開始找第一個出現的地方。
+// 新文字裡找不到那個本文（manga-ocr 讀成別的字）就丟掉那個 ルビ。ruby 要依 start 排好。
+std::vector<RubyAnnotation> remapRuby(std::string_view oldText,
+                                      std::span<const RubyAnnotation> ruby,
+                                      std::string_view newText);
+
 // 把 `{本文|讀音}` 還原成只有本文。看不懂標記的翻譯引擎（Google、DeepL）要先用它，
 // 否則譯文裡的標記數量會對不上，對齊檢查會一直判定格式錯誤（design.md 4.5）。
 std::string stripRubyMarkup(std::string_view text);

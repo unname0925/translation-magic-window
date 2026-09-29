@@ -7,13 +7,16 @@
 #include <filesystem>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <stop_token>
+#include <string>
 #include <vector>
 
 #include "core/image.h"
 #include "core/pipeline.h"
 #include "core/text_layout.h"
 #include "ocr/comic_text_detector.h"
+#include "ocr/manga_ocr.h"
 #include "ocr/model_choice.h"
 #include "ocr/ocr_pipeline.h"
 
@@ -35,6 +38,10 @@ public:
     core::OcrResult recognize(const core::ImageBgra& frame, core::Language script,
                               std::stop_token cancel) override;
 
+    // 漫畫模式、而且 manga-ocr 的模型在 models/manga-ocr 時，用它重讀一段（M2-03）
+    std::optional<std::string> reread(const core::ImageBgra& frame, const core::RectI& rect,
+                                      int maxCharacters, std::stop_token cancel) override;
+
     Device device() const { return pipeline_.device(); }
     const OcrTimings& lastTimings() const { return lastTimings_; }
 
@@ -46,6 +53,9 @@ public:
     // 所以不會有「工作執行緒正在用、UI 執行緒把它拆掉」的問題。
     bool setMangaMode(bool enabled);
     bool mangaMode() const { return mangaMode_.load(std::memory_order_acquire); }
+    // 漫畫模式打開時，manga-ocr 有沒有一起載入（沒有的話只做對話框分段，文字還是 PP-OCR 讀的）
+    bool hasMangaOcr() const { return mangaOcrLoaded_.load(std::memory_order_acquire); }
+    static std::filesystem::path mangaOcrDirectory(const std::filesystem::path& modelsDirectory);
 
     // comic-text-detector 的模型檔位置
     static std::filesystem::path comicTextModelPath(const std::filesystem::path& modelsDirectory);
@@ -57,7 +67,9 @@ private:
 
     std::mutex comicTextLoading_;  // 只保護「載入」這件事
     std::unique_ptr<ComicTextDetector> comicText_;
+    std::unique_ptr<MangaOcr> mangaOcr_;
     std::atomic<bool> mangaMode_{false};
+    std::atomic<bool> mangaOcrLoaded_{false};
 };
 
 // BGRA（每列緊密排列）轉成 OCR 要的 BGR。空畫面回傳空矩陣。

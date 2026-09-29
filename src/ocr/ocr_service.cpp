@@ -107,9 +107,45 @@ bool OcrService::setMangaMode(bool enabled) {
                 return false;
             }
         }
+        // manga-ocr 是加分的：沒有它漫畫模式照樣能依對話框分段，只是文字還是 PP-OCR 讀的
+        if (mangaOcr_ == nullptr) {
+            const std::filesystem::path directory = mangaOcrDirectory(modelsDirectory_);
+            if (std::filesystem::exists(directory / "encoder.onnx")) {
+                try {
+                    mangaOcr_ = std::make_unique<MangaOcr>(directory, pipeline_.device());
+                    mangaOcrLoaded_.store(true, std::memory_order_release);
+                } catch (const std::exception&) {
+                    mangaOcr_.reset();
+                }
+            }
+        }
     }
     mangaMode_.store(true, std::memory_order_release);
     return true;
+}
+
+std::filesystem::path OcrService::mangaOcrDirectory(const std::filesystem::path& modelsDirectory) {
+    return modelsDirectory / "manga-ocr";
+}
+
+std::optional<std::string> OcrService::reread(const core::ImageBgra& frame, const core::RectI& rect,
+                                              int maxCharacters, std::stop_token cancel) {
+    // acquire 對應載入時的 release：看到 true 就一定看得到載入好的模型
+    if (!mangaMode_.load(std::memory_order_acquire) ||
+        !mangaOcrLoaded_.load(std::memory_order_acquire) || cancel.stop_requested() ||
+        frame.empty()) {
+        return std::nullopt;
+    }
+    // 四周多留幾個像素：框是依文字行算的，貼得太緊的話字的邊緣會被切掉
+    constexpr int kMargin = 4;
+    const cv::Mat bgr = toBgr(frame);
+    const cv::Rect area = cv::Rect(rect.left - kMargin, rect.top - kMargin,
+                                   rect.width() + 2 * kMargin, rect.height() + 2 * kMargin) &
+                          cv::Rect(0, 0, bgr.cols, bgr.rows);
+    if (area.empty()) {
+        return std::nullopt;
+    }
+    return mangaOcr_->read(bgr(area), maxCharacters);
 }
 
 }  // namespace tmw::ocr

@@ -26,6 +26,7 @@
 #include <string>
 #include <vector>
 
+#include "core/pipeline.h"
 #include "core/ruby.h"
 #include "core/text_layout.h"
 #include "core/utf8.h"
@@ -262,7 +263,7 @@ nlohmann::json readWithMangaOcr(nlohmann::json blocks, const cv::Mat& bgr,
         const cv::Rect area = cv::Rect(left - kMargin, top - kMargin, right - left + 2 * kMargin,
                                        bottom - top + 2 * kMargin) &
                               cv::Rect(0, 0, bgr.cols, bgr.rows);
-        const int limit = 2 * tmw::core::characterCount(block["text"].get<std::string>()) + 16;
+        const int limit = tmw::core::mangaOcrCharacterLimit(block["text"].get<std::string>());
         const auto start = std::chrono::steady_clock::now();
         block["manga_text"] = mangaOcr->read(bgr(area), limit);
         block["manga_ms"] =

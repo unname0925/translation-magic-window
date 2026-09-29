@@ -209,4 +209,37 @@ std::string stripRubyMarkup(std::string_view text) {
     return out;
 }
 
+std::vector<RubyAnnotation> remapRuby(std::string_view oldText,
+                                      std::span<const RubyAnnotation> ruby,
+                                      std::string_view newText) {
+    // 以「字」為單位比對：位置的單位也是字
+    const auto toCharacters = [](std::string_view text) {
+        std::u32string out;
+        for (std::size_t index = 0; index < text.size();) {
+            out += nextCodePoint(text, index);
+        }
+        return out;
+    };
+    const std::u32string before = toCharacters(oldText);
+    const std::u32string after = toCharacters(newText);
+
+    std::vector<RubyAnnotation> remapped;
+    std::size_t cursor = 0;
+    for (const RubyAnnotation& one : ruby) {
+        if (one.start < 0 || one.length <= 0 ||
+            static_cast<std::size_t>(one.start + one.length) > before.size()) {
+            continue;
+        }
+        const std::u32string base = before.substr(static_cast<std::size_t>(one.start),
+                                                  static_cast<std::size_t>(one.length));
+        const std::size_t found = after.find(base, cursor);
+        if (found == std::u32string::npos) {
+            continue;  // 新的版本把這幾個字讀成別的了
+        }
+        remapped.push_back(RubyAnnotation{static_cast<int>(found), one.length, one.reading});
+        cursor = found + base.size();
+    }
+    return remapped;
+}
+
 }  // namespace tmw::core

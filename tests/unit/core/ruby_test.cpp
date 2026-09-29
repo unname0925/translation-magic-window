@@ -219,5 +219,37 @@ TEST(AttachRubyTest, NeverDropsLatinTextThatIsNotThin) {
     EXPECT_EQ(result.dropped, 0);
 }
 
+// M2-03：ルビ 搬到 manga-ocr 重讀的文字上
+TEST(RemapRubyTest, SameTextKeepsThePositions) {
+    const std::vector<RubyAnnotation> ruby{{0, 2, "ふうりん"}};
+    EXPECT_EQ(remapRuby("楓林女子校は", ruby, "楓林女子校は"), ruby);
+}
+
+TEST(RemapRubyTest, FollowsTheBaseWhenTheTextShifts) {
+    // PP-OCR 版本前面少讀了「この」，manga-ocr 讀到了：本文「楓林」往後移兩個字
+    const std::vector<RubyAnnotation> ruby{{0, 2, "ふうりん"}, {2, 2, "じょし"}};
+    const auto remapped = remapRuby("楓林女子校は", ruby, "この楓林女子校は");
+    EXPECT_EQ(remapped, (std::vector<RubyAnnotation>{{2, 2, "ふうりん"}, {4, 2, "じょし"}}));
+}
+
+TEST(RemapRubyTest, DropsRubyWhoseBaseWasReadDifferently) {
+    // manga-ocr 把「便意」讀成「使念」：那個 ルビ 沒地方放，丟掉；其他的照搬
+    const std::vector<RubyAnnotation> ruby{{0, 2, "べんい"}, {4, 2, "ちょうしょ"}};
+    const auto remapped = remapRuby("便意を催長所", ruby, "使念を催長所");
+    EXPECT_EQ(remapped, (std::vector<RubyAnnotation>{{4, 2, "ちょうしょ"}}));
+}
+
+TEST(RemapRubyTest, RepeatedBasesAreMatchedInOrder) {
+    // 同一個字出現兩次：各自對到自己那一個，不會兩個都對到第一個
+    const std::vector<RubyAnnotation> ruby{{0, 1, "みな"}, {2, 1, "みんな"}};
+    const auto remapped = remapRuby("皆と皆", ruby, "え皆と皆");
+    EXPECT_EQ(remapped, (std::vector<RubyAnnotation>{{1, 1, "みな"}, {3, 1, "みんな"}}));
+}
+
+TEST(RemapRubyTest, IgnoresAnnotationsOutsideTheOldText) {
+    const std::vector<RubyAnnotation> ruby{{5, 3, "よみ"}};
+    EXPECT_TRUE(remapRuby("短い", ruby, "短い").empty());
+}
+
 }  // namespace
 }  // namespace tmw::core

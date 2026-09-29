@@ -475,7 +475,18 @@ void AppController::setMangaMode(bool enabled) {
         return;
     }
     settings_.mangaMode = enabled;
-    platform::logInfo(enabled ? "漫畫模式：開（依對話框分段）" : "漫畫模式：關");
+    if (!enabled) {
+        platform::logInfo("漫畫模式：關");
+    } else if (ocr_->hasMangaOcr()) {
+        platform::logInfo("漫畫模式：開（依對話框分段，直排對白用 manga-ocr 重讀）");
+    } else {
+        // 分段照樣有效，只是文字還是 PP-OCR 讀的（字元錯誤率 10.4% 對 5.0%）
+        platform::logWarn("漫畫模式：開，但找不到 " +
+                          platform::pathToUtf8(
+                              ocr::OcrService::mangaOcrDirectory(platform::findModelsDirectory())) +
+                          "，直排對白仍由 PP-OCR 辨識（執行 tools/eval/export_manga_decoder.py "
+                          "--install 產生）");
+    }
 }
 
 void AppController::rebuildTranslation() {

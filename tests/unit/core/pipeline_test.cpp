@@ -4,6 +4,7 @@
 #include <gtest/gtest.h>
 
 #include <memory>
+#include <optional>
 #include <stop_token>
 #include <string>
 #include <utility>
@@ -34,6 +35,13 @@ public:
         return {lines, reports, bubbles};
     }
 
+    std::optional<std::string> reread(const ImageBgra&, const RectI& rect, int maxCharacters,
+                                      std::stop_token) override {
+        rereadRects.push_back(rect);
+        lastLimit = maxCharacters;
+        return rereadText;
+    }
+
     std::vector<OcrLine> lines;
     // 假裝是用這個模型讀出來的（Pipeline 會記下來，下次沿用）
     Language reports = Language::Japanese;
@@ -43,7 +51,15 @@ public:
     SizeI lastSize;
     // 每次被呼叫時，呼叫端說「上次是哪個語言」
     std::vector<Language> askedWith;
+    // manga-ocr 重讀：回傳什麼、被要求重讀了哪些範圍
+    std::optional<std::string> rereadText;
+    std::vector<RectI> rereadRects;
+    int lastLimit = 0;
 };
+
+OcrLine column(int left, int top, int right, int bottom, std::string text) {
+    return OcrLine{RectI{left, top, right, bottom}, std::move(text), 0.9f, Orientation::Vertical};
+}
 
 class FakeTranslator final : public ITranslator {
 public:
@@ -347,6 +363,75 @@ TEST_F(PipelineTest, GroupsByTheBubblesTheOcrReports) {
     const PipelineResult result = run(job());
     ASSERT_EQ(result.groups.size(), 1u) << "它們在同一個對話框裡";
     EXPECT_EQ(result.groups[0].block.text, "Hello there friend");
+}
+
+// M2-03：漫畫模式的直排對白換成 manga-ocr 重讀的文字
+class MangaRereadTest : public PipelineTest {
+protected:
+    void SetUp() override {
+        // 一個對話框裡的兩欄；PP-OCR 讀得不太對
+        ocr_.lines = {column(300, 100, 330, 250, "楓林女子校は"),
+                      column(260, 100, 290, 250, "学園併合")};
+        ocr_.bubbles = {RectI{250, 90, 340, 260}};
+        ocr_.rereadText = "この楓林女子校は学園併合";
+    }
+};
+
+TEST_F(MangaRereadTest, ReplacesTheTextOfVerticalBlocks) {
+    const PipelineResult result = run(job(400, 300));
+    ASSERT_EQ(result.groups.size(), 1u);
+    EXPECT_EQ(result.groups[0].block.text, "この楓林女子校は学園併合");
+    ASSERT_EQ(ocr_.rereadRects.size(), 1u);
+    EXPECT_EQ(ocr_.rereadRects[0], result.groups[0].block.rect) << "重讀的是那一段的範圍";
+    EXPECT_EQ(ocr_.lastLimit, 2 * 10 + 16) << "上限是 PP-OCR 讀到的字數兩倍加 16";
+}
+
+TEST_F(MangaRereadTest, CarriesTheRubyOverToTheNewText) {
+    // 「楓林女子校は」一欄 6 個字、每字 25 像素；「楓林」旁邊（右側）有 ルビ「ふうりん」，
+    // 照正常流程由 attachRuby 附上去（它會覆蓋行上原本的 ruby 欄位，所以不能直接填）
+    ocr_.lines.push_back(column(331, 100, 340, 150, "ふうりん"));
+    const PipelineResult result = run(job(400, 300));
+    ASSERT_EQ(result.groups.size(), 1u);
+    ASSERT_EQ(result.groups[0].block.ruby.size(), 1u);
+    EXPECT_EQ(result.groups[0].block.ruby[0].start, 2) << "「楓林」在新的文字裡往後移了兩個字";
+    EXPECT_EQ(result.groups[0].block.ruby[0].reading, "ふうりん");
+}
+
+TEST_F(MangaRereadTest, OnlyInMangaMode) {
+    ocr_.bubbles.clear();  // 沒有對話框：不是漫畫模式
+    const PipelineResult result = run(job(400, 300));
+    EXPECT_TRUE(ocr_.rereadRects.empty());
+    ASSERT_FALSE(result.groups.empty());
+    EXPECT_NE(result.groups[0].block.text, "この楓林女子校は学園併合");
+}
+
+TEST_F(MangaRereadTest, NotForHorizontalText) {
+    ocr_.lines = {line(20, 20, 200, 44, "横書きの文")};
+    ocr_.bubbles = {RectI{10, 10, 220, 60}};
+    run(job(400, 300));
+    EXPECT_TRUE(ocr_.rereadRects.empty());
+}
+
+TEST_F(MangaRereadTest, NotForAVeryTallNarrowLine) {
+    // 頁面邊緣的註解（M0-11：27×747 像素），縮成 224×224 讀不出來
+    ocr_.lines = {column(300, 10, 327, 290, "この物語はフィクションです")};
+    ocr_.bubbles = {RectI{295, 5, 335, 295}};
+    run(job(400, 300));
+    EXPECT_TRUE(ocr_.rereadRects.empty());
+}
+
+TEST_F(MangaRereadTest, ReusesTheResultWhenNothingChanged) {
+    // 畫面沒變：每 100 毫秒檢查一次，不能每次都重讀
+    run(job(400, 300));
+    run(job(400, 300));
+    EXPECT_EQ(ocr_.rereadRects.size(), 1u);
+}
+
+TEST_F(MangaRereadTest, KeepsThePpOcrTextWhenMangaOcrIsUnavailable) {
+    ocr_.rereadText.reset();
+    const PipelineResult result = run(job(400, 300));
+    ASSERT_EQ(result.groups.size(), 1u);
+    EXPECT_EQ(result.groups[0].block.text, "楓林女子校は学園併合");
 }
 
 }  // namespace

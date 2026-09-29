@@ -2,10 +2,14 @@
 
 #include <algorithm>
 #include <chrono>
+#include <map>
+#include <optional>
+#include <string>
 #include <utility>
 
 #include "core/ruby.h"
 #include "core/translator.h"
+#include "core/utf8.h"
 
 namespace tmw::core {
 namespace {
@@ -69,6 +73,45 @@ void Pipeline::rememberScript(int lens, Language script, const std::vector<OcrLi
     memory(lens).script = readSomething ? script : Language::Unknown;
 }
 
+bool shouldRereadWithMangaOcr(const TextBlock& block) {
+    return block.orientation == Orientation::Vertical && block.rect.width() > 0 &&
+           block.rect.height() <= 10 * block.rect.width();
+}
+
+int mangaOcrCharacterLimit(std::string_view ppOcrText) {
+    return 2 * characterCount(ppOcrText) + 16;
+}
+
+void Pipeline::rereadMangaBlocks(const PipelineJob& job, std::vector<TextBlock>& blocks,
+                                 std::stop_token cancel) {
+    LensMemory& state = memory(job.lens);
+    std::map<std::string, std::string> kept;
+    for (TextBlock& block : blocks) {
+        if (cancel.stop_requested()) {
+            return;
+        }
+        if (!shouldRereadWithMangaOcr(block)) {
+            continue;
+        }
+        std::string reread;
+        if (const auto found = state.reread.find(block.text); found != state.reread.end()) {
+            reread = found->second;  // 畫面沒變：沿用上一次的結果
+        } else {
+            std::optional<std::string> fresh =
+                ocr_.reread(job.frame, block.rect, mangaOcrCharacterLimit(block.text), cancel);
+            if (!fresh || fresh->empty()) {
+                continue;  // 不支援、模型沒載入或讀不出東西：沿用 PP-OCR 的文字
+            }
+            reread = std::move(*fresh);
+        }
+        kept.emplace(block.text, reread);
+        // ルビ 的位置是 PP-OCR 那個版本的第幾個字，要搬到新的文字上（找不到本文的丟掉）
+        block.ruby = remapRuby(block.text, block.ruby, reread);
+        block.text = std::move(reread);
+    }
+    state.reread = std::move(kept);
+}
+
 void Pipeline::forget(int lens) {
     std::erase_if(memories_, [lens](const auto& entry) { return entry.first == lens; });
 }
@@ -130,6 +173,17 @@ PipelineResult Pipeline::run(const PipelineJob& job, std::stop_token cancel) {
     const std::string text = joinBlocks(blocks);
     result.unchanged = !text.empty() && text == state.text;
     state.text = text;
+
+    // 漫畫模式（OCR 找到了對話框）的日文：直排對白換成 manga-ocr 重讀的文字（M2-03）。
+    // 在漫畫模式分出來的區塊上實測，字元錯誤率 PP-OCR 10.4%、manga-ocr 5.0%。
+    if (result.language == Language::Japanese && !recognized.bubbles.empty()) {
+        const auto rereadStart = std::chrono::steady_clock::now();
+        rereadMangaBlocks(job, blocks, cancel);
+        result.timings.ocrMs += millisecondsSince(rereadStart);
+        if (cancel.stop_requested()) {
+            return result;
+        }
+    }
 
     // 送出去翻譯的是帶 ルビ 標記的版本：`{本文|讀音}`（design.md 4.5）。
     // LLM 會把本文和讀音分別翻譯並保留標記，一般引擎看不懂就當成一般文字。

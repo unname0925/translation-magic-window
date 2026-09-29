@@ -8,9 +8,11 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <optional>
 #include <stop_token>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -88,7 +90,22 @@ public:
     // 取消時可以提早回傳。
     virtual OcrResult recognize(const ImageBgra& frame, Language script,
                                 std::stop_token cancel) = 0;
+
+    // 用更準的模型重讀一段（漫畫模式的直排對白用 manga-ocr，M2-03）。rect 是畫面座標，
+    // maxCharacters 是最多產生幾個字。不支援或模型沒載入時回傳 nullopt，呼叫端沿用原本的文字。
+    virtual std::optional<std::string> reread(const ImageBgra& /*frame*/, const RectI& /*rect*/,
+                                              int /*maxCharacters*/, std::stop_token /*cancel*/) {
+        return std::nullopt;
+    }
 };
+
+// 漫畫模式下這一段要不要交給 manga-ocr 重讀（M0-11 的規則）：直排、而且高不超過寬的 10 倍。
+// 極細長的一整行（頁面邊緣的註解）縮成 224×224 就讀不出來，逐字解碼還會一直重複同一個字。
+bool shouldRereadWithMangaOcr(const TextBlock& block);
+
+// manga-ocr 最多產生幾個字：PP-OCR 在同一段讀到的字數的兩倍再加 16。
+// 逐字解碼偶爾會一直重複同一個字停不下來，要有上限。
+int mangaOcrCharacterLimit(std::string_view ppOcrText);
 
 struct PipelineOptions {
     MergeOptions merge;
@@ -117,7 +134,14 @@ private:
         std::vector<std::pair<std::string, std::string>> recent;  // 最近幾組原文和譯文
         // 上一次判斷出來的語言，沿用到透鏡移動（forget）或這個模型讀不出東西為止
         Language script = Language::Unknown;
+        // 上一次 manga-ocr 重讀的結果，以 PP-OCR 讀到的文字為鍵。畫面沒變時沿用，
+        // 不必每 100 毫秒重讀一次，翻譯也才會命中快取。
+        std::map<std::string, std::string> reread;
     };
+
+    // 漫畫模式：直排的段落換成 manga-ocr 重讀的文字，ルビ 跟著搬過去（M2-03）
+    void rereadMangaBlocks(const PipelineJob& job, std::vector<TextBlock>& blocks,
+                           std::stop_token cancel);
 
     // 記住這次用的語言；但如果讀出來的內容根本不含這個模型該讀的文字
     // （例如畫面從日文換成韓文條漫，日文模型只讀得出空字串），就忘掉它重新判斷。
