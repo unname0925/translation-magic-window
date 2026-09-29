@@ -350,5 +350,27 @@ TEST(BubbleOfTest, NoBubblesNoAnswer) {
     EXPECT_FALSE(bubbleOf(RectI{0, 0, 10, 10}, {}).has_value());
 }
 
+// 實測（193142.png）：同一個對話框的四欄，由右到左在 x=204、159、109、70；
+// 最後兩欄只重疊 5 像素。整頁一起排的時候，頁面別處一行橫跨這兩欄的東西把它們串成
+// 同一欄，改成依上緣排序，句子就接錯了。每一段要在自己的行裡重排。
+TEST(BubbleMergeTest, ColumnsInsideABlockReadRightToLeftWhateverElseIsOnThePage) {
+    const std::vector<OcrLine> lines = {vertical(70, 438, 44, 267, "チャンスなのに"),
+                                        vertical(109, 439, 42, 265, "女子と接点持てる"),
+                                        vertical(159, 438, 41, 203, "共学になって"),
+                                        vertical(204, 436, 47, 141, "せっかく"),
+                                        // 頁面下方另一格裡的一欄，左右剛好跨過 x=80～130
+                                        vertical(80, 1000, 50, 200, "別のコマ")};
+    const std::vector<RectI> bubbles = {RectI{60, 420, 260, 720}};
+    const auto blocks = mergeIntoBlocks(lines, bubbles);
+    bool found = false;
+    for (const TextBlock& block : blocks) {
+        if (block.text.find("せっかく") != std::string::npos) {
+            found = true;
+            EXPECT_EQ(block.text, "せっかく共学になって女子と接点持てるチャンスなのに");
+        }
+    }
+    EXPECT_TRUE(found);
+}
+
 }  // namespace
 }  // namespace tmw::core

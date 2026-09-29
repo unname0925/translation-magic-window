@@ -322,6 +322,12 @@ std::vector<TextBlock> buildBlocks(std::vector<OcrLine> sorted, std::span<const 
     }
 
     for (TextBlock& block : blocks) {
+        // 在這一段自己的行裡重排閱讀順序。整頁一起排的時候，「哪幾行是同一欄」是用水平重疊
+        // 遞移決定的：頁面別處的一行可能把這一段裡相鄰、只重疊幾個像素的兩欄串成同一欄，
+        // 兩欄就改成依上緣排序、順序整個錯掉（實測：「せっかく共学になって女子と接点持てる
+        // チャンスなのに」被接成「…共学になってチャンスなのに女子と接点持てる」）。
+        sortReadingOrder(block.lines);
+
         std::vector<std::string> texts;
         texts.reserve(block.lines.size());
         double score = 0.0;

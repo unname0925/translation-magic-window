@@ -177,5 +177,47 @@ TEST(StripRubyMarkupTest, UndoesMarkRuby) {
     EXPECT_EQ(stripRubyMarkup(markRuby(text, ruby)), text);
 }
 
+// 實測（193101.png）：「楓林女子校は」旁邊的 ルビ 被 PP-OCR 讀成「11.5」，
+// 沒附上也沒丟掉，漫畫模式就把它接進整句：「楓林女子校は学園併合に伴いこの11.52104」
+TEST(AttachRubyTest, DropsMisreadRubyInsteadOfKeepingItAsText) {
+    const std::vector<OcrLine> lines{column(911, 948, 442, 619, "楓林女子校は"),
+                                     column(945, 955, 556, 587, "11.5")};
+    const RubyResult result = attachRuby(lines);
+    ASSERT_EQ(result.lines.size(), 1u) << "讀錯的 ルビ 不能留下來當成一般文字";
+    EXPECT_EQ(result.lines[0].text, "楓林女子校は");
+    EXPECT_TRUE(result.lines[0].ruby.empty()) << "讀音是錯的，也不能附成 ルビ";
+    EXPECT_EQ(result.attached, 0);
+    EXPECT_EQ(result.dropped, 1);
+}
+
+TEST(AttachRubyTest, KeepsSmallTextThatIsNotBesideAColumn) {
+    // 同樣是小小的數字，但離任何一欄都很遠：那是真的文字（頁碼、門牌），要留著
+    const std::vector<OcrLine> lines{column(911, 948, 442, 619, "楓林女子校は"),
+                                     column(500, 510, 900, 931, "11.5")};
+    const RubyResult result = attachRuby(lines);
+    EXPECT_EQ(result.lines.size(), 2u);
+    EXPECT_EQ(result.dropped, 0);
+}
+
+// 第一版的規則只看位置就丟，實測誤殺了真正的對白：「みにゃ…皆も」「結局山吹かよ」
+// 「10秒前」「Apollo」都在別的欄旁邊，「欄長 ÷ 字數」估出來的字級也比鄰欄小
+TEST(AttachRubyTest, NeverDropsTextWithKanaOrKanji) {
+    // 旁邊那欄字數少、字距拉很開（「えー」），估出來的字級很大，這一欄看起來就「很小」
+    const std::vector<OcrLine> lines{column(440, 480, 70, 260, "えー"),
+                                     column(401, 436, 74, 257, "みにゃ…皆も")};
+    const RubyResult result = attachRuby(lines);
+    EXPECT_EQ(result.lines.size(), 2u) << "有假名、漢字的是真正的對白";
+    EXPECT_EQ(result.dropped, 0);
+}
+
+TEST(AttachRubyTest, NeverDropsLatinTextThatIsNotThin) {
+    // 和旁邊那欄差不多寬的英文字是真的文字，不是讀錯的 ルビ
+    const std::vector<OcrLine> lines{column(560, 600, 1200, 1500, "少女のラジオ配信"),
+                                     column(530, 562, 1264, 1310, "Apollo")};
+    const RubyResult result = attachRuby(lines);
+    EXPECT_EQ(result.lines.size(), 2u);
+    EXPECT_EQ(result.dropped, 0);
+}
+
 }  // namespace
 }  // namespace tmw::core

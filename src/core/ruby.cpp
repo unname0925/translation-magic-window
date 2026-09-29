@@ -52,8 +52,20 @@ RubyResult attachRuby(std::span<const OcrLine> lines, const RubyOptions& options
 
     for (std::size_t candidate = 0; candidate < lines.size(); ++candidate) {
         const OcrLine& small = lines[candidate];
-        if (small.text.empty() || !isKanaOnly(small.text)) {
+        if (small.text.empty()) {
             continue;
+        }
+        // 位置像 ルビ、字卻不是假名的：可能是 OCR 把太小的假名讀錯了（實測會讀成「11.5」
+        // 「2104」這種數字），也可能就是一般的文字。只丟前者：
+        // - 裡面有假名或漢字的一律當成一般文字。「欄長 ÷ 字數」估出來的字級在字數少、字距
+        //   拉很開的鄰欄旁邊會失準，只看位置的話，「みにゃ…皆も」這種真正的對白也會被丟掉。
+        // - 比寬度而不是字級：讀錯的文字，字數本身就沒有意義，「欄長 ÷ 字數」算不出東西。
+        const bool kana = isKanaOnly(small.text);
+        if (!kana) {
+            const ScriptCounts scripts = countScripts(small.text);
+            if (scripts.kana + scripts.han > 0) {
+                continue;
+            }
         }
         const int smallSize = std::max(1, fontSize(small));
         const auto [smallStart, smallEnd] = along(small);
@@ -70,8 +82,14 @@ RubyResult attachRuby(std::span<const OcrLine> lines, const RubyOptions& options
                 continue;
             }
             const int baseSize = std::max(1, fontSize(base));
-            if (smallSize > baseSize * options.maxSizeRatio) {
-                continue;  // 不夠小，是一般的文字行
+            const auto [baseNear, baseFar] = across(base);
+            if (kana) {
+                if (smallSize > baseSize * options.maxSizeRatio) {
+                    continue;  // 不夠小，是一般的文字行
+                }
+            } else if ((smallFar - smallNear) >
+                       (baseFar - baseNear) * options.maxMisreadWidthRatio) {
+                continue;  // 不夠細，是一般的文字（「Apollo」「10秒前」這種）
             }
             const auto [baseStart, baseEnd] = along(base);
             const int shared = overlap(smallStart, smallEnd, baseStart, baseEnd);
@@ -81,7 +99,6 @@ RubyResult attachRuby(std::span<const OcrLine> lines, const RubyOptions& options
             if (shared > (baseEnd - baseStart) * options.maxSpanRatio) {
                 continue;  // 蓋住整欄，那是另一句話
             }
-            const auto [baseNear, baseFar] = across(base);
             const int gap = gapBetween(smallNear, smallFar, baseNear, baseFar);
             if (gap > baseSize * options.maxGapRatio) {
                 continue;  // 隔壁那一欄
@@ -92,6 +109,11 @@ RubyResult attachRuby(std::span<const OcrLine> lines, const RubyOptions& options
             }
         }
         if (best == lines.size()) {
+            continue;
+        }
+        if (!kana) {
+            isRuby[candidate] = true;
+            ++result.dropped;
             continue;
         }
 

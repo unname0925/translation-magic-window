@@ -25,16 +25,23 @@ struct RubyOptions {
     double minCoverRatio = 0.5;
     // 蓋住整欄的不是 ルビ，是另一句話
     double maxSpanRatio = 0.9;
+    // 讀錯的 ルビ（沒有假名也沒有漢字，例如「11.5」）要比本文那一欄細這麼多才丟掉。
+    // 比的是欄寬：讀錯的文字字數沒有意義，不能用「欄長 ÷ 字數」估字級。
+    // 實測讀錯的 ルビ 寬 10～18 像素，旁邊的本文 35～37 像素。
+    double maxMisreadWidthRatio = 0.6;
 };
 
 struct RubyResult {
     // 本文（ルビ 已經附到 OcrLine::ruby 上）
     std::vector<OcrLine> lines;
     int attached = 0;
+    // 位置和大小像 ルビ、字卻不是假名而被丟掉的行（OCR 把小小的假名讀成數字之類）
+    int dropped = 0;
 };
 
 // 把 lines 中明顯是 ルビ 的行挑出來附到本文上，回傳剩下的行。
-// 判斷依據：字比本文小很多、全是假名、緊貼著本文那一欄、只蓋住其中一部分。
+// 判斷依據：字比本文小很多、緊貼著本文那一欄、只蓋住其中一部分，而且全是假名。
+// 前三項都符合、字卻不是假名的，是讀錯的 ルビ：丟掉，不附上也不留下（見 dropped）。
 RubyResult attachRuby(std::span<const OcrLine> lines, const RubyOptions& options = {});
 
 // 這一行（或這一段）的文字是不是全部都是假名。ルビ 一定是假名。
