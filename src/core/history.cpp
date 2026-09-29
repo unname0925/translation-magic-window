@@ -42,6 +42,7 @@ std::optional<HistoryCard> History::add(const PipelineResult& result,
     card.lens = result.lens;
     card.language = result.language;
     card.error = result.error;
+    card.notice = result.notice;
 
     std::vector<std::string> seen;
     seen.reserve(result.groups.size());

@@ -32,6 +32,7 @@ struct HistoryCard {
     Language language = Language::Unknown;
     std::vector<HistoryGroup> groups;
     std::string error;  // 翻譯失敗的原因（原文仍然看得到）
+    std::string notice;  // 改用備援引擎的原因（PipelineResult::notice）
 };
 
 class History {

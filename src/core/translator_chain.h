@@ -26,6 +26,9 @@ struct ChainOptions {
 struct ChainResult {
     std::string engine;  // 實際翻出結果的引擎，用來當快取的鍵
     std::vector<std::string> translations;
+    // 沒有用首選引擎時說明原因，給結果視窗顯示（M2-08）：
+    // 「改用 google（openai-compatible：連不上，約 4 分鐘後再試）」。用了首選引擎時是空的。
+    std::string note;
 };
 
 // 可以同時被多個執行緒使用（所有透鏡共用同一條鏈）。呼叫引擎時不會握著鎖。
@@ -59,6 +62,8 @@ private:
 
     // 「google：被限流或額度用完，約 4 分鐘後再試」
     std::string describePaused() const;
+    // 一個暫停中的引擎，格式同上
+    static std::string pausedReason(const State& state, TimePoint now);
 
     // 呼叫端要先取得 mutex_
     void recordFailure(State& state);

@@ -72,6 +72,9 @@ struct PipelineResult {
     bool unchanged = false;
     // 非空代表翻譯失敗。原文仍然在 groups 裡，譯文是空的。
     std::string error;
+    // 翻譯成功，但不是首選引擎翻的：原因寫在這裡（「改用 google（…：連不上…）」）。
+    // 使用者才知道譯文為什麼突然變了樣（M2-08）。
+    std::string notice;
 
     bool empty() const { return groups.empty(); }
 };

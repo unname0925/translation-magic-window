@@ -52,8 +52,13 @@ CardDelegate::Layout CardDelegate::layout(const QModelIndex& index, const QFont&
     out.header = cardHeader(*card);
     out.headerHeight = QFontMetrics(smallFont).height();
     out.height = out.headerHeight;
+    // 翻譯失敗的原因，或改用備援引擎的原因（兩者不會同時出現：失敗代表每個引擎都失敗了）
     if (!card->error.empty()) {
         out.error = QStringLiteral("⚠ ") + QString::fromStdString(card->error);
+    } else if (!card->notice.empty()) {
+        out.error = QStringLiteral("↪ ") + QString::fromStdString(card->notice);
+    }
+    if (!out.error.isEmpty()) {
         out.errorHeight = QFontMetrics(smallFont).height();
         out.height += out.errorHeight;
     }

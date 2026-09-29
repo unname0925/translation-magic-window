@@ -87,6 +87,31 @@ TEST_F(TranslatorChainTest, FallsBackToTheNextEngine) {
     EXPECT_EQ(result.translations, (Strings{"2:あ"}));
 }
 
+TEST_F(TranslatorChainTest, TheFirstEngineLeavesNoNote) {
+    TranslatorChain chain = makeChain();
+    EXPECT_EQ(translate(chain).note, "");
+}
+
+TEST_F(TranslatorChainTest, AFallbackSaysWhichEngineFailedAndWhy) {
+    // M2-08：使用者看得到譯文為什麼換了樣子
+    first_->failure = TranslateError::Network;
+    TranslatorChain chain = makeChain();
+    EXPECT_EQ(translate(chain).note,
+              "改用 second（first：" + describeTranslateError(TranslateError::Network) + "）");
+}
+
+TEST_F(TranslatorChainTest, AFallbackPastAPausedEngineSaysWhenItComesBack) {
+    first_->failure = TranslateError::RateLimited;
+    TranslatorChain chain = makeChain();
+    for (int i = 0; i < 3; ++i) {
+        translate(chain);
+    }
+    ASSERT_TRUE(chain.paused("first"));
+    const std::string note = translate(chain).note;
+    EXPECT_TRUE(note.starts_with("改用 second（first：")) << note;
+    EXPECT_NE(note.find("分鐘後再試"), std::string::npos) << note;
+}
+
 TEST_F(TranslatorChainTest, FallsBackWhenTheCountDoesNotMatch) {
     // 數量對不上也要換引擎（design.md 4.5 步驟 2）
     first_->dropOneSegment = true;

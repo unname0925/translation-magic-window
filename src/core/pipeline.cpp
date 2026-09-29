@@ -208,7 +208,7 @@ PipelineResult Pipeline::run(const PipelineJob& job, std::stop_token cancel) {
     const auto translationStart = std::chrono::steady_clock::now();
     std::vector<std::string> translations;
     try {
-        translations = translation_.translate(sources, request, cancel);
+        translations = translation_.translate(sources, request, cancel, &result.notice);
     } catch (const TranslatorError& error) {
         if (error.kind() == TranslateError::Cancelled) {
             return result;

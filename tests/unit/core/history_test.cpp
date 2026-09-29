@@ -125,6 +125,15 @@ TEST(HistoryTest, DefaultCapacityIsFiveHundred) {
     EXPECT_EQ(History{0}.capacity(), 1u);
 }
 
+TEST(HistoryTest, KeepsTheFallbackNotice) {
+    History history;
+    PipelineResult fellBack = result({"こんにちは"});
+    fellBack.notice = "改用 google（hy-mt2：連不上）";
+    const auto card = history.add(fellBack, at(1));
+    ASSERT_TRUE(card.has_value());
+    EXPECT_EQ(card->notice, "改用 google（hy-mt2：連不上）");
+}
+
 TEST(HistoryTest, KeepsTheTranslationError) {
     History history;
     PipelineResult failed = result({"こんにちは"});

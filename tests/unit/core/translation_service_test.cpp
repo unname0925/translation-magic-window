@@ -150,6 +150,30 @@ TEST_F(TranslationServiceTest, FailuresReachTheCaller) {
                  TranslatorError);
 }
 
+TEST_F(TranslationServiceTest, PassesOnWhyItFellBack) {
+    class AlwaysFails final : public ITranslator {
+    public:
+        std::string id() const override { return "down"; }
+        bool supportsBatch() const override { return true; }
+        std::vector<std::string> translate(std::span<const std::string>, const TranslateRequest&,
+                                           std::stop_token) override {
+            throw TranslatorError(TranslateError::Network, "連不上");
+        }
+    };
+    auto chain = std::make_shared<TranslatorChain>(
+        std::vector<std::shared_ptr<ITranslator>>{std::make_shared<AlwaysFails>(), engine_},
+        clock_, ChainOptions{});
+    TranslationService service(chain, std::make_shared<NullTextConverter>());
+    const TranslateRequest request{"ja", "zh-TW", {}, {}};
+
+    std::string note;
+    service.translate(Strings{"こんにちは"}, request, std::stop_token{}, &note);
+    EXPECT_TRUE(note.starts_with("改用 fake（down：")) << note;
+
+    service.translate(Strings{"こんにちは"}, request, std::stop_token{}, &note);
+    EXPECT_EQ(note, "") << "全部命中快取時沒有問任何引擎，不該留著上一次的說明";
+}
+
 TEST(NeedsTranslationTest, OnlyTextWithLetters) {
     EXPECT_TRUE(needsTranslation("こんにちは"));
     EXPECT_TRUE(needsTranslation("SAVE"));

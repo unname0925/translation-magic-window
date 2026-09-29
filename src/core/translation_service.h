@@ -32,8 +32,10 @@ public:
 
     // 回傳和 segments 等長的譯文。不需要翻譯的段落原樣回傳。
     // 全部引擎都失敗時丟出 TranslatorError（呼叫端顯示錯誤，原文照樣顯示）。
+    // note 不是 nullptr 時，沒有用首選引擎就填入原因（ChainResult::note），否則清空。
     std::vector<std::string> translate(std::span<const std::string> segments,
-                                       const TranslateRequest& request, std::stop_token cancel);
+                                       const TranslateRequest& request, std::stop_token cancel,
+                                       std::string* note = nullptr);
 
     TranslationCache& cache() { return cache_; }
 

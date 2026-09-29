@@ -27,7 +27,11 @@ std::string TranslationService::engineStatus() const {
 
 std::vector<std::string> TranslationService::translate(std::span<const std::string> segments,
                                                        const TranslateRequest& request,
-                                                       std::stop_token cancel) {
+                                                       std::stop_token cancel,
+                                                       std::string* note) {
+    if (note != nullptr) {
+        note->clear();
+    }
     std::vector<std::string> out(segments.size());
     std::vector<std::string> misses;                             // 要送出去的原文
     std::vector<std::vector<std::size_t>> missTargets;           // 每一段對應的輸出位置
@@ -68,6 +72,9 @@ std::vector<std::string> TranslationService::translate(std::span<const std::stri
     }
 
     ChainResult result = chain_->translate(misses, request, cancel);
+    if (note != nullptr) {
+        *note = std::move(result.note);
+    }
     for (std::size_t i = 0; i < misses.size(); ++i) {
         std::string translation = converter_->convert(result.translations[i]);
         cache_.put(TranslationKey{result.engine, request.srcLang, request.dstLang, misses[i],

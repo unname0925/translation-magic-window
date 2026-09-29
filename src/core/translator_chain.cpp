@@ -18,6 +18,14 @@ TranslatorChain::TranslatorChain(std::vector<std::shared_ptr<ITranslator>> engin
     }
 }
 
+std::string TranslatorChain::pausedReason(const State& state, TimePoint now) {
+    const auto minutes = std::chrono::duration_cast<std::chrono::minutes>(
+                             state.pausedUntil - now + std::chrono::minutes(1))
+                             .count();
+    return state.engine->id() + "：" + describeTranslateError(state.lastError) + "，約 " +
+           std::to_string(minutes) + " 分鐘後再試";
+}
+
 std::string TranslatorChain::describePaused() const {
     const TimePoint now = clock_.now();
     std::string out;
@@ -25,12 +33,8 @@ std::string TranslatorChain::describePaused() const {
         if (now >= state.pausedUntil) {
             continue;
         }
-        const auto minutes = std::chrono::duration_cast<std::chrono::minutes>(
-                                 state.pausedUntil - now + std::chrono::minutes(1))
-                                 .count();
         out += out.empty() ? "" : "；";
-        out += state.engine->id() + "：" + describeTranslateError(state.lastError) + "，約 " +
-               std::to_string(minutes) + " 分鐘後再試";
+        out += pausedReason(state, now);
     }
     return out;
 }
@@ -41,17 +45,12 @@ std::string TranslatorChain::describeEngines() const {
     std::string out;
     for (const State& state : states_) {
         out += out.empty() ? "" : "；";
-        out += state.engine->id() + "：";
         if (now < state.pausedUntil) {
-            const auto minutes = std::chrono::duration_cast<std::chrono::minutes>(
-                                     state.pausedUntil - now + std::chrono::minutes(1))
-                                     .count();
-            out += describeTranslateError(state.lastError) + "，約 " + std::to_string(minutes) +
-                   " 分鐘後再試";
+            out += pausedReason(state, now);
         } else if (state.failures > 0) {
-            out += "失敗過 " + std::to_string(state.failures) + " 次";
+            out += state.engine->id() + "：失敗過 " + std::to_string(state.failures) + " 次";
         } else {
-            out += "可以使用";
+            out += state.engine->id() + "：可以使用";
         }
     }
     return out;
@@ -77,11 +76,17 @@ ChainResult TranslatorChain::translate(std::span<const std::string> segments,
 
     std::optional<TranslatorError> lastError;
     bool tried = false;
+    std::string skipped;  // 這次跳過或失敗的引擎和原因，改用備援時給使用者看
+    const auto skip = [&skipped](const std::string& text) {
+        skipped += skipped.empty() ? "" : "；";
+        skipped += text;
+    };
     for (std::size_t i = 0; i < states_.size(); ++i) {
         std::shared_ptr<ITranslator> engine;
         {
             const std::lock_guard lock(mutex_);
-            if (clock_.now() < states_[i].pausedUntil) {
+            if (const TimePoint now = clock_.now(); now < states_[i].pausedUntil) {
+                skip(pausedReason(states_[i], now));
                 continue;
             }
             engine = states_[i].engine;
@@ -99,11 +104,14 @@ ChainResult TranslatorChain::translate(std::span<const std::string> segments,
                 const std::lock_guard lock(mutex_);
                 states_[i].failures = 0;
             }
-            return ChainResult{engine->id(), std::move(out)};
+            return ChainResult{engine->id(), std::move(out),
+                               skipped.empty() ? std::string()
+                                               : "改用 " + engine->id() + "（" + skipped + "）"};
         } catch (const TranslatorError& error) {
             if (error.kind() == TranslateError::Cancelled) {
                 throw;
             }
+            skip(engine->id() + "：" + describeTranslateError(error.kind()));
             lastError = error;
             {
                 const std::lock_guard lock(mutex_);
@@ -112,6 +120,7 @@ ChainResult TranslatorChain::translate(std::span<const std::string> segments,
         } catch (const std::exception& error) {
             // 引擎應該丟 TranslatorError，但第三方程式庫（JSON、HTTP）可能丟別的
             lastError = TranslatorError(TranslateError::BadResponse, error.what());
+            skip(engine->id() + "：" + describeTranslateError(TranslateError::BadResponse));
         }
         const std::lock_guard lock(mutex_);
         recordFailure(states_[i]);
