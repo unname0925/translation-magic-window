@@ -9,7 +9,8 @@
 
 金鑰只從環境變數 ANTHROPIC_API_KEY 讀取，不會寫進任何檔案。
 文字很密的一頁可能會吃掉很多輸出 token（實測 3 頁中有 1 頁撞到 4000 的上限），
-所以上限設 8000；解析不出來時會印出 stop_reason。
+而 claude-sonnet-5 預設會思考，思考的 token 也算在 max_tokens 裡，所以上限設 16000；
+解析不出來時會印出 stop_reason。
 
 ⚠️ 這支工具會把截圖上傳到 Anthropic 的 API。截圖有版權，平常一律只留在本機
 （testdata/private 已經在 .gitignore 中）。只有在你明確要求比對時才執行它，
@@ -30,17 +31,33 @@ import urllib.request
 from pathlib import Path
 
 DEFAULT_MODEL = "claude-sonnet-5"
-# 每百萬 token 的價格（美金），用來估算花費
-PRICE_IN, PRICE_OUT = 3.0, 15.0
+# 每百萬 token 的價格（美金，claude-sonnet-5），用來估算花費
+PRICE_IN, PRICE_OUT = 2.0, 10.0
 
 PROMPT = (
     "這是一張漫畫或遊戲畫面的截圖。請讀出上面所有的文字，並翻譯成台灣繁體中文。\n"
     "請以「一個對話框或一個段落」為單位分組，不要把同一句話拆開，也不要把不同的對話框合併。\n"
     "日文的振り仮名（ルビ）請用 {本文|讀音} 的形式標在本文裡，不要當成獨立的一段。\n"
-    "只輸出 JSON 陣列，每個元素是 "
-    '{"kind": "對白|旁白|擬聲詞|註|標題|介面|其他", "source": "原文", "translation": "譯文"}，'
-    "依閱讀順序排列，不要加任何說明。"
+    "依閱讀順序排列。"
 )
+
+# 輸出格式交給 structured outputs 保證，不必在提示詞裡要求、也不必從回應裡撈 JSON
+SCHEMA = {
+    "type": "object",
+    "properties": {"groups": {"type": "array", "items": {
+        "type": "object",
+        "properties": {
+            "kind": {"type": "string",
+                     "enum": ["對白", "旁白", "擬聲詞", "註", "標題", "介面", "其他"]},
+            "source": {"type": "string", "description": "原文"},
+            "translation": {"type": "string", "description": "譯文"},
+        },
+        "required": ["kind", "source", "translation"],
+        "additionalProperties": False,
+    }}},
+    "required": ["groups"],
+    "additionalProperties": False,
+}
 
 
 def ask(image: Path, key: str, model: str, workspace: str) -> tuple[list[dict], int, int]:
@@ -48,7 +65,8 @@ def ask(image: Path, key: str, model: str, workspace: str) -> tuple[list[dict], 
     data = base64.b64encode(image.read_bytes()).decode("ascii")
     body = json.dumps({
         "model": model,
-        "max_tokens": 8000,
+        "max_tokens": 16000,
+        "output_config": {"format": {"type": "json_schema", "schema": SCHEMA}},
         "messages": [{
             "role": "user",
             "content": [
@@ -77,11 +95,9 @@ def ask(image: Path, key: str, model: str, workspace: str) -> tuple[list[dict], 
             time.sleep(5 * (attempt + 1))
     text = "".join(part["text"] for part in answer["content"] if part["type"] == "text")
     usage = answer.get("usage", {})
-    # 模型偶爾會在 JSON 前後加說明或用 ``` 包起來
-    match = re.search(r"\[.*\]", text, re.S)
     try:
-        groups = json.loads(match.group(0)) if match else []
-    except json.JSONDecodeError:
+        groups = json.loads(text)["groups"]
+    except (json.JSONDecodeError, KeyError, TypeError):  # 被 max_tokens 截斷或拒答時
         groups = []
     if not groups:
         # 解析不出來時把原因印出來，才看得出是被 max_tokens 截斷、拒答，還是格式不同

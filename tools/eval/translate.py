@@ -54,6 +54,15 @@ SYSTEM_PROMPT = (
 PLAIN_PROMPT = ("你是翻譯引擎。把使用者傳來的文字翻譯成台灣繁體中文，保留語氣和角色口吻。"
                 "`{本文|讀音}` 標記要保留。只輸出譯文，不要加引號或任何說明。")
 
+# Claude 要 JSON 陣列時的輸出格式（structured outputs）。根節點必須是物件，
+# parse_array 會取出裡面的陣列。
+TRANSLATIONS_SCHEMA = {
+    "type": "object",
+    "properties": {"translations": {"type": "array", "items": {"type": "string"}}},
+    "required": ["translations"],
+    "additionalProperties": False,
+}
+
 
 @dataclass
 class Segment:
@@ -238,7 +247,7 @@ class Gemini(LlmEngine):
 class Claude(LlmEngine):
     """Anthropic 的 Messages API（付費）。金鑰只從環境變數讀取。
 
-    要 JSON 陣列時先填一個「[」當開頭（prefill），模型就只會接著輸出其餘部分。
+    要 JSON 陣列時用 structured outputs 限定格式（和 Gemini 的 responseMimeType 對應）。
     """
 
     id = "claude"
@@ -256,12 +265,12 @@ class Claude(LlmEngine):
         self.budget = 0.0  # 大於 0 時，估算花費超過就停
 
     def complete(self, system: str, user: str) -> str:
-        prefill = system is SYSTEM_PROMPT  # 只有要 JSON 陣列時才填開頭
-        messages = [{"role": "user", "content": user}]
-        if prefill:
-            messages.append({"role": "assistant", "content": "["})
-        body = json.dumps({"model": self.model, "max_tokens": 8192, "temperature": 0.2,
-                           "system": system, "messages": messages}).encode("utf-8")
+        request = {"model": self.model, "max_tokens": 8192, "temperature": 0.2,
+                   "system": system, "messages": [{"role": "user", "content": user}]}
+        if system is SYSTEM_PROMPT:  # 只有要 JSON 陣列時才限制輸出格式
+            request["output_config"] = {"format": {"type": "json_schema",
+                                                   "schema": TRANSLATIONS_SCHEMA}}
+        body = json.dumps(request).encode("utf-8")
         headers = {"Content-Type": "application/json", "x-api-key": self.key,
                    "anthropic-version": "2023-06-01"}
         if self.workspace:
@@ -272,11 +281,8 @@ class Claude(LlmEngine):
         self.tokens[1] += usage.get("output_tokens", 0)
         if self.budget and self.cost() > self.budget:
             raise BudgetError(f"估算花費 {self.cost():.2f} 美元，超過上限 {self.budget:.2f}")
-        text = answer["content"][0]["text"]
-        if not prefill:
-            return text
-        text = "[" + text
-        return text[:text.rindex("]") + 1] if "]" in text else text
+        # 只取文字區塊：換成會思考的模型時，第一個區塊是思考
+        return "".join(part["text"] for part in answer["content"] if part["type"] == "text")
 
 
     def cost(self) -> float:
