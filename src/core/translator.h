@@ -19,7 +19,8 @@ struct TranslateRequest {
     std::string dstLang = "zh-TW";  // 目前固定
     // 同一個透鏡最近幾組的原文和譯文，給 LLM 當上下文
     std::vector<std::pair<std::string, std::string>> context;
-    std::map<std::string, std::string> glossary;  // 專有名詞表（M2 以後）
+    // 這次畫面上用到的專有名詞（原文 -> 譯文，core/glossary.h）。只有 LLM 引擎會照表翻。
+    std::map<std::string, std::string> glossary;
 };
 
 // 引擎失敗的原因。引擎鏈用它決定要不要改用下一個引擎（design.md 4.5 步驟 2）。

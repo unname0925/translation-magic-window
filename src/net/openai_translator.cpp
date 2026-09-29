@@ -27,6 +27,30 @@ constexpr std::string_view kPlainPrompt =
     "你是翻譯引擎。把使用者傳來的文字翻譯成台灣繁體中文，保留語氣和角色口吻。"
     "`{本文|讀音}` 標記要保留。只輸出譯文，不要加引號或任何說明。";
 
+// 有專有名詞時才加在後面（M2-09）。沒有詞條的請求和 M0-12 評測過的提示詞一字不差。
+constexpr std::string_view kGlossaryRule = "glossary 是專有名詞表（原文 → 譯文），這些詞一律照表翻譯。";
+
+std::string systemPrompt(const core::TranslateRequest& request, bool asJsonArray) {
+    std::string prompt(asJsonArray ? kSystemPrompt : kPlainPrompt);
+    if (request.glossary.empty()) {
+        return prompt;
+    }
+    if (asJsonArray) {
+        prompt += kGlossaryRule;  // 詞表本身在使用者訊息的 JSON 裡
+        return prompt;
+    }
+    // 只送一段時使用者訊息是純文字，詞表只能放在這裡
+    prompt += "專有名詞照這個表翻譯：";
+    bool first = true;
+    for (const auto& [source, target] : request.glossary) {
+        prompt += first ? "" : "、";
+        prompt += source + " → " + target;
+        first = false;
+    }
+    prompt += "。";
+    return prompt;
+}
+
 TranslateError classify(const HttpResponse& response) {
     if (!response.connected()) {
         return TranslateError::Network;
@@ -88,7 +112,7 @@ std::string buildChatRequest(const OpenAiTranslator::Options& options,
     }
     body["stream"] = options.stream;
     body["messages"] = nlohmann::json::array(
-        {{{"role", "system"}, {"content", std::string(asJsonArray ? kSystemPrompt : kPlainPrompt)}},
+        {{{"role", "system"}, {"content", systemPrompt(request, asJsonArray)}},
          {{"role", "user"}, {"content", asJsonArray ? user.dump() : std::string(segments[0])}}});
     return body.dump();
 }

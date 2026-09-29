@@ -11,6 +11,7 @@
 #include <utility>
 #include <vector>
 
+#include "core/glossary.h"
 #include "support/fake_clock.h"
 
 namespace tmw::core {
@@ -108,6 +109,21 @@ TEST_F(TranslationServiceTest, SendsRepeatedTextOnlyOnce) {
     EXPECT_EQ(out, (Strings{"fake:セーブ", "fake:セーブ", "fake:ロード"}));
     ASSERT_EQ(engine_->batches.size(), 1u);
     EXPECT_EQ(engine_->batches[0], (Strings{"セーブ", "ロード"}));
+}
+
+TEST_F(TranslationServiceTest, ChangingAGlossaryWordRetranslatesTheTextThatUsesIt) {
+    // 使用者發現名字翻錯、改了詞表：用到那個詞的段落不能再拿快取裡的舊譯文
+    const auto withGlossary = [this](const Strings& segments, Glossary glossary) {
+        return service_.translate(segments, TranslateRequest{"ja", "zh-TW", {}, std::move(glossary)},
+                                  std::stop_token{});
+    };
+    withGlossary({"悠真、逃げろ！", "何だと？"}, {{"悠真", "優馬"}});
+    withGlossary({"悠真、逃げろ！", "何だと？"}, {{"悠真", "悠真"}});
+    ASSERT_EQ(engine_->batches.size(), 2u);
+    EXPECT_EQ(engine_->batches[1], (Strings{"悠真、逃げろ！"})) << "沒用到詞表的那段照樣命中快取";
+
+    withGlossary({"悠真、逃げろ！"}, {{"悠真", "悠真"}, {"魔王", "魔王"}});
+    EXPECT_EQ(engine_->batches.size(), 2u) << "加了一個這段沒用到的詞，快取照樣有效";
 }
 
 TEST_F(TranslationServiceTest, DoesNotCallTheEngineWhenNothingNeedsTranslating) {

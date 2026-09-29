@@ -9,6 +9,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <exception>
+#include <fstream>
+#include <iterator>
 #include <memory>
 #include <span>
 #include <stop_token>
@@ -16,6 +18,7 @@
 #include <vector>
 
 #include "core/clock.h"
+#include "core/glossary.h"
 #include "core/translator.h"
 #include "net/cpr_http_client.h"
 #include "net/google_translator.h"
@@ -31,7 +34,8 @@ void print(const std::string& utf8) {
 
 int usage() {
     print("用法：tmw_translate_cli [--engine google|openai] [--lang ja|en|ko|auto]");
-    print("      [--base-url URL] [--model 名稱] [--key-env 環境變數] [--no-stream] 文字...");
+    print("      [--base-url URL] [--model 名稱] [--key-env 環境變數] [--no-stream]");
+    print("      [--glossary 專有名詞表.txt] 文字...");
     print("金鑰只能用環境變數傳入（--key-env），不要直接打在命令列上。");
     return 2;
 }
@@ -48,6 +52,7 @@ int wmain(int argc, wchar_t** argv) {
     llm.baseUrl = "http://127.0.0.1:11434/v1";
     llm.model = "hy-mt2";
     std::string keyVariable;
+    tmw::core::Glossary glossary;
     std::vector<std::string> segments;
     for (int i = 1; i < argc; ++i) {
         const std::string argument = tmw::platform::wideToUtf8(argv[i]);
@@ -61,6 +66,16 @@ int wmain(int argc, wchar_t** argv) {
             llm.model = tmw::platform::wideToUtf8(argv[++i]);
         } else if (argument == "--key-env" && i + 1 < argc) {
             keyVariable = tmw::platform::wideToUtf8(argv[++i]);
+        } else if (argument == "--glossary" && i + 1 < argc) {
+            // 和主程式的 glossary.txt 同樣的格式（core/glossary.h）
+            std::ifstream file(argv[++i], std::ios::binary);
+            const std::string text((std::istreambuf_iterator<char>(file)),
+                                   std::istreambuf_iterator<char>());
+            const tmw::core::GlossaryLoad load = tmw::core::parseGlossary(text);
+            for (const std::string& problem : load.problems) {
+                print("專有名詞表" + problem);
+            }
+            glossary = load.entries;
         } else if (argument == "--no-stream") {
             llm.stream = false;
         } else if (argument == "--help" || argument == "-h") {
@@ -102,7 +117,10 @@ int wmain(int argc, wchar_t** argv) {
     const auto start = std::chrono::steady_clock::now();
     try {
         const std::vector<std::string> out = translator.translate(
-            segments, tmw::core::TranslateRequest{language, "zh-TW", {}, {}}, std::stop_token{});
+            segments,
+            tmw::core::TranslateRequest{language, "zh-TW", {},
+                                        tmw::core::glossaryFor(segments, glossary)},
+            std::stop_token{});
         for (std::size_t i = 0; i < out.size(); ++i) {
             print(segments[i] + "  →  " + out[i]);
         }

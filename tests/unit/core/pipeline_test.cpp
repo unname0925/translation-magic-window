@@ -159,6 +159,16 @@ TEST_F(PipelineTest, ForcedLanguageWins) {
     EXPECT_EQ(engine_->requests[0].srcLang, "ko");
 }
 
+TEST_F(PipelineTest, SendsOnlyTheGlossaryWordsOnScreen) {
+    // M2-09：整張表可能有幾百個詞，只送這個畫面用得到的
+    ocr_.lines = {line(20, 20, 300, 44, "悠真、逃げろ！")};
+    PipelineJob request = job();
+    request.glossary = std::make_shared<const Glossary>(Glossary{{"悠真", "悠真"}, {"魔王", "魔王"}});
+    run(request);
+    ASSERT_EQ(engine_->requests.size(), 1u);
+    EXPECT_EQ(engine_->requests[0].glossary, (Glossary{{"悠真", "悠真"}}));
+}
+
 TEST_F(PipelineTest, MarksTheSameContentAsUnchanged) {
     // 畫面閃了一下又回到原樣：不必新增歷史卡片
     ocr_.lines = {line(20, 20, 300, 44, "こんにちは")};

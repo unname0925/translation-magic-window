@@ -9,6 +9,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <map>
+#include <memory>
 #include <optional>
 #include <stop_token>
 #include <string>
@@ -17,6 +18,7 @@
 #include <vector>
 
 #include "core/geometry.h"
+#include "core/glossary.h"
 #include "core/image.h"
 #include "core/language.h"
 #include "core/ruby.h"
@@ -35,6 +37,9 @@ struct PipelineJob {
     // "ja"|"en"|"ko"|"auto"；空字串等於 auto。指定語言時 OCR 只用那個模型、不判斷，
     // 翻譯的來源語言也固定是它（設定裡的「辨識語言」）
     std::string language;
+    // 使用者的專有名詞表（glossary.txt）。沒有時是 nullptr。
+    // UI 執行緒讀檔、工作執行緒只讀，所以用共享的唯讀副本，改檔時換一份新的。
+    std::shared_ptr<const Glossary> glossary;
 };
 
 struct PipelineTimings {

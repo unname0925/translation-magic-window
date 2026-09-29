@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <utility>
 
+#include "core/glossary.h"
 #include "core/language.h"
 
 namespace tmw::core {
@@ -40,9 +41,10 @@ std::vector<std::string> TranslationService::translate(std::span<const std::stri
         }
         // 依照引擎鏈的順序找快取：首選引擎翻過的結果優先，它暫停時才用備援引擎留下的。
         bool cached = false;
+        const std::string terms = glossaryFingerprint(text, request.glossary);
         for (const std::string& engine : engineIds_) {
-            if (std::optional<std::string> hit =
-                    cache_.get(TranslationKey{engine, request.srcLang, request.dstLang, text})) {
+            if (std::optional<std::string> hit = cache_.get(
+                    TranslationKey{engine, request.srcLang, request.dstLang, text, terms})) {
                 out[i] = std::move(*hit);
                 cached = true;
                 break;
@@ -68,7 +70,8 @@ std::vector<std::string> TranslationService::translate(std::span<const std::stri
     ChainResult result = chain_->translate(misses, request, cancel);
     for (std::size_t i = 0; i < misses.size(); ++i) {
         std::string translation = converter_->convert(result.translations[i]);
-        cache_.put(TranslationKey{result.engine, request.srcLang, request.dstLang, misses[i]},
+        cache_.put(TranslationKey{result.engine, request.srcLang, request.dstLang, misses[i],
+                                  glossaryFingerprint(misses[i], request.glossary)},
                    translation);
         for (const std::size_t target : missTargets[i]) {
             out[target] = translation;

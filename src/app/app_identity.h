@@ -32,6 +32,7 @@ enum Command : UINT {
     kCommandLanguageJapanese = 14,
     kCommandLanguageEnglish = 15,
     kCommandLanguageKorean = 16,
+    kCommandEditGlossary = 17,
 };
 
 }  // namespace tmw::app

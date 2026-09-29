@@ -201,6 +201,9 @@ PipelineResult Pipeline::run(const PipelineJob& job, std::stop_token cancel) {
         request.srcLang = "auto";
     }
     request.context = state.recent;
+    if (job.glossary != nullptr) {
+        request.glossary = glossaryFor(sources, *job.glossary);
+    }
 
     const auto translationStart = std::chrono::steady_clock::now();
     std::vector<std::string> translations;

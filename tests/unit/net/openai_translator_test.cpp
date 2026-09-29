@@ -247,6 +247,33 @@ TEST(BuildChatRequestTest, IncludesContextAndGlossaryOnlyWhenTheyExist) {
     EXPECT_NE(full.find("存檔"), std::string::npos);
 }
 
+std::string systemContent(const std::string& body) {
+    return nlohmann::json::parse(body)["messages"][0]["content"].get<std::string>();
+}
+
+TEST(BuildChatRequestTest, TheGlossaryRuleIsAddedOnlyWhenThereAreWords) {
+    // 沒有詞條時提示詞要和 M0-12 盲評過的版本一字不差
+    const OpenAiTranslator::Options options;
+    core::TranslateRequest request{"ja", "zh-TW", {}, {}};
+    const Strings segments{"セーブしますか？"};
+    const std::string bare = systemContent(buildChatRequest(options, request, segments, true));
+
+    request.glossary["セーブ"] = "存檔";
+    const std::string withWords = systemContent(buildChatRequest(options, request, segments, true));
+    EXPECT_TRUE(withWords.starts_with(bare));
+    EXPECT_NE(withWords.find("照表翻譯"), std::string::npos);
+}
+
+TEST(BuildChatRequestTest, APlainRequestCarriesTheGlossaryInTheSystemPrompt) {
+    // 只剩一段時使用者訊息是純文字，詞表只能寫在系統訊息裡
+    const OpenAiTranslator::Options options;
+    core::TranslateRequest request{"ja", "zh-TW", {}, {{"セーブ", "存檔"}, {"ロード", "讀檔"}}};
+    const Strings segments{"セーブしますか？"};
+    const std::string system = systemContent(buildChatRequest(options, request, segments, false));
+    EXPECT_NE(system.find("セーブ → 存檔"), std::string::npos);
+    EXPECT_NE(system.find("ロード → 讀檔"), std::string::npos);
+}
+
 TEST(SseTest, AssemblesLinesSplitAcrossChunks) {
     std::string buffer;
     buffer += "data: {\"a\":";

@@ -6,8 +6,11 @@
 #include <array>
 #include <chrono>
 #include <exception>
+#include <fstream>
+#include <iterator>
 #include <optional>
 #include <string>
+#include <system_error>
 #include <utility>
 
 #include "app/app_identity.h"
@@ -311,6 +314,9 @@ LRESULT AppController::handleMessage(UINT message, WPARAM wParam, LPARAM lParam)
                     setMangaMode(!settings_.mangaMode);
                     saveSettings();
                     break;
+                case kCommandEditGlossary:
+                    openGlossary();
+                    break;
                 case kCommandLanguageAuto:
                 case kCommandLanguageJapanese:
                 case kCommandLanguageEnglish:
@@ -417,6 +423,7 @@ void AppController::showTrayMenu(POINT anchor) {
         // 子選單交給父選單管理，DestroyMenu(menu) 時一起釋放
         AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(languages), L"辨識語言");
     }
+    AppendMenuW(menu, MF_STRING, kCommandEditGlossary, L"編輯專有名詞表…");
     AppendMenuW(menu, MF_STRING, kCommandSettings, L"設定…");
     AppendMenuW(menu, MF_STRING, kCommandDebugDump,
                 debugDumpHotkeyRegistered_ ? L"除錯傾印	Ctrl+Alt+Shift+D" : L"除錯傾印");
@@ -471,6 +478,7 @@ void AppController::process(const core::ProcessRequest& request) {
     job.frame = std::move(*frame);
     job.manual = request.manual;
     job.language = settings_.ocrLanguage;
+    job.glossary = currentGlossary();
     platform::log(platform::LogLevel::Info, context,
                   std::string(request.manual ? "手動" : "自動") + "觸發，開始處理");
     worker_->submit(std::move(job));
@@ -506,6 +514,39 @@ void AppController::setUpPipeline() {
     }
     setOcrLanguage(settings_.ocrLanguage);  // 記下目前的辨識語言
     rebuildTranslation();
+}
+
+std::shared_ptr<const core::Glossary> AppController::currentGlossary() {
+    const std::filesystem::path path = dataDirectory_ / L"glossary.txt";
+    std::error_code error;
+    const std::filesystem::file_time_type written = std::filesystem::last_write_time(path, error);
+    if (error) {
+        glossary_.reset();  // 沒有檔案（或被刪掉了）
+        glossaryTime_ = {};
+        return nullptr;
+    }
+    if (glossary_ != nullptr && written == glossaryTime_) {
+        return glossary_;  // 沒改過：不必每次處理都讀檔
+    }
+    std::ifstream file(path, std::ios::binary);
+    const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    core::GlossaryLoad load = core::parseGlossary(text);
+    for (const std::string& problem : load.problems) {
+        platform::logWarn("專有名詞表 " + problem + "，這一行略過");
+    }
+    platform::logInfo("專有名詞表：" + std::to_string(load.entries.size()) + " 個詞");
+    glossary_ = std::make_shared<const core::Glossary>(std::move(load.entries));
+    glossaryTime_ = written;
+    return glossary_;
+}
+
+void AppController::openGlossary() {
+    const std::filesystem::path path = dataDirectory_ / L"glossary.txt";
+    if (!std::filesystem::exists(path)) {
+        std::ofstream file(path, std::ios::binary);
+        file << "\xEF\xBB\xBF" << core::glossaryTemplate();  // 有 BOM，記事本才不會猜錯編碼
+    }
+    ShellExecuteW(nullptr, L"open", path.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
 }
 
 void AppController::setOcrLanguage(const std::string& code) {

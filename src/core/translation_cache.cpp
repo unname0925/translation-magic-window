@@ -25,7 +25,8 @@ constexpr char kSeparator = '\x1F';
 
 std::string makeKey(const TranslationKey& key) {
     std::string out;
-    out.reserve(key.engine.size() + key.srcLang.size() + key.dstLang.size() + key.text.size() + 4);
+    out.reserve(key.engine.size() + key.srcLang.size() + key.dstLang.size() + key.text.size() +
+                key.glossary.size() + 5);
     out += key.engine;
     out += kSeparator;
     out += key.srcLang;
@@ -33,6 +34,8 @@ std::string makeKey(const TranslationKey& key) {
     out += key.dstLang;
     out += kSeparator;
     out += normalizeSource(key.text);
+    out += kSeparator;
+    out += key.glossary;
     return out;
 }
 

@@ -9,6 +9,7 @@
 
 #include "core/auto_trigger.h"
 #include "core/clock.h"
+#include "core/glossary.h"
 #include "core/history.h"
 #include "core/perf_stats.h"
 #include "core/pipeline.h"
@@ -72,6 +73,10 @@ private:
     // 辨識語言："auto"、"ja"、"en"、"ko"。下一次處理就生效（design.md 4.4「語言判斷」）
     void setOcrLanguage(const std::string& code);
     void refreshDebugOverlay();
+    // glossary.txt 改過（或第一次）就重新讀取，回傳目前的詞表；沒有檔案時是 nullptr
+    std::shared_ptr<const core::Glossary> currentGlossary();
+    // 用預設的編輯器打開 glossary.txt，還沒有的話先建立一份附說明的
+    void openGlossary();
     // 設定改了之後：存檔、換掉翻譯引擎鏈、更新記錄的詳細程度
     void applySettings(const core::Settings& settings);
     // 重新建立翻譯服務和處理管線（OCR 不用重建）
@@ -98,6 +103,9 @@ private:
     bool paused_ = false;
     std::filesystem::path settingsPath_;
     core::Settings settings_;
+    // 專有名詞表（M2-09）：資料資料夾裡的 glossary.txt，改檔後的下一次處理就重新讀取
+    std::shared_ptr<const core::Glossary> glossary_;
+    std::filesystem::file_time_type glossaryTime_{};
     ocr::Device ocrDevice_ = ocr::Device::Auto;
 
     // 宣告順序就是建構順序；解構時反過來，透鏡最先消失，不會再觸發回呼

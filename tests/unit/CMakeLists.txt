@@ -7,6 +7,7 @@ add_executable(tmw_unit_tests
     core/debug_overlay_test.cpp
     core/debug_report_test.cpp
     core/geometry_test.cpp
+    core/glossary_test.cpp
     core/history_test.cpp
     core/language_test.cpp
     core/lens_layout_test.cpp

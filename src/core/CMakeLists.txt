@@ -16,6 +16,8 @@ add_library(tmw_core STATIC
     frame_source.h
     geometry.cpp
     geometry.h
+    glossary.cpp
+    glossary.h
     history.cpp
     history.h
     image.h

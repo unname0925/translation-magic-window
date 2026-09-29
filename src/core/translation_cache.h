@@ -26,6 +26,9 @@ struct TranslationKey {
     std::string srcLang;
     std::string dstLang;
     std::string text;  // 原文，還沒正規化
+    // 這段原文用到的專有名詞（core::glossaryFingerprint）。改了詞表裡這段有用到的詞，
+    // 舊的譯文就不能再用；沒用到詞表時是空字串。
+    std::string glossary;
 
     friend bool operator==(const TranslationKey&, const TranslationKey&) = default;
 };
