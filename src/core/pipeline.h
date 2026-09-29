@@ -32,7 +32,9 @@ struct PipelineJob {
     RectI region;                  // 透鏡在螢幕上的範圍，結果視窗用來標示來源
     ImageBgra frame;               // 透鏡底下的畫面
     bool manual = false;           // 快捷鍵觸發
-    std::string language;          // "ja"|"en"|"ko"|"auto"；空字串等於 auto
+    // "ja"|"en"|"ko"|"auto"；空字串等於 auto。指定語言時 OCR 只用那個模型、不判斷，
+    // 翻譯的來源語言也固定是它（設定裡的「辨識語言」）
+    std::string language;
 };
 
 struct PipelineTimings {

@@ -49,6 +49,19 @@ std::string languageCode(Language language) {
     return "";
 }
 
+Language languageFromCode(std::string_view code) {
+    if (code == "ja") {
+        return Language::Japanese;
+    }
+    if (code == "en") {
+        return Language::English;
+    }
+    if (code == "ko") {
+        return Language::Korean;
+    }
+    return Language::Unknown;
+}
+
 ScriptCounts countScripts(std::string_view utf8) {
     ScriptCounts counts;
     for (std::size_t i = 0; i < utf8.size();) {

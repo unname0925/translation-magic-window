@@ -12,6 +12,7 @@
 #include "core/settings.h"
 
 class QCheckBox;
+class QComboBox;
 class QLabel;
 class QLineEdit;
 class QRadioButton;
@@ -50,6 +51,7 @@ private:
     QCheckBox* fallback_ = nullptr;
     QCheckBox* verbose_ = nullptr;
     QCheckBox* mangaMode_ = nullptr;
+    QComboBox* ocrLanguage_ = nullptr;  // 每一項的 data 是設定檔裡的值（"auto"、"ja"…）
 };
 
 }  // namespace tmw::ui

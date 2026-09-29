@@ -44,6 +44,9 @@ struct Settings {
     // 漫畫模式：另外跑 comic-text-detector，同一個對話框裡的行就是同一段（M2-02）。
     // 每次多 37 ms，而且在網頁、遊戲上沒有幫助、還可能把整塊介面框在一起，所以預設關閉。
     bool mangaMode = false;
+    // 辨識語言："auto"（自動判斷）、"ja"、"en"、"ko"。指定之後只用那個語言的模型，
+    // 不再判斷（design.md 4.4「語言判斷」第 5 步）。讀不懂的值一律當成 "auto"。
+    std::string ocrLanguage = "auto";
     // 翻譯引擎的順序就是引擎鏈的順序（design.md 4.5）
     std::vector<EngineSettings> engines;
     ResultWindowSettings resultWindow;

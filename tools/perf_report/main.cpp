@@ -1,9 +1,11 @@
 // tmw_perf_report：量測每個步驟的耗時，並對照 docs/design.md 第 5 節的預算（M1-15）。
 //
 //   tmw_perf_report --models <模型資料夾> [--device dml|cpu|auto] [--repeat N]
-//                   [--language ja|en|ko] [--fixed-input W H] [--crop W H]
-//                   [--json <報告.json>] <圖片> [<圖片> ...]
+//                   [--language ja|en|ko|auto] [--force ja|en|ko]
+//                   [--fixed-input W H] [--crop W H] [--json <報告.json>] <圖片> [<圖片> ...]
 //
+// --language auto：主模型和韓文模型都載入，每張圖自己判斷（主程式的「自動判斷」）。
+// --force ja|en|ko：一樣兩個都載入，但指定語言、不判斷（主程式設定裡指定辨識語言時）。
 // --fixed-input W H：偵測固定用這個輸入大小（主程式用 ocr::lensDetectionInput()）。
 // --crop W H：從圖片中間裁一塊，模擬透鏡實際擷取到的範圍。主程式從來不會 OCR 整張畫面，
 //             拿整頁來量會得到和產品無關的數字。
@@ -48,6 +50,8 @@ struct Arguments {
     int repeat = 10;
     // --language auto：主模型和韓文模型都載入，每張圖自己判斷（M2-04）
     bool autoLanguage = false;
+    // --force：兩個模型都載入，但指定語言（主程式設定裡的「辨識語言」）
+    tmw::core::Language forced = tmw::core::Language::Unknown;
     int fixedWidth = 0;  // --fixed-input W H：偵測固定用這個輸入大小
     int fixedHeight = 0;
     int cropWidth = 0;  // --crop W H：從中間裁一塊，模擬透鏡實際擷取到的範圍
@@ -59,7 +63,8 @@ struct Arguments {
 void printUsage() {
     std::fputs(
         "usage: tmw_perf_report --models <dir> [--device dml|cpu|auto] [--repeat N]\n"
-        "                       [--language ja|en|ko] [--fixed-input W H] [--crop W H]\n"
+        "                       [--language ja|en|ko|auto] [--force ja|en|ko]\n"
+        "                       [--fixed-input W H] [--crop W H]\n"
         "                       [--json <report.json>] <image> [<image> ...]\n",
         stderr);
 }
@@ -97,6 +102,17 @@ std::optional<Arguments> parseArguments(int argc, wchar_t** argv) {
             args.autoLanguage = *value == L"auto";
             args.language = *value == L"ko" ? tmw::ocr::TextLanguage::Korean
                                             : tmw::ocr::TextLanguage::JapaneseOrEnglish;
+        } else if (option == L"--force") {
+            const auto value = next(L"--force");
+            if (!value) {
+                return std::nullopt;
+            }
+            args.forced = tmw::core::languageFromCode(tmw::platform::wideToUtf8(*value));
+            if (args.forced == tmw::core::Language::Unknown) {
+                std::fputs("--force 只接受 ja、en、ko\n", stderr);
+                return std::nullopt;
+            }
+            args.autoLanguage = true;
         } else if (option == L"--fixed-input") {
             if (i + 2 >= argc) {
                 std::fputs("--fixed-input 後面要接寬和高\n", stderr);
@@ -184,6 +200,7 @@ int wmain(int argc, wchar_t** argv) {
     try {
         tmw::ocr::OcrOptions options;
         options.detection.fixedInput = {args->fixedWidth, args->fixedHeight};
+        options.warmUpScript = args->forced;
         std::optional<tmw::ocr::OcrService> ocrHolder;
         if (args->autoLanguage) {
             ocrHolder.emplace(args->models, args->device, options);
@@ -214,9 +231,8 @@ int wmain(int argc, wchar_t** argv) {
                 tmw::core::PipelineTimings timings;
 
                 const auto ocrStart = std::chrono::steady_clock::now();
-                // 每張圖都從 Unknown 開始：量的就是「自己判斷」那條路的成本
-                tmw::core::OcrResult recognized =
-                    ocr.recognize(frame, tmw::core::Language::Unknown, std::stop_token{});
+                // 每張圖都從 Unknown 開始：量的就是「自己判斷」那條路的成本（--force 時不判斷）
+                tmw::core::OcrResult recognized = ocr.recognize(frame, args->forced, std::stop_token{});
                 std::vector<tmw::core::OcrLine> lines = std::move(recognized.lines);
                 chosen = recognized.script;
                 timings.ocrMs = millisecondsSince(ocrStart);

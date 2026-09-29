@@ -1,6 +1,7 @@
 #include "ui/settings_window.h"
 
 #include <QCheckBox>
+#include <QComboBox>
 #include <QDialogButtonBox>
 #include <QFormLayout>
 #include <QGroupBox>
@@ -62,6 +63,17 @@ SettingsWindow::SettingsWindow(core::Settings settings, Encrypt encrypt, QWidget
         this);
     mangaMode_->setObjectName(QStringLiteral("mangaMode"));
 
+    // 自動判斷時，日文、英文的畫面只跑主模型；韓文要多跑一次判斷。
+    // 固定只看某一種語言的人指定它，就連判斷都省了（design.md 4.4「語言判斷」）。
+    ocrLanguage_ = new QComboBox(this);
+    ocrLanguage_->setObjectName(QStringLiteral("ocrLanguage"));
+    ocrLanguage_->addItem(QStringLiteral("自動判斷"), QStringLiteral("auto"));
+    ocrLanguage_->addItem(QStringLiteral("日文"), QStringLiteral("ja"));
+    ocrLanguage_->addItem(QStringLiteral("英文"), QStringLiteral("en"));
+    ocrLanguage_->addItem(QStringLiteral("韓文"), QStringLiteral("ko"));
+    auto* languageForm = new QFormLayout;
+    languageForm->addRow(QStringLiteral("辨識語言"), ocrLanguage_);
+
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel, this);
     buttons->setObjectName(QStringLiteral("buttons"));
     buttons->button(QDialogButtonBox::Save)->setText(QStringLiteral("儲存"));
@@ -69,6 +81,7 @@ SettingsWindow::SettingsWindow(core::Settings settings, Encrypt encrypt, QWidget
 
     auto* layout = new QVBoxLayout(this);
     layout->addWidget(engines);
+    layout->addLayout(languageForm);
     layout->addWidget(mangaMode_);
     layout->addWidget(verbose_);
     layout->addWidget(buttons);
@@ -93,6 +106,8 @@ void SettingsWindow::applyToWidgets() {
     fallback_->setChecked(choice.fallbackToGoogle);
     verbose_->setChecked(settings_.verboseDiagnostics);
     mangaMode_->setChecked(settings_.mangaMode);
+    const int language = ocrLanguage_->findData(QString::fromStdString(settings_.ocrLanguage));
+    ocrLanguage_->setCurrentIndex(language < 0 ? 0 : language);
     key_->clear();
     keyNote_->setText(choice.hasKey ? QStringLiteral("已經設定過金鑰。留空表示不更改。")
                                     : QStringLiteral("本機服務（Ollama、LM Studio）不用填金鑰。"));
@@ -121,6 +136,7 @@ void SettingsWindow::collectFromWidgets() {
     settings_.engines = enginesFor(choice, settings_, encrypted);
     settings_.verboseDiagnostics = verbose_->isChecked();
     settings_.mangaMode = mangaMode_->isChecked();
+    settings_.ocrLanguage = ocrLanguage_->currentData().toString().toStdString();
     key_->clear();
 }
 

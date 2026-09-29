@@ -3,6 +3,7 @@
 #include <windowsx.h>
 
 #include <QApplication>
+#include <array>
 #include <chrono>
 #include <exception>
 #include <optional>
@@ -13,6 +14,7 @@
 #include "app/translation_setup.h"
 #include "core/debug_overlay.h"
 #include "core/debug_report.h"
+#include "core/language.h"
 #include "core/opencc_converter.h"
 #include "platform/app_paths.h"
 #include "platform/crash_dump.h"
@@ -103,6 +105,28 @@ std::wstring timestampedDumpFolderName() {
     swprintf_s(name, L"debug-%04u%02u%02u-%02u%02u%02u", now.wYear, now.wMonth, now.wDay, now.wHour,
                now.wMinute, now.wSecond);
     return name;
+}
+
+// 系統匣「辨識語言」子選單的每一項，和它在設定檔裡的值
+struct LanguageMenuItem {
+    UINT command;
+    const char* code;
+    const wchar_t* label;
+};
+constexpr std::array<LanguageMenuItem, 4> kLanguageMenu{{
+    {kCommandLanguageAuto, "auto", L"自動判斷"},
+    {kCommandLanguageJapanese, "ja", L"日文"},
+    {kCommandLanguageEnglish, "en", L"英文"},
+    {kCommandLanguageKorean, "ko", L"韓文"},
+}};
+
+std::string ocrLanguageForCommand(UINT command) {
+    for (const LanguageMenuItem& item : kLanguageMenu) {
+        if (item.command == command) {
+            return item.code;
+        }
+    }
+    return "auto";
 }
 
 }  // namespace
@@ -287,6 +311,13 @@ LRESULT AppController::handleMessage(UINT message, WPARAM wParam, LPARAM lParam)
                     setMangaMode(!settings_.mangaMode);
                     saveSettings();
                     break;
+                case kCommandLanguageAuto:
+                case kCommandLanguageJapanese:
+                case kCommandLanguageEnglish:
+                case kCommandLanguageKorean:
+                    setOcrLanguage(ocrLanguageForCommand(LOWORD(wParam)));
+                    saveSettings();
+                    break;
                 case kCommandToggleDebugOverlay:
                     setDebugOverlayEnabled(debugOverlay_ == nullptr);
                     break;
@@ -375,6 +406,17 @@ void AppController::showTrayMenu(POINT anchor) {
                 L"暫停");
     AppendMenuW(menu, MF_STRING | (settings_.mangaMode ? MF_CHECKED : MF_UNCHECKED),
                 kCommandToggleMangaMode, L"漫畫模式（依對話框分段）");
+    if (const HMENU languages = CreatePopupMenu(); languages != nullptr) {
+        for (const LanguageMenuItem& item : kLanguageMenu) {
+            AppendMenuW(languages, MF_STRING, item.command, item.label);
+            if (settings_.ocrLanguage == item.code) {
+                CheckMenuRadioItem(languages, kLanguageMenu.front().command,
+                                   kLanguageMenu.back().command, item.command, MF_BYCOMMAND);
+            }
+        }
+        // 子選單交給父選單管理，DestroyMenu(menu) 時一起釋放
+        AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(languages), L"辨識語言");
+    }
     AppendMenuW(menu, MF_STRING, kCommandSettings, L"設定…");
     AppendMenuW(menu, MF_STRING, kCommandDebugDump,
                 debugDumpHotkeyRegistered_ ? L"除錯傾印	Ctrl+Alt+Shift+D" : L"除錯傾印");
@@ -428,6 +470,7 @@ void AppController::process(const core::ProcessRequest& request) {
     job.region = region;
     job.frame = std::move(*frame);
     job.manual = request.manual;
+    job.language = settings_.ocrLanguage;
     platform::log(platform::LogLevel::Info, context,
                   std::string(request.manual ? "手動" : "自動") + "觸發，開始處理");
     worker_->submit(std::move(job));
@@ -447,8 +490,11 @@ void AppController::setUpPipeline() {
         // 371 ms → 189 ms，偵測 100 ms → 20 ms）。
         ocr::OcrOptions ocrOptions;
         ocrOptions.detection.fixedInput = ocr::lensDetectionInput();
-        // 主模型和韓文模型都載入，語言自動判斷（design.md 4.4）。只載日文模型的話，
-        // 韓文畫面讀出來的是一整頁空字串。
+        // 只暖機會用到的那個辨識模型：指定韓文的人不必付主模型第一次推論的記憶體
+        ocrOptions.warmUpScript = core::languageFromCode(settings_.ocrLanguage);
+        // 主模型和韓文模型都載入，語言自動判斷或由設定指定（design.md 4.4）。
+        // 只載日文模型的話，韓文畫面讀出來的是一整頁空字串。
+        // 載入但沒推論過的模型只佔 30～40 MB，所以兩個都先載入，切換語言時不必等。
         ocr_ = std::make_unique<ocr::OcrService>(models, ocrDevice_, ocrOptions);
     } catch (const std::exception& error) {
         platform::logError(std::string("OCR 模型載入失敗，這次執行不會翻譯：") + error.what());
@@ -458,7 +504,18 @@ void AppController::setUpPipeline() {
     if (settings_.mangaMode) {
         setMangaMode(true);
     }
+    setOcrLanguage(settings_.ocrLanguage);  // 記下目前的辨識語言
     rebuildTranslation();
+}
+
+void AppController::setOcrLanguage(const std::string& code) {
+    const core::Language language = core::languageFromCode(code);
+    settings_.ocrLanguage = language == core::Language::Unknown ? "auto" : code;
+    for (const LanguageMenuItem& item : kLanguageMenu) {
+        if (settings_.ocrLanguage == item.code) {
+            platform::logInfo("辨識語言：" + platform::wideToUtf8(item.label));
+        }
+    }
 }
 
 void AppController::setMangaMode(bool enabled) {
@@ -546,6 +603,9 @@ void AppController::applySettings(const core::Settings& settings) {
     platform::setVerboseDiagnostics(settings_.verboseDiagnostics);
     if (settings.mangaMode != settings_.mangaMode) {
         setMangaMode(settings.mangaMode);  // 載入失敗時它會把 settings_.mangaMode 留在 false
+    }
+    if (settings.ocrLanguage != settings_.ocrLanguage) {
+        setOcrLanguage(settings.ocrLanguage);
     }
     if (!settingsPath_.empty()) {
         platform::saveSettings(settingsPath_, settings_);

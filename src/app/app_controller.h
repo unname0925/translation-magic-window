@@ -69,6 +69,8 @@ private:
     void setDebugOverlayEnabled(bool enabled);
     // 漫畫模式：同一個對話框裡的行就是同一段（M2-02）。模型載入失敗時維持關閉並記錄原因。
     void setMangaMode(bool enabled);
+    // 辨識語言："auto"、"ja"、"en"、"ko"。下一次處理就生效（design.md 4.4「語言判斷」）
+    void setOcrLanguage(const std::string& code);
     void refreshDebugOverlay();
     // 設定改了之後：存檔、換掉翻譯引擎鏈、更新記錄的詳細程度
     void applySettings(const core::Settings& settings);

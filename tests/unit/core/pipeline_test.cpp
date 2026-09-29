@@ -352,6 +352,40 @@ TEST_F(PipelineTest, AKoreanDecisionIsForgottenWhenNoHangulComesBack) {
     EXPECT_EQ(ocr_.askedWith[2], Language::Unknown) << "韓文模型讀不到韓文字母了，換回去";
 }
 
+TEST_F(PipelineTest, AChosenLanguageGoesStraightToThatModel) {
+    // 設定裡指定了韓文：第一次就只用韓文模型，不必先判斷
+    ocr_.lines = {line(20, 20, 200, 44, "요건 어때?")};
+    ocr_.reports = Language::Korean;
+    PipelineJob request = job();
+    request.language = "ko";
+    pipeline_.run(request, std::stop_token{});
+    ASSERT_EQ(ocr_.askedWith.size(), 1u);
+    EXPECT_EQ(ocr_.askedWith[0], Language::Korean);
+}
+
+TEST_F(PipelineTest, AChosenLanguageIsKeptEvenWhenItReadsNothing) {
+    // 使用者說是日文就是日文。讀不到假名時自動模式會重新判斷，指定時不會。
+    ocr_.lines = {line(20, 20, 200, 44, "novelagit.xyz")};
+    PipelineJob request = job();
+    request.language = "ja";
+    pipeline_.run(request, std::stop_token{});
+    pipeline_.run(request, std::stop_token{});
+    ASSERT_EQ(ocr_.askedWith.size(), 2u);
+    EXPECT_EQ(ocr_.askedWith[1], Language::Japanese);
+}
+
+TEST_F(PipelineTest, SwitchingBackToAutomaticDecidesAfresh) {
+    // 指定語言的期間不記判斷結果，所以改回自動時這個透鏡等於沒判斷過，從頭判斷
+    ocr_.lines = {line(20, 20, 200, 44, "요건 어때?")};
+    ocr_.reports = Language::Korean;
+    PipelineJob request = job();
+    request.language = "ko";
+    pipeline_.run(request, std::stop_token{});
+    run(job());
+    ASSERT_EQ(ocr_.askedWith.size(), 2u);
+    EXPECT_EQ(ocr_.askedWith[1], Language::Unknown);
+}
+
 // M2-02：漫畫模式時，同一個對話框裡的行就是同一段
 TEST_F(PipelineTest, GroupsByTheBubblesTheOcrReports) {
     // 兩行隔得很遠，只看距離會是兩段

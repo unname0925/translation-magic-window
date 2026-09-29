@@ -7,6 +7,7 @@
 #include <gtest/gtest.h>
 
 #include <QCheckBox>
+#include <QComboBox>
 #include <QDialogButtonBox>
 #include <QLineEdit>
 #include <QPushButton>
@@ -170,6 +171,20 @@ TEST_F(SettingsWindowTest, MangaModeSurvivesARestart) {
 
     SettingsWindow second(platform::loadSettings(path()).settings, platform::encryptSecret);
     EXPECT_TRUE(second.findChild<QCheckBox*>(QStringLiteral("mangaMode"))->isChecked());
+}
+
+TEST_F(SettingsWindowTest, OcrLanguageSurvivesARestart) {
+    SettingsWindow first(core::Settings{}, platform::encryptSecret);
+    auto* language = first.findChild<QComboBox*>(QStringLiteral("ocrLanguage"));
+    ASSERT_NE(language, nullptr);
+    EXPECT_EQ(language->currentData().toString(), QStringLiteral("auto")) << "預設自動判斷";
+    language->setCurrentIndex(language->findData(QStringLiteral("ko")));
+    save(first);
+    EXPECT_EQ(platform::loadSettings(path()).settings.ocrLanguage, "ko");
+
+    SettingsWindow second(platform::loadSettings(path()).settings, platform::encryptSecret);
+    EXPECT_EQ(second.findChild<QComboBox*>(QStringLiteral("ocrLanguage"))->currentData().toString(),
+              QStringLiteral("ko"));
 }
 
 }  // namespace

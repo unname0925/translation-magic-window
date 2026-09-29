@@ -60,6 +60,15 @@ TEST(LanguageTest, CodesMatchTheEnginesAndGroundTruth) {
     EXPECT_EQ(languageCode(Language::Unknown), "");
 }
 
+TEST(LanguageTest, CodesReadBack) {
+    for (const Language language : {Language::Japanese, Language::English, Language::Korean}) {
+        EXPECT_EQ(languageFromCode(languageCode(language)), language);
+    }
+    EXPECT_EQ(languageFromCode("auto"), Language::Unknown);
+    EXPECT_EQ(languageFromCode(""), Language::Unknown);
+    EXPECT_EQ(languageFromCode("zh"), Language::Unknown);
+}
+
 // 兩個辨識模型都跑過之後，整張一起決定用哪一邊（M2-04、design.md 4.4）
 TEST(ChooseScriptTest, KoreanPagesPickTheKoreanModel) {
     // 實測：日文模型讀韓文漫畫只讀得出空字串和網址浮水印，韓文模型讀得出內容

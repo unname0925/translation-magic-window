@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <nlohmann/json.hpp>
 
+#include "core/language.h"
+
 namespace tmw::core {
 namespace {
 
@@ -99,6 +101,10 @@ SettingsLoad parseSettings(std::string_view json_text,
     Settings settings;
     read(document, "verboseDiagnostics", settings.verboseDiagnostics);
     read(document, "mangaMode", settings.mangaMode);
+    read(document, "ocrLanguage", settings.ocrLanguage);
+    if (settings.ocrLanguage != "auto" && languageFromCode(settings.ocrLanguage) == Language::Unknown) {
+        settings.ocrLanguage = "auto";
+    }
     if (const auto it = document.find("engines"); it != document.end() && it->is_array()) {
         for (const json& entry : *it) {
             if (entry.is_object()) {
@@ -125,6 +131,7 @@ std::string serializeSettings(const Settings& settings, int schemaVersion) {
         {"schemaVersion", schemaVersion},
         {"verboseDiagnostics", settings.verboseDiagnostics},
         {"mangaMode", settings.mangaMode},
+        {"ocrLanguage", settings.ocrLanguage},
         {"engines", std::move(engines)},
         {"resultWindow",
          {{"fontScale", settings.resultWindow.fontScale},

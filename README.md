@@ -49,6 +49,10 @@ cmake --workflow --preset debug
 
 建置結果在 `build/<preset>/bin/<設定>/`。
 
+> 用 Ninja 的 preset（`ci`、`ci-asan`）而且 Visual Studio 是中文介面時，建置前先執行 `chcp 65001`。
+> 中文版編譯器列出引用標頭的訊息會跟著主控台的字碼頁編碼，在預設的 950 底下 Ninja 讀不懂，
+> 改了標頭檔也不會重新編譯引用它的檔案。上面這些 Visual Studio 產生器的 preset 不受影響。
+
 ### 安裝 Qt
 
 結果視窗和設定視窗用 Qt 6 Widgets。Qt 不透過 vcpkg 取得（vcpkg 會從原始碼建置整個 Qt，要好幾十分鐘

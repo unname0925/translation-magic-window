@@ -137,5 +137,25 @@ TEST(SettingsTest, MangaModeSurvivesARoundTrip) {
     EXPECT_TRUE(parseSettings(serializeSettings(settings)).settings.mangaMode);
 }
 
+TEST(SettingsTest, OcrLanguageIsAutomaticUnlessChosen) {
+    EXPECT_EQ(parseSettings(R"({"schemaVersion": 1})").settings.ocrLanguage, "auto");
+    EXPECT_EQ(parseSettings(R"({"schemaVersion": 1, "ocrLanguage": "ko"})").settings.ocrLanguage,
+              "ko");
+}
+
+TEST(SettingsTest, UnsupportedOcrLanguageFallsBackToAutomatic) {
+    // 手改設定檔打錯字，或以後的版本多了這一版不認得的語言
+    EXPECT_EQ(parseSettings(R"({"schemaVersion": 1, "ocrLanguage": "fr"})").settings.ocrLanguage,
+              "auto");
+    EXPECT_EQ(parseSettings(R"({"schemaVersion": 1, "ocrLanguage": 3})").settings.ocrLanguage,
+              "auto");
+}
+
+TEST(SettingsTest, OcrLanguageSurvivesARoundTrip) {
+    Settings settings;
+    settings.ocrLanguage = "ja";
+    EXPECT_EQ(parseSettings(serializeSettings(settings)).settings.ocrLanguage, "ja");
+}
+
 }  // namespace
 }  // namespace tmw::core

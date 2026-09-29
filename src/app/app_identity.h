@@ -27,6 +27,11 @@ enum Command : UINT {
     kCommandDebugDump = 10,
     kCommandToggleDebugOverlay = 11,
     kCommandToggleMangaMode = 12,
+    // 辨識語言（系統匣的子選單）：自動、日文、英文、韓文
+    kCommandLanguageAuto = 13,
+    kCommandLanguageJapanese = 14,
+    kCommandLanguageEnglish = 15,
+    kCommandLanguageKorean = 16,
 };
 
 }  // namespace tmw::app

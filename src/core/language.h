@@ -22,6 +22,9 @@ enum class Language {
 // "ja" | "en" | "ko" | ""（Unknown）
 std::string languageCode(Language language);
 
+// languageCode 的反過來："ja" | "en" | "ko" 以外（包括 "auto" 和空字串）都是 Unknown
+Language languageFromCode(std::string_view code);
+
 Language detectLanguage(std::string_view utf8);
 
 // 各語言有多少字（用來判斷混合文字裡哪一種比較多）

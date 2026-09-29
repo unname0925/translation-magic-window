@@ -126,10 +126,15 @@ PipelineResult Pipeline::run(const PipelineJob& job, std::stop_token cancel) {
     }
 
     const auto ocrStart = std::chrono::steady_clock::now();
-    // 沿用這個透鏡上一次判斷出來的語言：只有它是 Unknown 時，兩個辨識模型才都要跑
-    OcrResult recognized = ocr_.recognize(job.frame, memory(job.lens).script, cancel);
+    // 使用者指定了語言：只用那個模型，不判斷也不記。
+    // 否則沿用這個透鏡上一次判斷出來的語言：只有它是 Unknown 時才要判斷。
+    const Language forced = languageFromCode(job.language);
+    OcrResult recognized = ocr_.recognize(
+        job.frame, forced != Language::Unknown ? forced : memory(job.lens).script, cancel);
     std::vector<OcrLine> lines = std::move(recognized.lines);
-    rememberScript(job.lens, recognized.script, lines);
+    if (forced == Language::Unknown) {
+        rememberScript(job.lens, recognized.script, lines);
+    }
     result.timings.ocrMs = millisecondsSince(ocrStart);
     result.lines = lines;
     if (cancel.stop_requested()) {
@@ -159,11 +164,8 @@ PipelineResult Pipeline::run(const PipelineJob& job, std::stop_token cancel) {
 
     // 整片一起判斷語言：單一段落常常太短（M0-11）
     result.language = detectLanguage(joinBlocks(blocks));
-    if (!job.language.empty() && job.language != "auto") {
-        result.language = job.language == "ja"   ? Language::Japanese
-                          : job.language == "en" ? Language::English
-                          : job.language == "ko" ? Language::Korean
-                                                 : result.language;
+    if (forced != Language::Unknown) {
+        result.language = forced;
     }
     for (TextBlock& block : blocks) {
         block.language = result.language;

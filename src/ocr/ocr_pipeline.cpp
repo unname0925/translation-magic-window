@@ -68,12 +68,15 @@ void OcrPipeline::warmUp() {
     const cv::Mat frame(detectionSize, CV_8UC3, cv::Scalar(255, 255, 255));
     detector_.detect(frame);
 
+    TextRecognizer& recognizer =
+        options_.warmUpScript == core::Language::Korean && korean_.has_value() ? *korean_
+                                                                               : recognizer_;
     const cv::Mat crop(48, 512, CV_8UC3, cv::Scalar(255, 255, 255));
     if (options_.batchRecognition) {
         const std::array<cv::Mat, 1> crops{crop};
-        recognizer_.recognize(crops, options_.maxBatch);
+        recognizer.recognize(crops, options_.maxBatch);
     } else {
-        recognizer_.recognize(crop);
+        recognizer.recognize(crop);
     }
 }
 

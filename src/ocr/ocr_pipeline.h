@@ -44,6 +44,10 @@ struct OcrOptions {
     // 建立時先空跑一次，把 DirectML 的編譯成本移到啟動階段（見 design.md 第 5 節）。
     // 偵測用 detection.fixedInput 的大小，辨識用最常見的寬度級距。
     bool warmUpOnStart = true;
+    // 暖機哪一個辨識模型：Korean 暖韓文模型，其他暖主模型。只暖會用到的那個：
+    // 每個模型第一次推論就要多佔 150 MB 以上的記憶體（design.md 第 5 節），
+    // 使用者指定韓文時，主模型的那一份根本不必付。
+    core::Language warmUpScript = core::Language::Unknown;
 };
 
 struct OcrRun {
