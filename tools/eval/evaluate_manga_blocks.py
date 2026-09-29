@@ -60,11 +60,14 @@ def main() -> int:
     parser.add_argument("--ground-truth", required=True)
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--show", type=int, default=8, help="列出幾個差最多的例子")
+    parser.add_argument("--cpp", action="store_true",
+                        help="manga-ocr 的結果用 ocr_cli --manga-ocr 寫進去的 manga_text（C++ 版），"
+                             "不在這裡用 Python 版跑")
     args = parser.parse_args()
 
     pages = {page.image: page for page in gt.load(Path(args.ground_truth))}
     images = json.loads(Path(args.ocr).read_text(encoding="utf-8"))["images"]
-    model = MangaOcrOnnx(args.device)
+    model = None if args.cpp else MangaOcrOnnx(args.device)
 
     totals = collections.Counter()
     seconds = []
@@ -114,9 +117,15 @@ def main() -> int:
             crop = picture.crop((max(0, left - MARGIN), max(0, top - MARGIN),
                                  min(picture.width, right + MARGIN),
                                  min(picture.height, bottom + MARGIN)))
-            start = time.perf_counter()
-            manga_text, _ = model(crop, method="greedy")
-            seconds.append(time.perf_counter() - start)
+            if args.cpp:
+                if "manga_text" not in block:
+                    continue
+                manga_text = block["manga_text"]
+                seconds.append(block["manga_ms"] / 1000)
+            else:
+                start = time.perf_counter()
+                manga_text, _ = model(crop, method="greedy")
+                seconds.append(time.perf_counter() - start)
 
             ppocr = gt.normalize(block["text"])
             manga = gt.normalize(manga_text)
@@ -141,7 +150,8 @@ def main() -> int:
           f"{totals['manga-ocr 全對']}/{totals['區塊']}（{totals['manga-ocr 全對'] / blocks_count:.0%}）")
     if seconds:
         seconds.sort()
-        print(f"manga-ocr 每個區塊（{args.device}，沒有 KV cache 的逐字解碼）：中位數 "
+        which = "C++、有 KV cache" if args.cpp else f"Python {args.device}、沒有 KV cache"
+        print(f"manga-ocr 每個區塊（{which}）：中位數 "
               f"{seconds[len(seconds) // 2] * 1000:.0f} ms，最長 {seconds[-1] * 1000:.0f} ms")
     print("\n差最多的例子（參考答案 ／ PP-OCR ／ manga-ocr）：")
     for _, name, reference, ppocr, manga in sorted(examples, reverse=True)[:args.show]:

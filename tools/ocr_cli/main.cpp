@@ -28,7 +28,9 @@
 
 #include "core/ruby.h"
 #include "core/text_layout.h"
+#include "core/utf8.h"
 #include "ocr/comic_text_detector.h"
+#include "ocr/manga_ocr.h"
 #include "ocr/ocr_pipeline.h"
 #include "ocr/ocr_service.h"
 #include "platform/png_file.h"
@@ -52,8 +54,11 @@ struct Arguments {
     bool warmUp = true;  // --no-warmup：不要在載入時先空跑一次
     // --comic-text <模型>：另外跑 comic-text-detector，輸出對話框區塊（M2-02）
     std::filesystem::path comicTextModel;
-    double comicScale = 0.0;  // --comic-scale S：實驗用，固定送進 comic-text-detector 的倍數
-    int fixedWidth = 0;       // --fixed-input W H：偵測固定用這個輸入大小
+    double comicScale = 0.0;
+    // --manga-ocr <資料夾>：直排區塊另外用 manga-ocr 讀一次，輸出 manga_text（M2-03）
+    std::filesystem::path
+        mangaOcrModel;   // --comic-scale S：實驗用，固定送進 comic-text-detector 的倍數
+    int fixedWidth = 0;  // --fixed-input W H：偵測固定用這個輸入大小
     int fixedHeight = 0;
     std::filesystem::path output;
     std::filesystem::path dumpCharacters;
@@ -105,6 +110,8 @@ std::optional<Arguments> parseArguments(int argc, wchar_t** argv) {
             args.comicTextModel = argv[++i];
         } else if (arg == L"--comic-scale" && hasValue) {
             args.comicScale = _wtof(argv[++i]);
+        } else if (arg == L"--manga-ocr" && hasValue) {
+            args.mangaOcrModel = argv[++i];
         } else if (arg == L"--output" && hasValue) {
             args.output = argv[++i];
         } else if (arg == L"--dump-characters" && hasValue) {
@@ -235,6 +242,36 @@ int dumpCharacters(const Arguments& args) {
     return out ? 0 : 1;
 }
 
+// --manga-ocr：直排、而且高不超過寬 10 倍的區塊（M0-11 的規則）用 manga-ocr 再讀一次，
+// 結果放在 manga_text、耗時放在 manga_ms。最多產生的字數：PP-OCR 讀到的字數的兩倍再加 16，
+// 防止逐字解碼一直重複同一個字停不下來。
+nlohmann::json readWithMangaOcr(nlohmann::json blocks, const cv::Mat& bgr,
+                                std::optional<tmw::ocr::MangaOcr>& mangaOcr) {
+    if (!mangaOcr) {
+        return blocks;
+    }
+    for (nlohmann::json& block : blocks) {
+        const int left = block["rect"][0];
+        const int top = block["rect"][1];
+        const int right = block["rect"][2];
+        const int bottom = block["rect"][3];
+        if (!block["vertical"].get<bool>() || bottom - top > 10 * (right - left)) {
+            continue;
+        }
+        constexpr int kMargin = 4;
+        const cv::Rect area = cv::Rect(left - kMargin, top - kMargin, right - left + 2 * kMargin,
+                                       bottom - top + 2 * kMargin) &
+                              cv::Rect(0, 0, bgr.cols, bgr.rows);
+        const int limit = 2 * tmw::core::characterCount(block["text"].get<std::string>()) + 16;
+        const auto start = std::chrono::steady_clock::now();
+        block["manga_text"] = mangaOcr->read(bgr(area), limit);
+        block["manga_ms"] =
+            std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start)
+                .count();
+    }
+    return blocks;
+}
+
 int run(const Arguments& args) {
     if (!args.dumpCharacters.empty()) {
         return dumpCharacters(args);
@@ -249,6 +286,10 @@ int run(const Arguments& args) {
     std::optional<tmw::ocr::ComicTextDetector> comicText;
     if (!args.comicTextModel.empty()) {
         comicText.emplace(args.comicTextModel, args.device);
+    }
+    std::optional<tmw::ocr::MangaOcr> mangaOcr;
+    if (!args.mangaOcrModel.empty()) {
+        mangaOcr.emplace(args.mangaOcrModel, args.device);
     }
     const double loadMs =
         std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - loadStart)
@@ -313,7 +354,7 @@ int run(const Arguments& args) {
              {"width", bgr.cols},
              {"height", bgr.rows},
              {"lines", toJson(first)},
-             {"blocks", blocksToJson(first, bubbles)},
+             {"blocks", readWithMangaOcr(blocksToJson(first, bubbles), bgr, mangaOcr)},
              {"text_lines", textLinesToJson(first)},
              {"comic_blocks", comicBlocks},
              {"deterministic", deterministic},

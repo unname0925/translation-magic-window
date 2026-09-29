@@ -193,6 +193,26 @@ class CachedDecoder:
         return tokens
 
 
+INSTALL_DIR = MODEL_DIR.parent / "manga-ocr"
+
+
+def install() -> int:
+    """產品（ocr/manga_ocr）要的檔案集中到 models/manga-ocr：三個 ONNX、詞表、設定。"""
+    import shutil
+
+    INSTALL_DIR.mkdir(parents=True, exist_ok=True)
+    for name in ("encoder.onnx", "decoder_cross.onnx", "decoder_step.onnx"):
+        source = ONNX_DIR / name
+        if not source.exists():
+            print(f"找不到 {source}：先執行 manga_onnx.export() 和這個腳本（不加 --install）")
+            return 1
+        shutil.copy2(source, INSTALL_DIR / name)
+    for name in ("vocab.txt", "config.json"):
+        shutil.copy2(MODEL_DIR / name, INSTALL_DIR / name)
+    print(f"已放到 {INSTALL_DIR}")
+    return 0
+
+
 def crops_from(ocr: Path, images: Path, limit: int) -> list[Image.Image]:
     crops = []
     for image in json.loads(ocr.read_text(encoding="utf-8"))["images"]:
@@ -212,7 +232,12 @@ def main() -> int:
     parser.add_argument("--crops-from", required=True, help="ocr_cli 的結果（漫畫模式）")
     parser.add_argument("--images", required=True)
     parser.add_argument("--limit", type=int, default=40)
+    parser.add_argument("--install", action="store_true",
+                        help="只把產品需要的檔案集中到 models/manga-ocr（不重新匯出）")
     args = parser.parse_args()
+
+    if args.install:
+        return install()
 
     model, cross, step = build_modules()
     worst = check_against_model(model, cross, step)

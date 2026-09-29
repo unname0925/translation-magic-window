@@ -8,10 +8,11 @@
 #include <stdexcept>
 #include <string>
 
-namespace tmw::ocr {
-namespace {
+#include "ocr/onnx_internal.h"
 
-Ort::Env& environment() {
+namespace tmw::ocr {
+
+Ort::Env& onnxEnvironment() {
     // 整個程式共用一個 Env（ONNX Runtime 的建議用法）。只記錄錯誤：
     // DirectML 每次建立工作階段都會警告「部分節點不在 GPU 上」，這是正常的
     // （和張量形狀有關的運算本來就放在 CPU 上）。
@@ -19,12 +20,10 @@ Ort::Env& environment() {
     return env;
 }
 
-std::string displayPath(const std::filesystem::path& path) {
+std::string onnxDisplayPath(const std::filesystem::path& path) {
     const std::u8string utf8 = path.u8string();
     return std::string(utf8.begin(), utf8.end());
 }
-
-}  // namespace
 
 std::string_view deviceName(Device device) {
     switch (device) {
@@ -56,26 +55,32 @@ Ort::Session createSession(const std::filesystem::path& onnxFile, Device device)
         options.SetExecutionMode(ORT_SEQUENTIAL);
         Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_DML(options, 0));
     }
-    return Ort::Session(environment(), onnxFile.c_str(), options);
+    return Ort::Session(onnxEnvironment(), onnxFile.c_str(), options);
 }
 
 }  // namespace
 
+Ort::Session createOnnxSession(const std::filesystem::path& onnxFile, Device& device) {
+    const bool automatic = device == Device::Auto;
+    device = automatic ? Device::DirectML : device;
+    try {
+        return createSession(onnxFile, device);
+    } catch (const Ort::Exception&) {
+        if (!automatic) {
+            throw;  // 明確指定的裝置建立不起來就是失敗，不能默默換掉
+        }
+        // 沒有相容的顯示卡或驅動有問題：改用 CPU（design.md 4.4）
+        device = Device::Cpu;
+        return createSession(onnxFile, Device::Cpu);
+    }
+}
+
 OnnxModel::OnnxModel(const std::filesystem::path& onnxFile, Device device,
                      std::string_view outputName)
     : impl_(std::make_unique<Impl>()) {
-    impl_->device = device == Device::Auto ? Device::DirectML : device;
+    impl_->device = device;
     try {
-        try {
-            impl_->session = createSession(onnxFile, impl_->device);
-        } catch (const Ort::Exception&) {
-            if (device != Device::Auto) {
-                throw;
-            }
-            // 沒有相容的顯示卡或驅動有問題：改用 CPU（design.md 4.4）
-            impl_->device = Device::Cpu;
-            impl_->session = createSession(onnxFile, Device::Cpu);
-        }
+        impl_->session = createOnnxSession(onnxFile, impl_->device);
 
         if (impl_->session.GetInputCount() != 1) {
             throw std::runtime_error("expected a model with one input");
@@ -101,10 +106,10 @@ OnnxModel::OnnxModel(const std::filesystem::path& onnxFile, Device device,
             }
         }
     } catch (const Ort::Exception& error) {
-        throw std::runtime_error("cannot load " + displayPath(onnxFile) + " on " +
+        throw std::runtime_error("cannot load " + onnxDisplayPath(onnxFile) + " on " +
                                  std::string(deviceName(device)) + ": " + error.what());
     } catch (const std::runtime_error& error) {
-        throw std::runtime_error("cannot load " + displayPath(onnxFile) + ": " + error.what());
+        throw std::runtime_error("cannot load " + onnxDisplayPath(onnxFile) + ": " + error.what());
     }
 }
 
