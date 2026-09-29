@@ -69,7 +69,8 @@ public:
     // bgr：CV_8UC3。timings 不是 nullptr 時填入各步驟的耗時。只用主模型。
     std::vector<TextLine> run(const cv::Mat& bgr, OcrTimings* timings = nullptr);
 
-    // script 是 Unknown 時兩個辨識模型都跑，再整張一起決定用哪一邊（core::chooseScript）；
+    // script 是 Unknown 時先跑主模型；主模型讀空的行夠多（core::worthTryingKorean）才再跑
+    // 韓文模型，整張一起決定用哪一邊（core::chooseScript）。
     // 指定 Korean 或 Japanese／English 就只跑那一個，省掉一半的辨識時間。
     OcrRun run(const cv::Mat& bgr, core::Language script, OcrTimings* timings = nullptr);
 

@@ -2,6 +2,6 @@
 find_package(nlohmann_json CONFIG REQUIRED)
 
 add_executable(tmw_perf_report main.cpp)
-target_link_libraries(tmw_perf_report PRIVATE tmw_ocr tmw_core tmw_platform tmw_options nlohmann_json::nlohmann_json)
+target_link_libraries(tmw_perf_report PRIVATE tmw_ocr tmw_core tmw_platform tmw_options nlohmann_json::nlohmann_json psapi)
 tmw_copy_onnxruntime(tmw_perf_report)
 tmw_copy_asan_runtime(tmw_perf_report)

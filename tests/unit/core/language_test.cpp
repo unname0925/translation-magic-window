@@ -96,5 +96,46 @@ TEST(ChooseScriptTest, MoreKanaThanHangulKeepsTheMainModel) {
     EXPECT_EQ(chooseScript("あいうえお", "가"), Language::Japanese);
 }
 
+TEST(ReadsAsHollowTest, WhitespaceWhereALongLineShouldBe) {
+    // 主模型讀一行 11 個字寬的韓文，只剩括號和空白（ko-web 的真實例子）
+    EXPECT_TRUE(readsAsHollow("[   ", 11.0));
+    EXPECT_TRUE(readsAsHollow("", 5.0));
+    EXPECT_TRUE(readsAsHollow(" 1  ", 8.0));
+}
+
+TEST(ReadsAsHollowTest, RealTextIsNotHollow) {
+    EXPECT_FALSE(readsAsHollow("今日はいい天気", 7.0));
+    EXPECT_FALSE(readsAsHollow("The quick brown fox", 12.0));
+    // 數字的框本來就窄，讀出三位數很正常
+    EXPECT_FALSE(readsAsHollow("300", 2.5));
+}
+
+TEST(ReadsAsHollowTest, ShortBoxesAreNeverHollow) {
+    // 長寬比不到 2 的框可能只有一個字，讀空也不代表什麼（圖示、標點）
+    EXPECT_FALSE(readsAsHollow("", 1.5));
+}
+
+TEST(ReadsAsHollowTest, FullWidthSpacesDoNotCount) {
+    EXPECT_TRUE(readsAsHollow("　　　", 6.0));
+}
+
+TEST(WorthTryingKoreanTest, NoHollowLinesSkipsTheKoreanModel) {
+    // M2-04 實測：60 張日文、英文截圖幾乎都是 0
+    EXPECT_FALSE(worthTryingKorean(0, 30));
+    EXPECT_FALSE(worthTryingKorean(0, 0));
+}
+
+TEST(WorthTryingKoreanTest, AFewEmptyIconsOnABigPageAreNoise) {
+    // ja-web：78 行裡有 2 個讀空的圖示
+    EXPECT_FALSE(worthTryingKorean(2, 78));
+}
+
+TEST(WorthTryingKoreanTest, KoreanScreensHaveManyHollowLines) {
+    // 30 張韓文截圖最低的是 25 行裡 3 行（12%）
+    EXPECT_TRUE(worthTryingKorean(3, 25));
+    EXPECT_TRUE(worthTryingKorean(1, 1));
+    EXPECT_TRUE(worthTryingKorean(1, 10));
+}
+
 }  // namespace
 }  // namespace tmw::core

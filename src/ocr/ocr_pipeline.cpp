@@ -1,7 +1,9 @@
 #include "ocr/ocr_pipeline.h"
 
+#include <algorithm>
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <cstddef>
 #include <string>
 #include <utility>
@@ -12,6 +14,24 @@ namespace {
 double millisecondsSince(std::chrono::steady_clock::time_point start) {
     return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start)
         .count();
+}
+
+// 主模型讀出來的結果，看起來像不像「在韓文上讀空了」（core::worthTryingKorean）
+bool mayBeKorean(const std::vector<TextLine>& lines) {
+    int hollow = 0;
+    for (const TextLine& line : lines) {
+        const auto side = [&](int a, int b) {
+            return std::hypot(static_cast<double>(line.box[a].x - line.box[b].x),
+                              static_cast<double>(line.box[a].y - line.box[b].y));
+        };
+        const double width = std::max(side(0, 1), side(2, 3));
+        const double height = std::max(side(1, 2), side(3, 0));
+        const double expected = std::max(width, height) / std::max(1.0, std::min(width, height));
+        if (core::readsAsHollow(line.text, expected)) {
+            ++hollow;
+        }
+    }
+    return core::worthTryingKorean(hollow, static_cast<int>(lines.size()));
 }
 
 }  // namespace
@@ -113,10 +133,10 @@ OcrRun OcrPipeline::run(const cv::Mat& bgr, core::Language script, OcrTimings* t
         out.lines = recognizeCrops(recognizer_, boxes, crops);
         out.script = script;
     } else {
-        // 還不知道是哪種文字：兩個都跑，再整張一起決定（design.md 4.4「語言判斷」）。
+        // 還不知道是哪種文字：先讀主模型，看起來可能是韓文才叫韓文模型，
+        // 再整張一起決定（design.md 4.4「語言判斷」）。
         // 逐行比分數不可行：PP-OCRv6 讀韓文會給亂讀的結果很高的分數。
         std::vector<TextLine> main = recognizeCrops(recognizer_, boxes, crops);
-        std::vector<TextLine> korean = recognizeCrops(*korean_, boxes, crops);
         const auto join = [](const std::vector<TextLine>& lines) {
             std::string text;
             for (const TextLine& line : lines) {
@@ -124,8 +144,14 @@ OcrRun OcrPipeline::run(const cv::Mat& bgr, core::Language script, OcrTimings* t
             }
             return text;
         };
-        out.script = core::chooseScript(join(main), join(korean));
-        out.lines = out.script == core::Language::Korean ? std::move(korean) : std::move(main);
+        if (!mayBeKorean(main)) {
+            out.script = core::chooseScript(join(main), {});
+            out.lines = std::move(main);
+        } else {
+            std::vector<TextLine> korean = recognizeCrops(*korean_, boxes, crops);
+            out.script = core::chooseScript(join(main), join(korean));
+            out.lines = out.script == core::Language::Korean ? std::move(korean) : std::move(main);
+        }
     }
 
     if (timings != nullptr) {

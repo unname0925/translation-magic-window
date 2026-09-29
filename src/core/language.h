@@ -48,4 +48,17 @@ ScriptCounts countScripts(std::string_view utf8);
 // 兩邊都沒讀到任何文字時回傳 Unknown，呼叫端沿用上一次的決定。
 Language chooseScript(std::string_view mainText, std::string_view koreanText);
 
+// 主模型讀韓文時幾乎讀不出字，一整行常常只剩空白和一兩個符號。
+// 「讀空」就是：非空白的字元數還不到這一行該有字數的 1/4。
+// expectedCharacters：文字框長邊 / 短邊，一個字大約是正方形，所以約等於這一行有幾個字。
+// 長寬比不到 2 的框可能只有一個字（圖示、標點），一律不算讀空。
+bool readsAsHollow(std::string_view text, double expectedCharacters);
+
+// 主模型讀完之後，值不值得再叫韓文模型來讀（design.md 4.4「語言判斷」）。
+// 韓文模型第一次推論要多佔約 460 MB 記憶體（DirectML 每個工作階段的固定成本），
+// 日文、英文的畫面上不必叫醒它。M2-04 用 90 張截圖量過：日文、英文幾乎沒有讀空的行
+// （最多 78 行裡 2 行），韓文每張都有（最少 12%）。
+// 判斷錯的代價只有記憶體：叫醒之後照舊兩邊都讀、由 chooseScript 決定。
+bool worthTryingKorean(int hollowLines, int totalLines);
+
 }  // namespace tmw::core

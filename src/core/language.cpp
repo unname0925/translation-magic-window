@@ -106,4 +106,23 @@ Language chooseScript(std::string_view mainText, std::string_view koreanText) {
     return Language::Unknown;
 }
 
+bool readsAsHollow(std::string_view text, double expectedCharacters) {
+    if (expectedCharacters < 2.0) {
+        return false;
+    }
+    int visible = 0;
+    for (std::size_t i = 0; i < text.size();) {
+        const char32_t c = nextCodePoint(text, i);
+        if (c != U' ' && c != U'\t' && c != 0x3000) {  // 0x3000：全形空白
+            ++visible;
+        }
+    }
+    return visible < expectedCharacters / 4.0;
+}
+
+bool worthTryingKorean(int hollowLines, int totalLines) {
+    // 讀空的行至少一行，而且佔 10% 以上（韓文最少 12%，日文、英文最多 3%）
+    return hollowLines > 0 && hollowLines * 10 >= totalLines;
+}
+
 }  // namespace tmw::core

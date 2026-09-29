@@ -15,6 +15,7 @@
 #include <windows.h>
 
 #include <objbase.h>
+#include <psapi.h>
 
 #include <algorithm>
 #include <chrono>
@@ -156,6 +157,15 @@ tmw::core::ImageBgra centreCrop(const tmw::core::ImageBgra& frame, int width, in
     return out;
 }
 
+// 這個行程現在用了多少記憶體（DirectML 的工作階段有不小的成本，見 design.md 第 5 節）
+void printMemory(const char* when) {
+    PROCESS_MEMORY_COUNTERS_EX counters{};
+    GetProcessMemoryInfo(GetCurrentProcess(), reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&counters),
+                         sizeof(counters));
+    std::printf("%s：工作集 %.0f MB、私有 %.0f MB\n", when, counters.WorkingSetSize / 1048576.0,
+                counters.PrivateUsage / 1048576.0);
+}
+
 double millisecondsSince(std::chrono::steady_clock::time_point start) {
     return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start)
         .count();
@@ -181,6 +191,7 @@ int wmain(int argc, wchar_t** argv) {
             ocrHolder.emplace(args->models, args->language, args->device, options);
         }
         tmw::ocr::OcrService& ocr = *ocrHolder;
+        printMemory("載入模型後");
         std::printf("裝置：%s\n", std::string(tmw::ocr::deviceName(ocr.device())).c_str());
 
         tmw::core::PerfStats overall;
@@ -214,7 +225,7 @@ int wmain(int argc, wchar_t** argv) {
                 const auto layoutStart = std::chrono::steady_clock::now();
                 const tmw::core::RubyResult withRuby = tmw::core::attachRuby(lines, {});
                 const std::vector<tmw::core::TextBlock> blocks =
-                    tmw::core::mergeIntoBlocks(withRuby.lines, {});
+                    tmw::core::mergeIntoBlocks(withRuby.lines);
                 timings.layoutMs = millisecondsSince(layoutStart);
 
                 if (run == 0) {
@@ -261,6 +272,8 @@ int wmain(int argc, wchar_t** argv) {
         report["summary"] = summary;
         report["ocrMedianMs"] = overall.ocr().median;
         report["ocrP95Ms"] = overall.ocr().p95;
+        // DirectML 每遇到一種新的輸入形狀就編譯一份並一直留著，處理完才看得到那部分
+        printMemory("處理完之後");
 
         if (!args->json.empty()) {
             std::ofstream out(args->json, std::ios::binary);
