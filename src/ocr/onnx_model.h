@@ -30,8 +30,9 @@ class OnnxModel {
 public:
     // outputName：模型有好幾個輸出時要取哪一個。空字串表示模型必須剛好只有一個輸出，
     // 多了就當成放錯模型（例如把 comic-text-detector 當成 PP-OCR 載入）。
+    // optimizeGraph：ONNX Runtime 自己的圖形最佳化（見 onnx_internal.h 的量測）
     OnnxModel(const std::filesystem::path& onnxFile, Device device,
-              std::string_view outputName = {});
+              std::string_view outputName = {}, bool optimizeGraph = true);
     ~OnnxModel();
 
     OnnxModel(const OnnxModel&) = delete;

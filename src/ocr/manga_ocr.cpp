@@ -155,9 +155,10 @@ std::vector<std::int64_t> mangaOcrGreedyDecode(const MangaOcrStep& step, std::in
 }
 
 MangaOcr::MangaOcr(const std::filesystem::path& directory, Device device)
-    : encoder_(directory / "encoder.onnx", device),
-      cross_(directory / "decoder_cross.onnx", device),
-      step_(directory / "decoder_step.onnx", device),
+    // 關掉 ONNX Runtime 的圖形最佳化：DirectML 上省下 285 MB 工作集，速度幾乎不變
+    : encoder_(directory / "encoder.onnx", device, {}, /*optimizeGraph=*/false),
+      cross_(directory / "decoder_cross.onnx", device, /*optimizeGraph=*/false),
+      step_(directory / "decoder_step.onnx", device, /*optimizeGraph=*/false),
       vocab_(readVocab(directory / "vocab.txt")) {
     std::ifstream in(directory / "config.json", std::ios::binary);
     if (!in) {

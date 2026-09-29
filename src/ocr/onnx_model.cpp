@@ -47,8 +47,12 @@ struct OnnxModel::Impl {
 namespace {
 
 // Auto：先試 DirectML。建立工作階段就會用到顯示卡和驅動，失敗表示這台電腦跑不了，改用 CPU。
-Ort::Session createSession(const std::filesystem::path& onnxFile, Device device) {
+Ort::Session createSession(const std::filesystem::path& onnxFile, Device device,
+                           bool optimizeGraph) {
     Ort::SessionOptions options;
+    if (!optimizeGraph) {
+        options.SetGraphOptimizationLevel(ORT_DISABLE_ALL);
+    }
     if (device == Device::DirectML) {
         // DirectML 的限制：不能用 memory pattern，也不能平行執行（見 design.md 4.4）
         options.DisableMemPattern();
@@ -60,27 +64,28 @@ Ort::Session createSession(const std::filesystem::path& onnxFile, Device device)
 
 }  // namespace
 
-Ort::Session createOnnxSession(const std::filesystem::path& onnxFile, Device& device) {
+Ort::Session createOnnxSession(const std::filesystem::path& onnxFile, Device& device,
+                               bool optimizeGraph) {
     const bool automatic = device == Device::Auto;
     device = automatic ? Device::DirectML : device;
     try {
-        return createSession(onnxFile, device);
+        return createSession(onnxFile, device, optimizeGraph);
     } catch (const Ort::Exception&) {
         if (!automatic) {
             throw;  // 明確指定的裝置建立不起來就是失敗，不能默默換掉
         }
         // 沒有相容的顯示卡或驅動有問題：改用 CPU（design.md 4.4）
         device = Device::Cpu;
-        return createSession(onnxFile, Device::Cpu);
+        return createSession(onnxFile, Device::Cpu, optimizeGraph);
     }
 }
 
 OnnxModel::OnnxModel(const std::filesystem::path& onnxFile, Device device,
-                     std::string_view outputName)
+                     std::string_view outputName, bool optimizeGraph)
     : impl_(std::make_unique<Impl>()) {
     impl_->device = device;
     try {
-        impl_->session = createOnnxSession(onnxFile, impl_->device);
+        impl_->session = createOnnxSession(onnxFile, impl_->device, optimizeGraph);
 
         if (impl_->session.GetInputCount() != 1) {
             throw std::runtime_error("expected a model with one input");

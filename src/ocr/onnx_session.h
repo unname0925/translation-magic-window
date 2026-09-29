@@ -37,7 +37,8 @@ struct NamedInput {
 class OnnxSession {
 public:
     // 建立失敗時丟出 std::runtime_error
-    OnnxSession(const std::filesystem::path& onnxFile, Device device);
+    // optimizeGraph：ONNX Runtime 自己的圖形最佳化（見 onnx_internal.h 的量測）
+    OnnxSession(const std::filesystem::path& onnxFile, Device device, bool optimizeGraph = true);
     ~OnnxSession();
 
     OnnxSession(const OnnxSession&) = delete;

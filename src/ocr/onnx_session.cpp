@@ -13,11 +13,11 @@ struct OnnxSession::Impl {
     Ort::Session session{nullptr};
 };
 
-OnnxSession::OnnxSession(const std::filesystem::path& onnxFile, Device device)
+OnnxSession::OnnxSession(const std::filesystem::path& onnxFile, Device device, bool optimizeGraph)
     : impl_(std::make_unique<Impl>()) {
     impl_->device = device;
     try {
-        impl_->session = createOnnxSession(onnxFile, impl_->device);
+        impl_->session = createOnnxSession(onnxFile, impl_->device, optimizeGraph);
     } catch (const Ort::Exception& error) {
         throw std::runtime_error("cannot load " + onnxDisplayPath(onnxFile) + " on " +
                                  std::string(deviceName(device)) + ": " + error.what());
