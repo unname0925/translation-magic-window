@@ -53,7 +53,8 @@ std::optional<HistoryCard> History::add(const PipelineResult& result,
         if (isNew) {
             // 原文存成帶標記的版本（`{本文|讀音}`），結果視窗才畫得出 ルビ
             card.groups.push_back(
-                HistoryGroup{markRuby(group.block.text, group.block.ruby), group.translation});
+                HistoryGroup{markRuby(group.block.text, group.block.ruby), group.translation,
+                             group.block.size});
         }
         seen.push_back(std::move(key));
     }

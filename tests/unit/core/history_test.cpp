@@ -125,6 +125,16 @@ TEST(HistoryTest, DefaultCapacityIsFiveHundred) {
     EXPECT_EQ(History{0}.capacity(), 1u);
 }
 
+TEST(HistoryTest, KeepsEachGroupsTextSize) {
+    // M2-17：結果視窗要知道哪一句是大字（驚訝、吼叫）
+    PipelineResult shout = result({"何だと"});
+    shout.groups[0].block.size = TextSize::Large;
+    History history;
+    const auto card = history.add(shout, at(1));
+    ASSERT_TRUE(card.has_value());
+    EXPECT_EQ(card->groups[0].size, TextSize::Large);
+}
+
 TEST(HistoryTest, KeepsTheFallbackNotice) {
     History history;
     PipelineResult fellBack = result({"こんにちは"});

@@ -22,6 +22,13 @@ enum class Orientation {
     Vertical,
 };
 
+// 和同一個畫面的其他文字相比（classifyTextSize）
+enum class TextSize {
+    Small,
+    Normal,
+    Large,
+};
+
 // 一段 ルビ（振り仮名）：標在本文的哪幾個字上面。
 // start 和 length 的單位是「字」（不是位元組）。
 struct RubyAnnotation {
@@ -54,6 +61,7 @@ struct TextBlock {
     // 各行的 ルビ，位置已經換算成整段文字中的位置
     std::vector<RubyAnnotation> ruby;
     std::vector<OcrLine> lines;
+    TextSize size = TextSize::Normal;  // classifyTextSize 填入
 
     friend bool operator==(const TextBlock&, const TextBlock&) = default;
 };
@@ -110,5 +118,18 @@ bool touchesEdge(const RectI& rect, const SizeI& frame, int margin = 2);
 // 去掉碰到邊緣的區塊
 std::vector<TextBlock> dropEdgeBlocks(std::span<const TextBlock> blocks, const SizeI& frame,
                                       int margin = 2);
+
+// 字級分三級（M2-17，design.md 4.7）：漫畫用大字表示驚訝、吼叫，小字是旁註和補充。
+// 每個區塊的字級是它各行「垂直於書寫方向的大小」（橫排行高、直排欄寬）的中位數，
+// 和畫面上所有行的中位數比：不到 smallRatio 倍是小字、超過 largeRatio 倍是大字。
+//
+// M2-17 用 90 張截圖正確答案的 972 個區塊量過：準確率 79.6%（日文漫畫 86%、遊戲 93～99%）。
+// 網頁上的「小字」多半是選單按鈕，和整頁比沒有明顯差異，抓不到（召回 6～11%）；
+// 依字數加權的中位數反而更差，所以用每行一票的中位數。
+struct TextSizeOptions {
+    double smallRatio = 0.7;
+    double largeRatio = 1.5;
+};
+void classifyTextSize(std::span<TextBlock> blocks, const TextSizeOptions& options = {});
 
 }  // namespace tmw::core

@@ -372,5 +372,52 @@ TEST(BubbleMergeTest, ColumnsInsideABlockReadRightToLeftWhateverElseIsOnThePage)
     EXPECT_TRUE(found);
 }
 
+// M2-17：字級分三級
+TextBlock blockOf(std::vector<OcrLine> lines) {
+    TextBlock block;
+    block.lines = std::move(lines);
+    return block;
+}
+
+TEST(TextSizeTest, ComparesEachBlockWithTheWholeFrame) {
+    // 一般對白 30、吼叫 60、旁註 15（直排看欄寬）
+    std::vector<TextBlock> blocks = {
+        blockOf({vertical(500, 0, 30, 200, "普通の台詞"), vertical(460, 0, 30, 200, "続き")}),
+        blockOf({vertical(300, 0, 30, 200, "もう一つ")}),
+        blockOf({vertical(200, 0, 60, 300, "何だと")}),
+        blockOf({vertical(100, 0, 15, 100, "注釈")}),
+    };
+    classifyTextSize(blocks);
+    EXPECT_EQ(blocks[0].size, TextSize::Normal);
+    EXPECT_EQ(blocks[1].size, TextSize::Normal);
+    EXPECT_EQ(blocks[2].size, TextSize::Large);
+    EXPECT_EQ(blocks[3].size, TextSize::Small);
+}
+
+TEST(TextSizeTest, HorizontalTextUsesTheLineHeight) {
+    std::vector<TextBlock> blocks = {
+        blockOf({horizontal(0, 0, 300, 20, "Normal text"), horizontal(0, 30, 300, 20, "More")}),
+        blockOf({horizontal(0, 100, 400, 40, "HEADLINE")}),
+    };
+    classifyTextSize(blocks);
+    EXPECT_EQ(blocks[0].size, TextSize::Normal);
+    EXPECT_EQ(blocks[1].size, TextSize::Large);
+}
+
+TEST(TextSizeTest, OneSizeEverywhereIsAllNormal) {
+    // 只有一種字級的畫面（大部分的網頁、遊戲對話框）不該冒出大字或小字
+    std::vector<TextBlock> blocks = {blockOf({horizontal(0, 0, 300, 20, "a")}),
+                                     blockOf({horizontal(0, 50, 100, 20, "b")})};
+    classifyTextSize(blocks);
+    EXPECT_EQ(blocks[0].size, TextSize::Normal);
+    EXPECT_EQ(blocks[1].size, TextSize::Normal);
+}
+
+TEST(TextSizeTest, ABlockWithoutLinesStaysNormal) {
+    std::vector<TextBlock> blocks = {TextBlock{}};
+    classifyTextSize(blocks);
+    EXPECT_EQ(blocks[0].size, TextSize::Normal);
+}
+
 }  // namespace
 }  // namespace tmw::core

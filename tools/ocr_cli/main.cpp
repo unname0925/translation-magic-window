@@ -180,9 +180,14 @@ nlohmann::json blocksToJson(const std::vector<TextLine>& lines,
     // 診斷分段問題時要拿到「和合併看到的一模一樣」的行
     tmw::core::resolveAmbiguousOrientation(withRuby.lines);
     nlohmann::json result = nlohmann::json::array();
-    for (const tmw::core::TextBlock& block : tmw::core::mergeIntoBlocks(withRuby.lines, bubbles)) {
+    std::vector<tmw::core::TextBlock> blocks = tmw::core::mergeIntoBlocks(withRuby.lines, bubbles);
+    tmw::core::classifyTextSize(blocks);  // 和主程式一樣（M2-17）
+    for (const tmw::core::TextBlock& block : blocks) {
         result.push_back(
             {{"text", block.text},
+             {"size", block.size == tmw::core::TextSize::Large   ? "large"
+                      : block.size == tmw::core::TextSize::Small ? "small"
+                                                                 : "normal"},
              {"marked", tmw::core::markRuby(block.text, block.ruby)},
              {"rect", {block.rect.left, block.rect.top, block.rect.right, block.rect.bottom}},
              {"vertical", block.orientation == tmw::core::Orientation::Vertical},

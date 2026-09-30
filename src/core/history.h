@@ -20,6 +20,7 @@ namespace tmw::core {
 struct HistoryGroup {
     std::string source;
     std::string translation;
+    TextSize size = TextSize::Normal;  // 結果視窗依它放大或縮小（M2-17）
 
     friend bool operator==(const HistoryGroup&, const HistoryGroup&) = default;
 };

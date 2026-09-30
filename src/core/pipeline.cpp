@@ -149,6 +149,8 @@ PipelineResult Pipeline::run(const PipelineJob& job, std::stop_token cancel) {
     // 沒有對話框時和只看距離的分段完全一樣。
     std::vector<TextBlock> blocks =
         mergeIntoBlocks(withRuby.lines, recognized.bubbles, options_.merge);
+    // 和整個畫面比，所以在去掉邊緣的殘句之前分級（M2-17）
+    classifyTextSize(blocks);
     if (options_.dropEdgeBlocks) {
         blocks =
             dropEdgeBlocks(blocks, SizeI{job.frame.width, job.frame.height}, options_.edgeMargin);

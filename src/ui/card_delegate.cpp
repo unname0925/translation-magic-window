@@ -18,6 +18,9 @@ constexpr int kPadding = 10;
 constexpr int kGroupGap = 8;
 // 原文比譯文小一點、淡一點，一眼就看得出哪一行是譯文
 constexpr double kSourceScale = 0.85;
+// 字級三級的縮放（M2-17）。大字要一眼看得出來，又不能把卡片撐得太大
+constexpr double kSmallScale = 0.85;
+constexpr double kLargeScale = 1.3;
 
 QFont scaled(const QFont& font, double factor) {
     QFont out = font;
@@ -64,10 +67,15 @@ CardDelegate::Layout CardDelegate::layout(const QModelIndex& index, const QFont&
     }
 
     for (const core::HistoryGroup& group : card->groups) {
+        // 字級分三級還原（M2-17）：漫畫的大字是驚訝、吼叫，小字是旁註
+        const double factor = group.size == core::TextSize::Large   ? kLargeScale
+                              : group.size == core::TextSize::Small ? kSmallScale
+                                                                    : 1.0;
         Layout::Group laid;
-        laid.source = std::make_shared<RubyText>(QString::fromStdString(group.source), smallFont);
+        laid.source = std::make_shared<RubyText>(QString::fromStdString(group.source),
+                                                 scaled(smallFont, factor));
         laid.translation =
-            std::make_shared<RubyText>(QString::fromStdString(group.translation), font);
+            std::make_shared<RubyText>(QString::fromStdString(group.translation), scaled(font, factor));
         out.height += kGroupGap;
         laid.top = out.height;
         out.height += laid.source->layout(out.width);

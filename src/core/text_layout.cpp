@@ -426,4 +426,47 @@ std::vector<TextBlock> dropEdgeBlocks(std::span<const TextBlock> blocks, const S
     return kept;
 }
 
+namespace {
+
+// 偶數個時取中間兩個的平均（和評測用的 Python statistics.median 相同）
+double median(std::vector<double> values) {
+    if (values.empty()) {
+        return 0.0;
+    }
+    const std::size_t middle = values.size() / 2;
+    std::nth_element(values.begin(), values.begin() + static_cast<std::ptrdiff_t>(middle),
+                     values.end());
+    const double upper = values[middle];
+    if (values.size() % 2 == 1) {
+        return upper;
+    }
+    const double lower =
+        *std::max_element(values.begin(), values.begin() + static_cast<std::ptrdiff_t>(middle));
+    return (lower + upper) / 2.0;
+}
+
+}  // namespace
+
+void classifyTextSize(std::span<TextBlock> blocks, const TextSizeOptions& options) {
+    std::vector<double> all;
+    for (const TextBlock& block : blocks) {
+        for (const OcrLine& line : block.lines) {
+            all.push_back(crossSize(line));
+        }
+    }
+    const double frame = median(std::move(all));
+    for (TextBlock& block : blocks) {
+        std::vector<double> own;
+        own.reserve(block.lines.size());
+        for (const OcrLine& line : block.lines) {
+            own.push_back(crossSize(line));
+        }
+        const double size = median(std::move(own));
+        block.size = block.lines.empty()                 ? TextSize::Normal
+                     : size < frame * options.smallRatio ? TextSize::Small
+                     : size > frame * options.largeRatio ? TextSize::Large
+                                                         : TextSize::Normal;
+    }
+}
+
 }  // namespace tmw::core
