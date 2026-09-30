@@ -2,6 +2,8 @@
 
 #include <windows.h>
 
+#include <dxgi.h>
+
 #include <dml_provider_factory.h>
 #include <onnxruntime_cxx_api.h>
 
@@ -35,6 +37,30 @@ std::string_view deviceName(Device device) {
             break;
     }
     return "cpu";
+}
+
+Device resolveDevice(Device requested, bool firstAdapterIsHardware) {
+    if (requested != Device::Auto) {
+        return requested;
+    }
+    return firstAdapterIsHardware ? Device::Auto : Device::Cpu;
+}
+
+bool firstAdapterIsHardware() {
+    IDXGIFactory1* factory = nullptr;
+    if (FAILED(CreateDXGIFactory1(__uuidof(IDXGIFactory1), reinterpret_cast<void**>(&factory)))) {
+        return false;
+    }
+    bool hardware = false;
+    IDXGIAdapter1* adapter = nullptr;
+    // DirectML 的執行提供者用 device_id 0，也就是列舉出來的第一張
+    if (SUCCEEDED(factory->EnumAdapters1(0, &adapter))) {
+        DXGI_ADAPTER_DESC1 desc{};
+        hardware = SUCCEEDED(adapter->GetDesc1(&desc)) && (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) == 0;
+        adapter->Release();
+    }
+    factory->Release();
+    return hardware;
 }
 
 struct OnnxModel::Impl {

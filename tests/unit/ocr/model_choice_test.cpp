@@ -41,5 +41,23 @@ TEST(ModelChoiceTest, BuildsPathsUnderTheModelsDirectory) {
     EXPECT_EQ(recognitionModelPath("C:/models", choice), "C:/models/korean_PP-OCRv5_mobile_rec");
 }
 
+// M2-11：沒有硬體顯示卡時，Auto 要直接變成 CPU，才會選到 CPU 用的 small 模型
+TEST(ResolveDeviceTest, AutoWithoutAHardwareGpuMeansCpu) {
+    EXPECT_EQ(resolveDevice(Device::Auto, false), Device::Cpu);
+    EXPECT_EQ(chooseModels(TextLanguage::JapaneseOrEnglish, resolveDevice(Device::Auto, false)),
+              chooseModels(TextLanguage::JapaneseOrEnglish, Device::Cpu));
+}
+
+TEST(ResolveDeviceTest, AutoWithAHardwareGpuStaysAuto) {
+    // 維持 Auto：DirectML 真的建不起來時，每個工作階段仍然可以退回 CPU
+    EXPECT_EQ(resolveDevice(Device::Auto, true), Device::Auto);
+}
+
+TEST(ResolveDeviceTest, AnExplicitChoiceIsKept) {
+    // --ocr-device dml 是使用者指定的，就算只有軟體轉譯器也照辦
+    EXPECT_EQ(resolveDevice(Device::DirectML, false), Device::DirectML);
+    EXPECT_EQ(resolveDevice(Device::Cpu, true), Device::Cpu);
+}
+
 }  // namespace
 }  // namespace tmw::ocr

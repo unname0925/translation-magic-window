@@ -224,6 +224,10 @@ M0 用真實環境和 90 張真實截圖驗證每個高風險的技術點。選�
 **模型來源**：PP-OCRv5、PP-OCRv6 和韓文模型都有 PaddlePaddle 官方在 Hugging Face 上提供的 ONNX 版本，不需要自己轉換。辨識模型的字元表放在同一個資料夾的 `inference.yml` 中。所有模型的下載網址（固定版本）、大小和 SHA-256 列在 `tools/fetch_models/models.json`。
 
 所有模型都以 ONNX 格式透過 ONNX Runtime 執行。執行方式依序嘗試 DirectML，失敗則改用 CPU。
+選模型之前先看 DirectML 會用的第一張顯示卡是不是硬體（M2-11，`ocr::resolveDevice`）：
+沒有硬體顯示卡（只有 Microsoft Basic Render Driver 這類軟體轉譯器）時直接用 CPU 和 CPU 用的
+small 模型。否則會先選 GPU 用的 medium，DirectML 甚至可能在軟體轉譯器上建得起來，實際在 CPU 上
+模擬 GPU；即使退回 CPU，也是用 medium 在跑（1.1 秒，small 只要 0.3 秒）。
 
 **執行環境**：ONNX Runtime 1.24.4（DirectML 版）加上 DirectML 1.15.4，從 NuGet 下載固定版本。DirectML 已進入持續維護，ONNX Runtime 的 DirectML 版停在 1.24.x，新功能移到 Windows ML。Windows ML 使用相同的 ONNX Runtime API，之後要改用它（例如 NVIDIA 顯卡改用 TensorRT RTX）時，只需要改建立工作階段的部分。
 

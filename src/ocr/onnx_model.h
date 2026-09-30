@@ -18,6 +18,18 @@ enum class Device {
 
 std::string_view deviceName(Device device);
 
+// 選模型之前先決定 Auto 要怎麼跑（M2-11）。
+// DirectML 用的是第一張顯示卡；它是軟體轉譯器（Microsoft Basic Render Driver，沒有 GPU 的
+// 電腦、遠端桌面）時，DirectML 可能照樣建得起來，實際卻在 CPU 上模擬 GPU，非常慢，
+// 而且模型會被選成 GPU 用的 medium（CPU 上 1.1 秒，small 只要 0.3 秒）。
+// - requested 不是 Auto：原樣回傳，使用者指定的就照辦。
+// - Auto、第一張顯示卡是硬體：維持 Auto（建立失敗時仍然會退回 CPU）。
+// - Auto、沒有硬體顯示卡：Cpu。
+Device resolveDevice(Device requested, bool firstAdapterIsHardware);
+
+// DirectML 會用的第一張顯示卡是不是硬體（DXGI 的 DXGI_ADAPTER_FLAG_SOFTWARE）
+bool firstAdapterIsHardware();
+
 struct Tensor {
     std::vector<std::int64_t> shape;
     std::vector<float> data;

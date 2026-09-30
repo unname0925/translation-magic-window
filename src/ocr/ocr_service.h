@@ -62,6 +62,8 @@ public:
 
 private:
     std::filesystem::path modelsDirectory_;
+    // 選模型時用的裝置（resolveDevice）。一定要排在 pipeline_ 前面：成員依宣告順序初始化
+    Device device_;
     OcrPipeline pipeline_;
     OcrTimings lastTimings_;
 

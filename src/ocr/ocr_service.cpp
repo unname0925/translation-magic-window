@@ -42,23 +42,34 @@ core::OcrLine toOcrLine(const TextLine& line) {
     return out;
 }
 
+namespace {
+
+// 沒有硬體顯示卡時直接用 CPU 和 CPU 用的模型（M2-11）。只有 Auto 才需要問 DXGI。
+Device resolveForModels(Device requested) {
+    return resolveDevice(requested, requested == Device::Auto && firstAdapterIsHardware());
+}
+
+}  // namespace
+
 OcrService::OcrService(const std::filesystem::path& modelsDirectory, TextLanguage language,
                        Device device, const OcrOptions& options)
     : modelsDirectory_(modelsDirectory),
-      pipeline_(detectionModelPath(modelsDirectory, chooseModels(language, device)),
-                recognitionModelPath(modelsDirectory, chooseModels(language, device)), device,
+      device_(resolveForModels(device)),
+      pipeline_(detectionModelPath(modelsDirectory, chooseModels(language, device_)),
+                recognitionModelPath(modelsDirectory, chooseModels(language, device_)), device_,
                 options) {}
 
 OcrService::OcrService(const std::filesystem::path& modelsDirectory, Device device,
                        const OcrOptions& options)
     // 兩種語言的偵測模型是同一個（M0-11：v6 的偵測對韓文也最好），只有辨識模型不同
     : modelsDirectory_(modelsDirectory),
+      device_(resolveForModels(device)),
       pipeline_(detectionModelPath(modelsDirectory,
-                                   chooseModels(TextLanguage::JapaneseOrEnglish, device)),
+                                   chooseModels(TextLanguage::JapaneseOrEnglish, device_)),
                 recognitionModelPath(modelsDirectory,
-                                     chooseModels(TextLanguage::JapaneseOrEnglish, device)),
-                recognitionModelPath(modelsDirectory, chooseModels(TextLanguage::Korean, device)),
-                device, options) {}
+                                     chooseModels(TextLanguage::JapaneseOrEnglish, device_)),
+                recognitionModelPath(modelsDirectory, chooseModels(TextLanguage::Korean, device_)),
+                device_, options) {}
 
 core::OcrResult OcrService::recognize(const core::ImageBgra& frame, core::Language script,
                                       std::stop_token cancel) {
