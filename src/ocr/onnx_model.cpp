@@ -2,9 +2,8 @@
 
 #include <windows.h>
 
-#include <dxgi.h>
-
 #include <dml_provider_factory.h>
+#include <dxgi.h>
 #include <onnxruntime_cxx_api.h>
 
 #include <stdexcept>
@@ -56,7 +55,8 @@ bool firstAdapterIsHardware() {
     // DirectML 的執行提供者用 device_id 0，也就是列舉出來的第一張
     if (SUCCEEDED(factory->EnumAdapters1(0, &adapter))) {
         DXGI_ADAPTER_DESC1 desc{};
-        hardware = SUCCEEDED(adapter->GetDesc1(&desc)) && (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) == 0;
+        hardware =
+            SUCCEEDED(adapter->GetDesc1(&desc)) && (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) == 0;
         adapter->Release();
     }
     factory->Release();

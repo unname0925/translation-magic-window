@@ -102,7 +102,8 @@ SettingsLoad parseSettings(std::string_view json_text,
     read(document, "verboseDiagnostics", settings.verboseDiagnostics);
     read(document, "mangaMode", settings.mangaMode);
     read(document, "ocrLanguage", settings.ocrLanguage);
-    if (settings.ocrLanguage != "auto" && languageFromCode(settings.ocrLanguage) == Language::Unknown) {
+    if (settings.ocrLanguage != "auto" &&
+        languageFromCode(settings.ocrLanguage) == Language::Unknown) {
         settings.ocrLanguage = "auto";
     }
     if (const auto it = document.find("engines"); it != document.end() && it->is_array()) {

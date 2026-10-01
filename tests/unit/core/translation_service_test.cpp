@@ -114,8 +114,8 @@ TEST_F(TranslationServiceTest, SendsRepeatedTextOnlyOnce) {
 TEST_F(TranslationServiceTest, ChangingAGlossaryWordRetranslatesTheTextThatUsesIt) {
     // 使用者發現名字翻錯、改了詞表：用到那個詞的段落不能再拿快取裡的舊譯文
     const auto withGlossary = [this](const Strings& segments, Glossary glossary) {
-        return service_.translate(segments, TranslateRequest{"ja", "zh-TW", {}, std::move(glossary)},
-                                  std::stop_token{});
+        return service_.translate(
+            segments, TranslateRequest{"ja", "zh-TW", {}, std::move(glossary)}, std::stop_token{});
     };
     withGlossary({"悠真、逃げろ！", "何だと？"}, {{"悠真", "優馬"}});
     withGlossary({"悠真、逃げろ！", "何だと？"}, {{"悠真", "悠真"}});
@@ -161,8 +161,8 @@ TEST_F(TranslationServiceTest, PassesOnWhyItFellBack) {
         }
     };
     auto chain = std::make_shared<TranslatorChain>(
-        std::vector<std::shared_ptr<ITranslator>>{std::make_shared<AlwaysFails>(), engine_},
-        clock_, ChainOptions{});
+        std::vector<std::shared_ptr<ITranslator>>{std::make_shared<AlwaysFails>(), engine_}, clock_,
+        ChainOptions{});
     TranslationService service(chain, std::make_shared<NullTextConverter>());
     const TranslateRequest request{"ja", "zh-TW", {}, {}};
 

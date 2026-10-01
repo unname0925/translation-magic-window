@@ -118,8 +118,8 @@ int wmain(int argc, wchar_t** argv) {
     try {
         const std::vector<std::string> out = translator.translate(
             segments,
-            tmw::core::TranslateRequest{language, "zh-TW", {},
-                                        tmw::core::glossaryFor(segments, glossary)},
+            tmw::core::TranslateRequest{
+                language, "zh-TW", {}, tmw::core::glossaryFor(segments, glossary)},
             std::stop_token{});
         for (std::size_t i = 0; i < out.size(); ++i) {
             print(segments[i] + "  →  " + out[i]);

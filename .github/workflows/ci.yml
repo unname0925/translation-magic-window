@@ -126,7 +126,10 @@ jobs:
         if: matrix.name == 'Release'
         run: |
           python tools/fetch_models/fetch_models.py --only PP-OCRv6_medium_det PP-OCRv6_medium_rec PP-OCRv6_small_det PP-OCRv6_small_rec korean_PP-OCRv5_mobile_rec
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($LASTEXITCODE -ne 0) {
+            Write-Output "::error::fetch_models.py 下載或驗證模型失敗（結束碼 $LASTEXITCODE）"
+            exit $LASTEXITCODE
+          }
           # 執行器沒有顯示卡，用 CPU；產品在 GPU 上用 medium、CPU 上用 small，兩套都檢查
           foreach ($variant in 'medium', 'small') {
             python tools/eval/check_synthetic.py --ocr-cli build/ci/bin/Release/tmw_ocr_cli.exe --variant $variant --device cpu

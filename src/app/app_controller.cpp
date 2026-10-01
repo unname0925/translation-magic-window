@@ -529,7 +529,8 @@ std::shared_ptr<const core::Glossary> AppController::currentGlossary() {
         return glossary_;  // 沒改過：不必每次處理都讀檔
     }
     std::ifstream file(path, std::ios::binary);
-    const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    const std::string text((std::istreambuf_iterator<char>(file)),
+                           std::istreambuf_iterator<char>());
     core::GlossaryLoad load = core::parseGlossary(text);
     for (const std::string& problem : load.problems) {
         platform::logWarn("專有名詞表 " + problem + "，這一行略過");

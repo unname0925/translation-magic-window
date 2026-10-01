@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import collections
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -29,6 +30,13 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SYNTHETIC = REPO_ROOT / "testdata" / "synthetic"
 TOLERANCE = 0.01  # 比基準線差超過 1 個百分點才算退步
+IN_CI = os.environ.get("GITHUB_ACTIONS") == "true"
+
+
+def annotate(message: str) -> None:
+    """在 GitHub Actions 上輸出成「註解」：不登入也看得到（完整日誌要有倉庫權限）。"""
+    if IN_CI:
+        print("::error::" + message.replace("\n", " "))
 
 
 def normalise(text: str) -> str:
@@ -50,7 +58,13 @@ def run_ocr(ocr_cli: Path, models: Path, variant: str, device: str, recognizer: 
         command = [str(ocr_cli), "--det", str(models / f"PP-OCRv6_{variant}_det"),
                    "--rec", str(models / recognizer), "--device", device,
                    "--output", str(output), *map(str, images)]
-        subprocess.run(command, check=True, stdout=subprocess.DEVNULL)
+        finished = subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                                  text=True, encoding="utf-8", errors="replace")
+        if finished.returncode != 0:
+            message = (f"ocr_cli 結束碼 {finished.returncode}（{recognizer}）："
+                       f"{finished.stderr.strip()[-300:]}")
+            annotate(message)
+            raise RuntimeError(message)
         result = json.loads(output.read_text(encoding="utf-8"))
     return {Path(image["image"]).name: [line["text"] for line in image["lines"]]
             for image in result["images"]}
@@ -89,6 +103,8 @@ def main() -> int:
         if before is not None and rate > before + TOLERANCE:
             failures.append(name)
             verdict = f"  ← 退步（基準 {before:.1%}）"
+            annotate(f"{key} {name}：字元錯誤率 {rate:.1%}（基準 {before:.1%}），"
+                     f"讀到：{' / '.join(read.get(name, []))}")
         print(f"{name:22} {rate:6.1%}{verdict}")
         if rate > 0 and (verdict or args.update or before is None):
             print(f"{'':22} 讀到：{' / '.join(read.get(name, []))}")
@@ -101,6 +117,7 @@ def main() -> int:
         return 0
     if not previous:
         print(f"baseline.json 裡還沒有 {key}，用 --update 建立", file=sys.stderr)
+        annotate(f"baseline.json 裡還沒有 {key}")
         return 2
     if failures:
         print(f"{len(failures)} 張圖的字元錯誤率比基準線差超過 {TOLERANCE:.0%}："

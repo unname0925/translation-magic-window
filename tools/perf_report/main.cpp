@@ -232,7 +232,8 @@ int wmain(int argc, wchar_t** argv) {
 
                 const auto ocrStart = std::chrono::steady_clock::now();
                 // 每張圖都從 Unknown 開始：量的就是「自己判斷」那條路的成本（--force 時不判斷）
-                tmw::core::OcrResult recognized = ocr.recognize(frame, args->forced, std::stop_token{});
+                tmw::core::OcrResult recognized =
+                    ocr.recognize(frame, args->forced, std::stop_token{});
                 std::vector<tmw::core::OcrLine> lines = std::move(recognized.lines);
                 chosen = recognized.script;
                 timings.ocrMs = millisecondsSince(ocrStart);

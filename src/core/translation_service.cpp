@@ -27,8 +27,7 @@ std::string TranslationService::engineStatus() const {
 
 std::vector<std::string> TranslationService::translate(std::span<const std::string> segments,
                                                        const TranslateRequest& request,
-                                                       std::stop_token cancel,
-                                                       std::string* note) {
+                                                       std::stop_token cancel, std::string* note) {
     if (note != nullptr) {
         note->clear();
     }

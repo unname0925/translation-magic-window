@@ -74,8 +74,8 @@ CardDelegate::Layout CardDelegate::layout(const QModelIndex& index, const QFont&
         Layout::Group laid;
         laid.source = std::make_shared<RubyText>(QString::fromStdString(group.source),
                                                  scaled(smallFont, factor));
-        laid.translation =
-            std::make_shared<RubyText>(QString::fromStdString(group.translation), scaled(font, factor));
+        laid.translation = std::make_shared<RubyText>(QString::fromStdString(group.translation),
+                                                      scaled(font, factor));
         out.height += kGroupGap;
         laid.top = out.height;
         out.height += laid.source->layout(out.width);

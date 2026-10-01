@@ -19,8 +19,8 @@ TranslatorChain::TranslatorChain(std::vector<std::shared_ptr<ITranslator>> engin
 }
 
 std::string TranslatorChain::pausedReason(const State& state, TimePoint now) {
-    const auto minutes = std::chrono::duration_cast<std::chrono::minutes>(
-                             state.pausedUntil - now + std::chrono::minutes(1))
+    const auto minutes = std::chrono::duration_cast<std::chrono::minutes>(state.pausedUntil - now +
+                                                                          std::chrono::minutes(1))
                              .count();
     return state.engine->id() + "：" + describeTranslateError(state.lastError) + "，約 " +
            std::to_string(minutes) + " 分鐘後再試";
@@ -104,9 +104,9 @@ ChainResult TranslatorChain::translate(std::span<const std::string> segments,
                 const std::lock_guard lock(mutex_);
                 states_[i].failures = 0;
             }
-            return ChainResult{engine->id(), std::move(out),
-                               skipped.empty() ? std::string()
-                                               : "改用 " + engine->id() + "（" + skipped + "）"};
+            return ChainResult{
+                engine->id(), std::move(out),
+                skipped.empty() ? std::string() : "改用 " + engine->id() + "（" + skipped + "）"};
         } catch (const TranslatorError& error) {
             if (error.kind() == TranslateError::Cancelled) {
                 throw;

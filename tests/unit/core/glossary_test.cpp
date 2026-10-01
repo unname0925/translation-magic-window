@@ -16,8 +16,8 @@ TEST(GlossaryTest, ReadsOneEntryPerLine) {
 
 TEST(GlossaryTest, SkipsCommentsAndBlankLinesAndTrimsSpaces) {
     // 記事本存檔時的 BOM、Windows 的換行、中文輸入法的全形空白和全形等號
-    const GlossaryLoad load =
-        parseGlossary("\xEF\xBB\xBF# 註解\r\n\r\n  悠真 = 悠真 \r\n\xE3\x80\x80鬼\xEF\xBC\x9D惡鬼\r\n");
+    const GlossaryLoad load = parseGlossary(
+        "\xEF\xBB\xBF# 註解\r\n\r\n  悠真 = 悠真 \r\n\xE3\x80\x80鬼\xEF\xBC\x9D惡鬼\r\n");
     EXPECT_TRUE(load.problems.empty());
     EXPECT_EQ(load.entries, (Glossary{{"悠真", "悠真"}, {"鬼", "惡鬼"}}));
 }

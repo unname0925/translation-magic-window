@@ -28,7 +28,8 @@ constexpr std::string_view kPlainPrompt =
     "`{本文|讀音}` 標記要保留。只輸出譯文，不要加引號或任何說明。";
 
 // 有專有名詞時才加在後面（M2-09）。沒有詞條的請求和 M0-12 評測過的提示詞一字不差。
-constexpr std::string_view kGlossaryRule = "glossary 是專有名詞表（原文 → 譯文），這些詞一律照表翻譯。";
+constexpr std::string_view kGlossaryRule =
+    "glossary 是專有名詞表（原文 → 譯文），這些詞一律照表翻譯。";
 
 std::string systemPrompt(const core::TranslateRequest& request, bool asJsonArray) {
     std::string prompt(asJsonArray ? kSystemPrompt : kPlainPrompt);
