@@ -78,6 +78,10 @@ def main() -> int:
     parser.add_argument("--device", default="cpu", choices=["cpu", "dml"])
     parser.add_argument("--update", action="store_true", help="把這次的結果寫成新的基準線")
     args = parser.parse_args()
+    # GitHub 的執行器是英文系統，輸出到管線時預設是 cp1252，一印中文就丟 UnicodeEncodeError
+    # （M2-12 第一次上 CI 就是這樣失敗的，而且來不及印出任何說明）
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
 
     expected = json.loads((SYNTHETIC / "expected.json").read_text(encoding="utf-8"))
     by_recognizer = collections.defaultdict(list)

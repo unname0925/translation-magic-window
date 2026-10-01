@@ -124,6 +124,9 @@ jobs:
 
       - name: OCR 回歸評測（合成測試集）
         if: matrix.name == 'Release'
+        # 執行器是英文系統，Python 預設用 cp1252 輸出，印不出中文
+        env:
+          PYTHONUTF8: '1'
         run: |
           python tools/fetch_models/fetch_models.py --only PP-OCRv6_medium_det PP-OCRv6_medium_rec PP-OCRv6_small_det PP-OCRv6_small_rec korean_PP-OCRv5_mobile_rec
           if ($LASTEXITCODE -ne 0) {
