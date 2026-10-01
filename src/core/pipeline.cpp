@@ -191,10 +191,11 @@ PipelineResult Pipeline::run(const PipelineJob& job, std::stop_token cancel) {
 
     // 送出去翻譯的是帶 ルビ 標記的版本：`{本文|讀音}`（design.md 4.5）。
     // LLM 會把本文和讀音分別翻譯並保留標記，一般引擎看不懂就當成一般文字。
+    // 只標記作者刻意的特殊讀音：一般的振り仮名標了沒有意義，還會害 LLM 整句不翻（M2-14）。
     std::vector<std::string> sources;
     sources.reserve(blocks.size());
     for (const TextBlock& block : blocks) {
-        sources.push_back(markRuby(block.text, block.ruby));
+        sources.push_back(markSpecialRuby(block.text, block.ruby));
     }
 
     TranslateRequest request;

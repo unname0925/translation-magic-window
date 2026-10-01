@@ -137,6 +137,27 @@ TEST(MarkRubyTest, AnnotationAtTheEnd) {
     EXPECT_EQ(markRuby("これは未来", ruby), "これは{未来|みらい}");
 }
 
+TEST(SpecialReadingTest, KatakanaReadingsAreTheAuthorsOwn) {
+    // 正確答案裡的 3 個特殊讀音全是片假名（M2-14 量過，173 個ルビ全部分對）
+    EXPECT_TRUE(isSpecialReading("マジ"));
+    EXPECT_TRUE(isSpecialReading("フローラ"));
+    EXPECT_TRUE(isSpecialReading("フーダン"));  // 長音符號也是片假名
+}
+
+TEST(SpecialReadingTest, HiraganaReadingsAreOrdinaryFurigana) {
+    EXPECT_FALSE(isSpecialReading("とうきょう"));
+    EXPECT_FALSE(isSpecialReading("たたか"));
+    EXPECT_FALSE(isSpecialReading(""));
+}
+
+TEST(MarkSpecialRubyTest, OnlyTheAuthorsReadingsGoToTheTranslator) {
+    // 一般讀音的標記會讓本機 hy-mt2 整句不翻（M2-14 實測），所以只標特殊讀音
+    const std::vector<RubyAnnotation> ruby{{0, 2, "マジ"}, {3, 1, "たたか"}};
+    EXPECT_EQ(markSpecialRuby("本気で戦うぞ", ruby), "{本気|マジ}で戦うぞ");
+    EXPECT_EQ(markSpecialRuby("東京へ", std::vector<RubyAnnotation>{{0, 2, "とうきょう"}}),
+              "東京へ");
+}
+
 TEST(MarkRubyTest, ALengthPastTheEndStopsAtTheEnd) {
     const std::vector<RubyAnnotation> ruby{{3, 9, "みらい"}};
     EXPECT_EQ(markRuby("これは未来", ruby), "これは{未来|みらい}");

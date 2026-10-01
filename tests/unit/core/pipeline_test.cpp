@@ -280,6 +280,17 @@ TEST_F(PipelineTest, SendsRubyMarkersToTheTranslator) {
     EXPECT_EQ(result.groups[0].block.ruby[0].reading, "マジ");
 }
 
+TEST_F(PipelineTest, OrdinaryFuriganaIsNotSentAsAMarker) {
+    // M2-14：一般讀音的標記會害本機 hy-mt2 整句不翻，送出去的只有本文
+    ocr_.lines = {OcrLine{RectI{200, 50, 240, 170}, "東京に行く", 0.9f, Orientation::Vertical, {}},
+                  OcrLine{RectI{238, 50, 256, 98}, "とうきょう", 0.9f, Orientation::Vertical, {}}};
+    const PipelineResult result = run(job());
+
+    ASSERT_EQ(engine_->batches.size(), 1u);
+    EXPECT_EQ(engine_->batches[0][0], "東京に行く");
+    ASSERT_EQ(result.groups[0].block.ruby.size(), 1u) << "ルビ 本身還是留著，結果視窗要顯示";
+}
+
 TEST_F(PipelineTest, MeasuresEachStep) {
     ocr_.lines = {line(20, 20, 300, 44, "こんにちは")};
     const PipelineResult result = run(job());

@@ -154,6 +154,32 @@ RubyResult attachRuby(std::span<const OcrLine> lines, const RubyOptions& options
     return result;
 }
 
+bool isSpecialReading(std::string_view reading) {
+    if (reading.empty()) {
+        return false;
+    }
+    for (std::size_t i = 0; i < reading.size();) {
+        const char32_t c = nextCodePoint(reading, i);
+        // 片假名（含長音符號 ー 和中點 ・），以及半形片假名
+        const bool katakana = (c >= 0x30A0 && c <= 0x30FF) || (c >= 0x31F0 && c <= 0x31FF) ||
+                              (c >= 0xFF66 && c <= 0xFF9F);
+        if (!katakana) {
+            return false;
+        }
+    }
+    return true;
+}
+
+std::string markSpecialRuby(std::string_view text, std::span<const RubyAnnotation> ruby) {
+    std::vector<RubyAnnotation> special;
+    for (const RubyAnnotation& one : ruby) {
+        if (isSpecialReading(one.reading)) {
+            special.push_back(one);
+        }
+    }
+    return markRuby(text, special);
+}
+
 std::string markRuby(std::string_view text, std::span<const RubyAnnotation> ruby) {
     if (ruby.empty()) {
         return std::string(text);
