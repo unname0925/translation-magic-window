@@ -112,3 +112,23 @@ jobs:
 
       - name: 單元測試
         run: ctest --preset ${{ matrix.test }}
+
+      # OCR 回歸評測（docs/execution-plan.md 5.5、M2-12）：只在 Release 跑一次就夠了。
+      # 模型約 173 MB，版本和 SHA-256 固定在 tools/fetch_models/models.json，下載一次後快取。
+      - name: 快取 OCR 模型
+        if: matrix.name == 'Release'
+        uses: actions/cache@v4
+        with:
+          path: models
+          key: ocr-models-${{ hashFiles('tools/fetch_models/models.json') }}
+
+      - name: OCR 回歸評測（合成測試集）
+        if: matrix.name == 'Release'
+        run: |
+          python tools/fetch_models/fetch_models.py --only PP-OCRv6_medium_det PP-OCRv6_medium_rec PP-OCRv6_small_det PP-OCRv6_small_rec korean_PP-OCRv5_mobile_rec
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # 執行器沒有顯示卡，用 CPU；產品在 GPU 上用 medium、CPU 上用 small，兩套都檢查
+          foreach ($variant in 'medium', 'small') {
+            python tools/eval/check_synthetic.py --ocr-cli build/ci/bin/Release/tmw_ocr_cli.exe --variant $variant --device cpu
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }

@@ -1,0 +1,140 @@
+{
+  "en_document.png": {
+    "language": "en",
+    "lines": [
+      "The quick brown fox jumps over the lazy dog.",
+      "Save your progress before leaving the area.",
+      "Press START to continue, or SELECT for options.",
+      "Version 1.2.3 - 2026/09/19 (build 4567)"
+    ]
+  },
+  "en_game_dialog.png": {
+    "language": "en",
+    "lines": [
+      "Knight: You shouldn't be here.",
+      "The castle gates close at midnight!",
+      "> Yes, I understand."
+    ]
+  },
+  "en_small.png": {
+    "language": "en",
+    "lines": [
+      "Small print: terms and conditions apply.",
+      "HP 120/150  MP 45/60  EXP 12,345",
+      "Tip: hold Shift to run faster."
+    ]
+  },
+  "ja_document.png": {
+    "language": "ja",
+    "lines": [
+      "吾輩は猫である。名前はまだ無い。",
+      "どこで生れたかとんと見当がつかぬ。",
+      "東京都渋谷区、2026年9月19日（土）",
+      "セーブデータを読み込みますか？"
+    ]
+  },
+  "ja_game_dialog.png": {
+    "language": "ja",
+    "lines": [
+      "勇者「ここから先は危険だ。」",
+      "準備はいいか？　はい／いいえ",
+      "所持金：１２，３４５ゴールド"
+    ]
+  },
+  "ja_vertical.png": {
+    "language": "ja",
+    "lines": [
+      "縦書きの文章",
+      "漫画の吹き出し",
+      "日本語テスト"
+    ]
+  },
+  "ja_manga_bubble.png": {
+    "language": "ja",
+    "lines": [
+      "本気で言ってる",
+      "のか！？"
+    ]
+  },
+  "ko_document.png": {
+    "language": "ko",
+    "lines": [
+      "안녕하세요. 만나서 반갑습니다.",
+      "저장하시겠습니까? 예 / 아니요",
+      "서울특별시 2026년 9월 19일"
+    ]
+  },
+  "ko_webtoon.png": {
+    "language": "ko",
+    "lines": [
+      "진짜 그렇게",
+      "생각하는 거야?"
+    ]
+  },
+  "rotated_text.png": {
+    "language": "ja",
+    "lines": [
+      "Rotated label: fragile items",
+      "回転したテキストの行"
+    ]
+  },
+  "lens_capture.png": {
+    "language": "ja",
+    "lines": [
+      "Settings - Display",
+      "Resolution: 1920 x 1080",
+      "画面の明るさを調整します",
+      "Apply changes",
+      "キャンセル",
+      "Last saved: 2026-09-19 00:42"
+    ]
+  },
+  "ja_small_dense.png": {
+    "language": "ja",
+    "lines": [
+      "この先は立入禁止です。許可証を持っている者のみ通行できます。",
+      "Items marked with * cannot be sold or traded.",
+      "攻撃力＋１２　防御力－３　素早さ＋５",
+      "最終更新日：2026年9月30日"
+    ]
+  },
+  "scaled_blur.png": {
+    "language": "ja",
+    "lines": [
+      "装備を変更しますか？",
+      "Your inventory is full.",
+      "宿屋に泊まる（５０ゴールド）"
+    ]
+  },
+  "jpeg_artifacts.png": {
+    "language": "ja",
+    "lines": [
+      "Don't let them escape!",
+      "逃がすな！絶対に追いかけろ！",
+      "The bridge is collapsing!"
+    ]
+  },
+  "low_contrast.png": {
+    "language": "ja",
+    "lines": [
+      "オプション設定",
+      "Sound volume: 80%",
+      "字幕を表示する"
+    ]
+  },
+  "noisy_background.png": {
+    "language": "ja",
+    "lines": [
+      "ここで待っていてくれ。",
+      "I'll be back before sunrise."
+    ]
+  },
+  "ko_small_blur.png": {
+    "language": "ko",
+    "lines": [
+      "다음 화에 계속됩니다",
+      "무단 전재 및 재배포 금지",
+      "작가의 말: 감사합니다!"
+    ]
+  }
+}

@@ -57,6 +57,13 @@
 
 每個分類資料夾裡的 `ground_truth.txt` 是這些截圖的正確答案（M0-10），一樣只放在本機。格式和校對方式見 [tools/eval/README.md](../tools/eval/README.md) 的「正確答案」。
 
-## 合成測試資料（之後會加入）
+## synthetic/：合成測試集（公開，放在倉庫中）
 
-CI 使用開源字型產生的測試圖片，沒有版權問題，會放在倉庫中（M2-12）。
+用開源字型（Noto Sans JP、Noto Sans KR，SIL Open Font License）畫的 17 張圖，沒有版權問題。
+CI 每次都在 CPU 上跑 OCR 回歸評測（M2-12，見 [execution-plan.md](../docs/execution-plan.md) 5.5）：
+
+- `*.png`、`expected.json`：`tools/eval/make_public_synthetic.py` 產生，內容固定。
+  乾淨的文件、遊戲對話框、直排、漫畫對話框、韓文條漫，以及縮小模糊、JPEG 雜訊、低對比、
+  雜訊背景、小字等「劣化」的情境。
+- `baseline.json`：每張圖的字元錯誤率基準線（`cpu/medium`、`cpu/small` 兩套模型）。
+  `tools/eval/check_synthetic.py` 比它差超過 1 個百分點就失敗；確實變好時用 `--update` 更新。

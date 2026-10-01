@@ -1,0 +1,40 @@
+{
+  "cpu/medium": {
+    "en_document.png": 0.0,
+    "en_game_dialog.png": 0.0,
+    "en_small.png": 0.0,
+    "ja_document.png": 0.0,
+    "ja_game_dialog.png": 0.0244,
+    "ja_manga_bubble.png": 0.0,
+    "ja_small_dense.png": 0.0,
+    "ja_vertical.png": 0.0,
+    "jpeg_artifacts.png": 0.0,
+    "ko_document.png": 0.0,
+    "ko_small_blur.png": 0.0,
+    "ko_webtoon.png": 0.0,
+    "lens_capture.png": 0.0,
+    "low_contrast.png": 0.0,
+    "noisy_background.png": 0.0,
+    "rotated_text.png": 0.0,
+    "scaled_blur.png": 0.0
+  },
+  "cpu/small": {
+    "en_document.png": 0.0,
+    "en_game_dialog.png": 0.0,
+    "en_small.png": 0.0,
+    "ja_document.png": 0.0,
+    "ja_game_dialog.png": 0.0244,
+    "ja_manga_bubble.png": 0.0,
+    "ja_small_dense.png": 0.0,
+    "ja_vertical.png": 0.0,
+    "jpeg_artifacts.png": 0.0,
+    "ko_document.png": 0.0,
+    "ko_small_blur.png": 0.0,
+    "ko_webtoon.png": 0.0,
+    "lens_capture.png": 0.0,
+    "low_contrast.png": 0.0,
+    "noisy_background.png": 0.0,
+    "rotated_text.png": 0.0,
+    "scaled_blur.png": 0.0
+  }
+}
