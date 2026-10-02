@@ -180,5 +180,121 @@ TEST_F(AutoTriggerTest, ReportsStateChanges) {
     EXPECT_EQ(states_, expected);
 }
 
+// M2-06：遊戲模式只看文字區域（design.md 4.3）。
+// 透鏡範圍 400×300，縮圖 8×8：每個縮圖像素是 50×37.5 的一塊。
+// 文字在左上角（0,0)～(150,75)，涵蓋縮圖的左上 3×2 格（加上留邊）。
+class GameModeTest : public ::testing::Test {
+protected:
+    GameModeTest() {
+        AutoTrigger::Callbacks callbacks;
+        callbacks.onProcess = [this](const ProcessRequest& request) {
+            requests_.push_back(request);
+            trigger_->onProcessingFinished(request.generation);
+        };
+        AutoTriggerConfig config{400ms, {}};
+        config.focusOnText = true;
+        trigger_.emplace(clock_, frames_, config, std::move(callbacks));
+        frames_.setContent(scene(false, false));
+        trigger_->onMoveSizeEnd(kRegion);
+    }
+
+    // text：台詞換了沒有；blink：右下角的游標亮或暗
+    static GrayImage scene(bool text, bool blink) {
+        GrayImage image(8, 8, 60);
+        image.pixels[0] = text ? 200 : 255;          // 文字所在的縮圖像素
+        image.pixels[7 * 8 + 7] = blink ? 250 : 60;  // 右下角的游標
+        return image;
+    }
+
+    void runFor(std::chrono::milliseconds duration, bool animate = false) {
+        bool blink = false;
+        bool text = textChanged_;
+        for (auto elapsed = 0ms; elapsed < duration; elapsed += 100ms) {
+            if (animate && elapsed.count() % 300 == 0) {
+                blink = !blink;  // 每 300ms 閃一次，比 settle 的 400ms 短
+                frames_.setContent(scene(text, blink));
+            }
+            clock_.advance(100ms);
+            trigger_->tick();
+        }
+    }
+
+    static constexpr RectI kRegion{100, 100, 500, 400};
+    test::FakeClock clock_;
+    test::FakeFrameSource frames_;
+    std::vector<ProcessRequest> requests_;
+    bool textChanged_ = false;
+    std::optional<AutoTrigger> trigger_;
+};
+
+TEST_F(GameModeTest, ABlinkingCursorKeepsANormalLensWaitingForever) {
+    // 問題本身：沒有文字區域時（第一次處理之前，或不是遊戲模式），閃爍的游標讓畫面永遠「不穩定」
+    runFor(3s, /*animate=*/true);
+    EXPECT_TRUE(requests_.empty());
+}
+
+TEST_F(GameModeTest, ABlinkingCursorOutsideTheTextIsIgnored) {
+    trigger_->setFocusRegions(std::vector<RectI>{{0, 0, 150, 75}});
+    runFor(3s, /*animate=*/true);
+    EXPECT_EQ(requests_.size(), 1u) << "游標不在文字區域裡，畫面算是穩定的";
+}
+
+TEST_F(GameModeTest, NewDialogueIsProcessedEvenWhileTheCursorBlinks) {
+    trigger_->setFocusRegions(std::vector<RectI>{{0, 0, 150, 75}});
+    runFor(1s, /*animate=*/true);
+    ASSERT_EQ(requests_.size(), 1u);
+    textChanged_ = true;  // 換下一句台詞
+    runFor(2s, /*animate=*/true);
+    EXPECT_EQ(requests_.size(), 2u);
+}
+
+TEST_F(GameModeTest, AWholeNewSceneIsProcessed) {
+    // 文字區域外的大變化（換場景、跳出大對話框）：超過一半的縮圖像素變了
+    trigger_->setFocusRegions(std::vector<RectI>{{0, 0, 150, 75}});
+    runFor(1s);
+    ASSERT_EQ(requests_.size(), 1u);
+    GrayImage scene(8, 8, 200);
+    scene.pixels[0] = 255;  // 文字區域本身沒變
+    frames_.setContent(scene);
+    runFor(1s);
+    EXPECT_EQ(requests_.size(), 2u);
+}
+
+TEST_F(GameModeTest, SmallChangesOutsideTheTextDoNotRerunOcr) {
+    // 「和上次處理過的一樣就不重跑」也只看文字區域，不然背景一動就重跑一次 OCR
+    trigger_->setFocusRegions(std::vector<RectI>{{0, 0, 150, 75}});
+    runFor(1s);
+    ASSERT_EQ(requests_.size(), 1u);
+    frames_.setContent(scene(false, true));  // 只有游標變了，然後停住
+    runFor(1s);
+    EXPECT_EQ(requests_.size(), 1u);
+}
+
+TEST_F(GameModeTest, MovingTheLensForgetsTheTextRegions) {
+    trigger_->setFocusRegions(std::vector<RectI>{{0, 0, 150, 75}});
+    trigger_->onMoveSizeStart();
+    trigger_->onMoveSizeEnd(kRegion);
+    runFor(3s, /*animate=*/true);
+    EXPECT_TRUE(requests_.empty()) << "新位置的文字在哪還不知道，回到看整個畫面";
+}
+
+TEST_F(GameModeTest, FocusRegionsAreIgnoredOutsideGameMode) {
+    AutoTrigger::Callbacks callbacks;
+    callbacks.onProcess = [this](const ProcessRequest& request) { requests_.push_back(request); };
+    AutoTrigger normal(clock_, frames_, AutoTriggerConfig{400ms, {}}, std::move(callbacks));
+    normal.onMoveSizeEnd(kRegion);
+    normal.setFocusRegions(std::vector<RectI>{{0, 0, 150, 75}});
+    bool blink = false;
+    for (auto elapsed = 0ms; elapsed < 3s; elapsed += 100ms) {
+        if (elapsed.count() % 300 == 0) {
+            blink = !blink;
+            frames_.setContent(scene(false, blink));
+        }
+        clock_.advance(100ms);
+        normal.tick();
+    }
+    EXPECT_TRUE(requests_.empty());
+}
+
 }  // namespace
 }  // namespace tmw::core

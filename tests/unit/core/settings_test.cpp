@@ -137,6 +137,13 @@ TEST(SettingsTest, MangaModeSurvivesARoundTrip) {
     EXPECT_TRUE(parseSettings(serializeSettings(settings)).settings.mangaMode);
 }
 
+TEST(SettingsTest, GameModeIsOffUnlessTurnedOn) {
+    EXPECT_FALSE(parseSettings(R"({"schemaVersion": 1})").settings.gameMode);
+    Settings settings;
+    settings.gameMode = true;
+    EXPECT_TRUE(parseSettings(serializeSettings(settings)).settings.gameMode);
+}
+
 TEST(SettingsTest, OcrLanguageIsAutomaticUnlessChosen) {
     EXPECT_EQ(parseSettings(R"({"schemaVersion": 1})").settings.ocrLanguage, "auto");
     EXPECT_EQ(parseSettings(R"({"schemaVersion": 1, "ocrLanguage": "ko"})").settings.ocrLanguage,

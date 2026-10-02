@@ -3,6 +3,8 @@
 #include <cstdint>
 #include <functional>
 #include <optional>
+#include <span>
+#include <vector>
 
 #include "core/change_detection.h"
 #include "core/clock.h"
@@ -16,6 +18,12 @@ namespace tmw::core {
 struct AutoTriggerConfig {
     Duration settleTime = std::chrono::milliseconds{400};
     ChangeThresholds thresholds;
+    // 遊戲模式（M2-06，design.md 4.3「只看文字區域」）：給了文字區域之後改成兩層偵測——
+    // 文字區域內照原本的門檻（換台詞、打字機效果），整個範圍要有 largeChangeFraction 以上的
+    // 縮圖像素變了才算（換場景、跳出大對話框）。閃爍的游標、角色待機動畫、局部的背景動態
+    // 都不會再讓畫面永遠「不穩定」。整個畫面都在動的背景（捲動的風景）兩層都擋不住。
+    bool focusOnText = false;
+    double largeChangeFraction = 0.5;
 };
 
 // 自動觸發：定期取樣透鏡範圍的縮圖，偵測變化，畫面穩定後發出處理請求（見 docs/design.md 4.3）。
@@ -52,7 +60,19 @@ public:
     // 處理完成。回傳 false 代表結果已經過時，應該丟棄。
     bool onProcessingFinished(std::uint64_t generation);
 
+    // 遊戲模式：上一次 OCR 讀到文字的位置（相對於擷取範圍左上角，也就是畫面座標）。
+    // 空的代表沒讀到文字，回到看整個範圍。不是遊戲模式時忽略。透鏡移動後自動清掉。
+    void setFocusRegions(std::span<const RectI> regions);
+
+    // 執行中切換遊戲模式（設定視窗、系統匣）。關掉時一併清掉文字區域。
+    void setFocusOnText(bool enabled);
+
 private:
+    // 兩張縮圖之間算不算「有變化」：一般是整張比；遊戲模式且有文字區域時用兩層規則
+    bool changed(const GrayImage& before, const GrayImage& after);
+    // 文字區域對應到這個大小的縮圖上，哪些像素要看（每個區域往外多留半個字高）
+    const std::vector<std::uint8_t>& focusMask(int width, int height);
+
     void sample();
     void dispatch(const ProcessRequest& request);
     void notifyIfStateChanged();
@@ -70,6 +90,11 @@ private:
     // 這樣緩慢的漸變累積到一定程度也會被偵測到。
     std::optional<GrayImage> reference_;
     std::optional<GrayImage> lastProcessed_;
+
+    std::vector<RectI> focus_;
+    std::vector<std::uint8_t> mask_;  // focusMask 的快取
+    int maskWidth_ = 0;
+    int maskHeight_ = 0;
 };
 
 }  // namespace tmw::core

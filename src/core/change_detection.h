@@ -1,5 +1,8 @@
 #pragma once
 
+#include <cstdint>
+#include <span>
+
 #include "core/image.h"
 
 namespace tmw::core {
@@ -23,6 +26,11 @@ struct ChangeMetrics {
 
 // 兩張大小相同的縮圖之間的差異。大小不同時丟出 std::invalid_argument。
 ChangeMetrics measureChange(const GrayImage& before, const GrayImage& after, int pixelDelta);
+
+// 只看 mask 不是 0 的像素（mask 和縮圖一樣大，一個像素一個值）。遊戲模式只看文字區域用它。
+// meanAbsDelta 是遮罩內像素的平均；遮罩是空的時候兩項都是 0。
+ChangeMetrics measureChange(const GrayImage& before, const GrayImage& after, int pixelDelta,
+                            std::span<const std::uint8_t> mask);
 
 // 畫面是否有變化。大小不同（例如透鏡被縮放）一律算有變化。
 bool contentChanged(const GrayImage& before, const GrayImage& after,

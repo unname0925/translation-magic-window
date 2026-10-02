@@ -101,6 +101,7 @@ SettingsLoad parseSettings(std::string_view json_text,
     Settings settings;
     read(document, "verboseDiagnostics", settings.verboseDiagnostics);
     read(document, "mangaMode", settings.mangaMode);
+    read(document, "gameMode", settings.gameMode);
     read(document, "ocrLanguage", settings.ocrLanguage);
     if (settings.ocrLanguage != "auto" &&
         languageFromCode(settings.ocrLanguage) == Language::Unknown) {
@@ -132,6 +133,7 @@ std::string serializeSettings(const Settings& settings, int schemaVersion) {
         {"schemaVersion", schemaVersion},
         {"verboseDiagnostics", settings.verboseDiagnostics},
         {"mangaMode", settings.mangaMode},
+        {"gameMode", settings.gameMode},
         {"ocrLanguage", settings.ocrLanguage},
         {"engines", std::move(engines)},
         {"resultWindow",

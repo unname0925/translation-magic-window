@@ -25,6 +25,31 @@ ChangeMetrics measureChange(const GrayImage& before, const GrayImage& after, int
     return metrics;
 }
 
+ChangeMetrics measureChange(const GrayImage& before, const GrayImage& after, int pixelDelta,
+                            std::span<const std::uint8_t> mask) {
+    if (before.width != after.width || before.height != after.height ||
+        mask.size() != before.pixels.size()) {
+        throw std::invalid_argument("measureChange: images or mask have different sizes");
+    }
+    ChangeMetrics metrics;
+    long long total = 0;
+    long long counted = 0;
+    for (std::size_t i = 0; i < before.pixels.size(); ++i) {
+        if (mask[i] == 0) {
+            continue;
+        }
+        const int delta = std::abs(static_cast<int>(before.pixels[i]) - after.pixels[i]);
+        total += delta;
+        ++counted;
+        if (delta > pixelDelta) {
+            ++metrics.changedPixels;
+        }
+    }
+    metrics.meanAbsDelta =
+        counted == 0 ? 0.0 : static_cast<double>(total) / static_cast<double>(counted);
+    return metrics;
+}
+
 bool contentChanged(const GrayImage& before, const GrayImage& after,
                     const ChangeThresholds& thresholds) {
     if (before.width != after.width || before.height != after.height) {

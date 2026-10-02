@@ -12,6 +12,7 @@
 #include <string>
 #include <system_error>
 #include <utility>
+#include <vector>
 
 #include "app/app_identity.h"
 #include "app/translation_setup.h"
@@ -170,8 +171,10 @@ AppController::AppController(HINSTANCE instance, std::filesystem::path dataDirec
         triggerCallbacks.onProcess = [this](const core::ProcessRequest& request) {
             process(request);
         };
-        trigger_ = std::make_unique<core::AutoTrigger>(
-            clock_, *frameSource_, core::AutoTriggerConfig{}, std::move(triggerCallbacks));
+        core::AutoTriggerConfig triggerConfig;
+        triggerConfig.focusOnText = settings_.gameMode;
+        trigger_ = std::make_unique<core::AutoTrigger>(clock_, *frameSource_, triggerConfig,
+                                                       std::move(triggerCallbacks));
 
         platform::LensWindow::Callbacks lensCallbacks;
         lensCallbacks.onMoveSizeStart = [this] { trigger_->onMoveSizeStart(); };
@@ -314,6 +317,10 @@ LRESULT AppController::handleMessage(UINT message, WPARAM wParam, LPARAM lParam)
                     setMangaMode(!settings_.mangaMode);
                     saveSettings();
                     break;
+                case kCommandToggleGameMode:
+                    setGameMode(!settings_.gameMode);
+                    saveSettings();
+                    break;
                 case kCommandEditGlossary:
                     openGlossary();
                     break;
@@ -412,6 +419,8 @@ void AppController::showTrayMenu(POINT anchor) {
                 L"暫停");
     AppendMenuW(menu, MF_STRING | (settings_.mangaMode ? MF_CHECKED : MF_UNCHECKED),
                 kCommandToggleMangaMode, L"漫畫模式（依對話框分段）");
+    AppendMenuW(menu, MF_STRING | (settings_.gameMode ? MF_CHECKED : MF_UNCHECKED),
+                kCommandToggleGameMode, L"遊戲模式（只看文字區域）");
     if (const HMENU languages = CreatePopupMenu(); languages != nullptr) {
         for (const LanguageMenuItem& item : kLanguageMenu) {
             AppendMenuW(languages, MF_STRING, item.command, item.label);
@@ -550,6 +559,12 @@ void AppController::openGlossary() {
     ShellExecuteW(nullptr, L"open", path.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
 }
 
+void AppController::setGameMode(bool enabled) {
+    settings_.gameMode = enabled;
+    trigger_->setFocusOnText(enabled);
+    platform::logInfo(enabled ? "遊戲模式：開（辨識之後只看文字區域有沒有變）" : "遊戲模式：關");
+}
+
 void AppController::setOcrLanguage(const std::string& code) {
     const core::Language language = core::languageFromCode(code);
     settings_.ocrLanguage = language == core::Language::Unknown ? "auto" : code;
@@ -645,6 +660,9 @@ void AppController::applySettings(const core::Settings& settings) {
     platform::setVerboseDiagnostics(settings_.verboseDiagnostics);
     if (settings.mangaMode != settings_.mangaMode) {
         setMangaMode(settings.mangaMode);  // 載入失敗時它會把 settings_.mangaMode 留在 false
+    }
+    if (settings.gameMode != settings_.gameMode) {
+        setGameMode(settings.gameMode);
     }
     if (settings.ocrLanguage != settings_.ocrLanguage) {
         setOcrLanguage(settings.ocrLanguage);
@@ -747,6 +765,15 @@ void AppController::onPipelineResult(const core::PipelineResult& result) {
         return;
     }
     lastResult_ = result;  // 除錯傾印要的是「最後真的處理過什麼」
+    if (settings_.gameMode) {
+        // 下一次只看這些文字在的地方有沒有變（沒讀到文字時回到看整個範圍）
+        std::vector<core::RectI> textRegions;
+        textRegions.reserve(result.lines.size());
+        for (const core::OcrLine& line : result.lines) {
+            textRegions.push_back(line.rect);
+        }
+        trigger_->setFocusRegions(textRegions);
+    }
     perf_.add(result.timings);
     refreshDebugOverlay();
     if (!result.error.empty()) {

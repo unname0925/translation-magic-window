@@ -4,8 +4,10 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <cstdint>
 #include <random>
 #include <stdexcept>
+#include <vector>
 
 namespace tmw::core {
 namespace {
@@ -90,6 +92,20 @@ TEST(ChangeDetectionTest, MeasureChangeReportsMetrics) {
 
 TEST(ChangeDetectionTest, MeasureChangeRejectsDifferentSizes) {
     EXPECT_THROW(measureChange(GrayImage(2, 2), GrayImage(3, 2), 12), std::invalid_argument);
+}
+
+TEST(ChangeDetectionTest, AMaskLimitsWhichPixelsCount) {
+    // 遊戲模式只看文字區域（M2-06）
+    GrayImage before(2, 2, 100);
+    GrayImage after = before;
+    after.pixels[0] = 200;  // 遮罩內
+    after.pixels[3] = 200;  // 遮罩外
+    const std::vector<std::uint8_t> mask{1, 1, 0, 0};
+    const ChangeMetrics metrics = measureChange(before, after, 12, mask);
+    EXPECT_EQ(metrics.changedPixels, 1);
+    EXPECT_DOUBLE_EQ(metrics.meanAbsDelta, 50.0) << "平均只算遮罩內的兩個像素";
+    EXPECT_THROW(measureChange(before, after, 12, std::vector<std::uint8_t>{1}),
+                 std::invalid_argument);
 }
 
 TEST(ToGrayTest, UsesLuminanceWeights) {

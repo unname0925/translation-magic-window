@@ -62,6 +62,10 @@ SettingsWindow::SettingsWindow(core::Settings settings, Encrypt encrypt, QWidget
             "漫畫模式（同一個對話框裡的字當成同一句；每次多約 40 ms，網頁和遊戲不用開）"),
         this);
     mangaMode_->setObjectName(QStringLiteral("mangaMode"));
+    gameMode_ = new QCheckBox(
+        QStringLiteral("遊戲模式（只看文字區域有沒有變；閃爍的游標、角色動畫不會讓翻譯一直等）"),
+        this);
+    gameMode_->setObjectName(QStringLiteral("gameMode"));
 
     // 自動判斷時，日文、英文的畫面只跑主模型；韓文要多跑一次判斷。
     // 固定只看某一種語言的人指定它，就連判斷都省了（design.md 4.4「語言判斷」）。
@@ -83,6 +87,7 @@ SettingsWindow::SettingsWindow(core::Settings settings, Encrypt encrypt, QWidget
     layout->addWidget(engines);
     layout->addLayout(languageForm);
     layout->addWidget(mangaMode_);
+    layout->addWidget(gameMode_);
     layout->addWidget(verbose_);
     layout->addWidget(buttons);
 
@@ -106,6 +111,7 @@ void SettingsWindow::applyToWidgets() {
     fallback_->setChecked(choice.fallbackToGoogle);
     verbose_->setChecked(settings_.verboseDiagnostics);
     mangaMode_->setChecked(settings_.mangaMode);
+    gameMode_->setChecked(settings_.gameMode);
     const int language = ocrLanguage_->findData(QString::fromStdString(settings_.ocrLanguage));
     ocrLanguage_->setCurrentIndex(language < 0 ? 0 : language);
     key_->clear();
@@ -136,6 +142,7 @@ void SettingsWindow::collectFromWidgets() {
     settings_.engines = enginesFor(choice, settings_, encrypted);
     settings_.verboseDiagnostics = verbose_->isChecked();
     settings_.mangaMode = mangaMode_->isChecked();
+    settings_.gameMode = gameMode_->isChecked();
     settings_.ocrLanguage = ocrLanguage_->currentData().toString().toStdString();
     key_->clear();
 }

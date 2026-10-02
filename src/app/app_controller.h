@@ -72,6 +72,8 @@ private:
     void setMangaMode(bool enabled);
     // 辨識語言："auto"、"ja"、"en"、"ko"。下一次處理就生效（design.md 4.4「語言判斷」）
     void setOcrLanguage(const std::string& code);
+    // 遊戲模式：第一次辨識之後只看文字區域（M2-06）
+    void setGameMode(bool enabled);
     void refreshDebugOverlay();
     // glossary.txt 改過（或第一次）就重新讀取，回傳目前的詞表；沒有檔案時是 nullptr
     std::shared_ptr<const core::Glossary> currentGlossary();
