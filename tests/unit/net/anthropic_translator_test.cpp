@@ -186,6 +186,29 @@ TEST_F(AnthropicTranslatorTest, AnErrorInTheMiddleOfTheStreamIsANetworkProblem) 
     EXPECT_EQ(failureOf(translator, {"こんにちは"}), TranslateError::Network);
 }
 
+// 2026-10-02 向真的 API（claude-opus-5）要過一次、錄下來的回應。
+// 請求是 `tmw_translate_cli --print-request` 印出來的，和產品送出的一模一樣。
+TEST_F(AnthropicTranslatorTest, ReplaysARecordedStream) {
+    http_->replyFromFile("net/anthropic_ja_batch_stream.txt");
+    AnthropicTranslator translator = makeTranslator();
+    std::size_t reported = 0;
+    translator.setOnSegment([&](std::size_t, const std::string&) { ++reported; });
+    const Strings out =
+        translate(translator, {"こんにちは。", "{本気|マジ}で戦うぞ", "セーブしますか？"});
+    EXPECT_EQ(out, (Strings{"你好。", "我要{認真|來真的}打了", "要存檔嗎？"}));
+    EXPECT_EQ(reported, 3u);
+}
+
+TEST_F(AnthropicTranslatorTest, ReplaysARecordedReply) {
+    http_->replyFromFile("net/anthropic_ja_batch.json");
+    AnthropicTranslator::Options options;
+    options.stream = false;
+    AnthropicTranslator translator = makeTranslator(std::move(options));
+    const Strings out =
+        translate(translator, {"こんにちは。", "{本気|マジ}で戦うぞ", "セーブしますか？"});
+    EXPECT_EQ(out, (Strings{"你好。", "我要{認真|來真的}打了", "要存檔嗎？"}));
+}
+
 TEST(AnthropicTranslationsTest, AcceptsTheObjectOrAPlainArray) {
     EXPECT_EQ(anthropicTranslations(R"({"translations": ["a", "b"]})"), (Strings{"a", "b"}));
     EXPECT_EQ(anthropicTranslations(R"(["a"])"), (Strings{"a"}));

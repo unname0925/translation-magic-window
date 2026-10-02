@@ -20,6 +20,7 @@
 #include "core/clock.h"
 #include "core/glossary.h"
 #include "core/translator.h"
+#include "net/anthropic_translator.h"
 #include "net/cpr_http_client.h"
 #include "net/google_translator.h"
 #include "net/openai_translator.h"
@@ -33,9 +34,10 @@ void print(const std::string& utf8) {
 }
 
 int usage() {
-    print("用法：tmw_translate_cli [--engine google|openai] [--lang ja|en|ko|auto]");
+    print("用法：tmw_translate_cli [--engine google|openai|anthropic] [--lang ja|en|ko|auto]");
     print("      [--base-url URL] [--model 名稱] [--key-env 環境變數] [--no-stream]");
-    print("      [--glossary 專有名詞表.txt] 文字...");
+    print("      [--glossary 專有名詞表.txt] [--print-request] 文字...");
+    print("--print-request：只印出 anthropic 引擎要送出的請求內容，不連線（錄測試資料用）。");
     print("金鑰只能用環境變數傳入（--key-env），不要直接打在命令列上。");
     return 2;
 }
@@ -52,6 +54,10 @@ int wmain(int argc, wchar_t** argv) {
     llm.baseUrl = "http://127.0.0.1:11434/v1";
     llm.model = "hy-mt2";
     std::string keyVariable;
+    // --base-url、--model 有給才覆寫：anthropic 的預設值和 openai 的不同
+    std::string baseUrl;
+    std::string model;
+    bool printRequest = false;
     tmw::core::Glossary glossary;
     std::vector<std::string> segments;
     for (int i = 1; i < argc; ++i) {
@@ -61,9 +67,11 @@ int wmain(int argc, wchar_t** argv) {
         } else if (argument == "--lang" && i + 1 < argc) {
             language = tmw::platform::wideToUtf8(argv[++i]);
         } else if (argument == "--base-url" && i + 1 < argc) {
-            llm.baseUrl = tmw::platform::wideToUtf8(argv[++i]);
+            baseUrl = tmw::platform::wideToUtf8(argv[++i]);
         } else if (argument == "--model" && i + 1 < argc) {
-            llm.model = tmw::platform::wideToUtf8(argv[++i]);
+            model = tmw::platform::wideToUtf8(argv[++i]);
+        } else if (argument == "--print-request") {
+            printRequest = true;
         } else if (argument == "--key-env" && i + 1 < argc) {
             keyVariable = tmw::platform::wideToUtf8(argv[++i]);
         } else if (argument == "--glossary" && i + 1 < argc) {
@@ -87,9 +95,29 @@ int wmain(int argc, wchar_t** argv) {
     if (segments.empty()) {
         return usage();
     }
-    if (engine != "google" && engine != "openai") {
-        print("--engine 只能是 google 或 openai");
+    if (engine != "google" && engine != "openai" && engine != "anthropic") {
+        print("--engine 只能是 google、openai 或 anthropic");
         return 2;
+    }
+    if (!baseUrl.empty()) {
+        llm.baseUrl = baseUrl;
+    }
+    if (!model.empty()) {
+        llm.model = model;
+    }
+    tmw::net::AnthropicTranslator::Options claude;
+    claude.stream = llm.stream;
+    if (!baseUrl.empty()) {
+        claude.baseUrl = baseUrl;
+    }
+    if (!model.empty()) {
+        claude.model = model;
+    }
+    const tmw::core::TranslateRequest request{
+        language, "zh-TW", {}, tmw::core::glossaryFor(segments, glossary)};
+    if (printRequest) {
+        print(tmw::net::buildMessagesRequest(claude, request, segments, segments.size() > 1));
+        return 0;
     }
 
     const tmw::core::SteadyClock clock;
@@ -107,20 +135,23 @@ int wmain(int argc, wchar_t** argv) {
             return 2;
         }
     }
-    tmw::net::OpenAiTranslator openai(http, llm);
-    openai.setOnSegment([](std::size_t index, const std::string& text) {
+    const auto onSegment = [](std::size_t index, const std::string& text) {
         print("  [第 " + std::to_string(index + 1) + " 段收到] " + text);
-    });
+    };
+    tmw::net::OpenAiTranslator openai(http, llm);
+    openai.setOnSegment(onSegment);
+    claude.apiKey = llm.apiKey;
+    tmw::net::AnthropicTranslator anthropic(http, claude);
+    anthropic.setOnSegment(onSegment);
     tmw::core::ITranslator& translator =
-        engine == "google" ? static_cast<tmw::core::ITranslator&>(google) : openai;
+        engine == "google"      ? static_cast<tmw::core::ITranslator&>(google)
+        : engine == "anthropic" ? static_cast<tmw::core::ITranslator&>(anthropic)
+                                : openai;
 
     const auto start = std::chrono::steady_clock::now();
     try {
-        const std::vector<std::string> out = translator.translate(
-            segments,
-            tmw::core::TranslateRequest{
-                language, "zh-TW", {}, tmw::core::glossaryFor(segments, glossary)},
-            std::stop_token{});
+        const std::vector<std::string> out =
+            translator.translate(segments, request, std::stop_token{});
         for (std::size_t i = 0; i < out.size(); ++i) {
             print(segments[i] + "  →  " + out[i]);
         }
