@@ -10,6 +10,8 @@
 
 - [設計文件](docs/design.md)：需求、架構、各模組的設計
 - [執行計畫](docs/execution-plan.md)：待辦清單、里程碑、驗證機制
+- [使用說明](docs/user-guide.md)、[隱私說明](docs/privacy.md)
+- [第三方授權](THIRD_PARTY_NOTICES.txt)：由 `tools/notices/make_notices.py` 產生
 
 ## 開發環境
 
