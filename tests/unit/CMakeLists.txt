@@ -29,6 +29,7 @@ add_executable(tmw_unit_tests
     net/cpr_http_client_test.cpp
     net/google_translator_test.cpp
     net/anthropic_translator_test.cpp
+    net/custom_http_translator_test.cpp
     net/openai_translator_test.cpp
     net/service_translators_test.cpp
     net/rate_limiter_test.cpp

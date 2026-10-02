@@ -10,6 +10,8 @@ add_library(tmw_core STATIC
     command_line.h
     context_profile.cpp
     context_profile.h
+    custom_http_check.cpp
+    custom_http_check.h
     color.h
     debug_overlay.cpp
     debug_overlay.h

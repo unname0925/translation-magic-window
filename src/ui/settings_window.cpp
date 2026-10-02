@@ -8,6 +8,7 @@
 #include <QKeySequenceEdit>
 #include <QLabel>
 #include <QLineEdit>
+#include <QPlainTextEdit>
 #include <QPushButton>
 #include <QRadioButton>
 #include <QSpinBox>
@@ -15,6 +16,7 @@
 #include <algorithm>
 #include <utility>
 
+#include "core/custom_http_check.h"
 #include "core/hotkey.h"
 #include "ui/engine_choice.h"
 
@@ -40,6 +42,21 @@ SettingsWindow::SettingsWindow(core::Settings settings, Encrypt encrypt, QWidget
     llmKind_->addItem(QStringLiteral("DeepL"), QStringLiteral("deepl"));
     llmKind_->addItem(QStringLiteral("Microsoft Translator"), QStringLiteral("azure"));
     llmKind_->addItem(QStringLiteral("Google Cloud Translation"), QStringLiteral("google-cloud"));
+    llmKind_->addItem(QStringLiteral("自訂 HTTP 範本"), QStringLiteral("custom-http"));
+    // 自訂 HTTP 範本的欄位（net/custom_http_translator.h）
+    headers_ = new QPlainTextEdit(this);
+    headers_->setObjectName(QStringLiteral("headers"));
+    headers_->setPlaceholderText(QStringLiteral("一行一個，例如\nAuthorization: Bearer {{key}}"));
+    headers_->setMaximumHeight(70);
+    bodyTemplate_ = new QPlainTextEdit(this);
+    bodyTemplate_->setObjectName(QStringLiteral("bodyTemplate"));
+    bodyTemplate_->setPlaceholderText(QStringLiteral(
+        "{\"q\": \"{{text}}\", \"source\": \"{{source}}\", \"target\": \"{{target}}\"}\n"
+        "（空的就用 GET，原文放在網址的 {{text}}）"));
+    bodyTemplate_->setMaximumHeight(70);
+    responsePath_ = new QLineEdit(this);
+    responsePath_->setObjectName(QStringLiteral("responsePath"));
+    responsePath_->setPlaceholderText(QStringLiteral("譯文在回應裡的位置，例如 translatedText"));
     region_ = new QLineEdit(this);
     region_->setObjectName(QStringLiteral("region"));
     region_->setPlaceholderText(QStringLiteral("全域資源留空；區域型資源填區域，例如 eastasia"));
@@ -60,6 +77,15 @@ SettingsWindow::SettingsWindow(core::Settings settings, Encrypt encrypt, QWidget
     llmForm->addRow(QStringLiteral("網址"), endpoint_);
     llmForm->addRow(QStringLiteral("模型"), model_);
     llmForm->addRow(QStringLiteral("區域"), region_);
+    llmForm->addRow(QStringLiteral("標頭"), headers_);
+    llmForm->addRow(QStringLiteral("請求內容"), bodyTemplate_);
+    llmForm->addRow(QStringLiteral("譯文路徑"), responsePath_);
+    engineProblem_ = new QLabel(this);
+    engineProblem_->setObjectName(QStringLiteral("engineProblem"));
+    engineProblem_->setWordWrap(true);
+    engineProblem_->setStyleSheet(QStringLiteral("color: #c62828;"));
+    engineProblem_->hide();
+    llmForm->addRow(engineProblem_);
     llmForm_ = llmForm;
     llmForm->addRow(QStringLiteral("金鑰"), key_);
     llmForm->addRow(QString(), keyNote_);
@@ -162,6 +188,20 @@ SettingsWindow::SettingsWindow(core::Settings settings, Encrypt encrypt, QWidget
             return;
         }
         hotkeyProblem_->hide();
+        // 自訂 HTTP 範本有問題就不存（存了也不能用，引擎鏈會略過它）
+        if (useLlm_->isChecked() &&
+            llmKind_->currentData().toString() == QStringLiteral("custom-http")) {
+            const std::string problem = core::customHttpProblem(
+                endpoint_->text().trimmed().toStdString(), headers_->toPlainText().toStdString(),
+                bodyTemplate_->toPlainText().toStdString(),
+                responsePath_->text().trimmed().toStdString());
+            if (!problem.empty()) {
+                engineProblem_->setText(QString::fromStdString(problem));
+                engineProblem_->show();
+                return;
+            }
+        }
+        engineProblem_->hide();
         collectFromWidgets();
         emit saved(settings_);
         accept();
@@ -178,6 +218,9 @@ void SettingsWindow::applyToWidgets() {
     endpoint_->setText(QString::fromStdString(choice.endpoint));
     model_->setText(QString::fromStdString(choice.model));
     region_->setText(QString::fromStdString(choice.region));
+    headers_->setPlainText(QString::fromStdString(choice.headers));
+    bodyTemplate_->setPlainText(QString::fromStdString(choice.bodyTemplate));
+    responsePath_->setText(QString::fromStdString(choice.responsePath));
     const int kind = llmKind_->findData(QString::fromStdString(choice.engineId));
     llmKind_->setCurrentIndex(kind < 0 ? 0 : kind);
     fallback_->setChecked(choice.fallbackToGoogle);
@@ -238,6 +281,14 @@ void SettingsWindow::updateLlmHints() {
     // 模型只有 LLM 要填，區域只有 Microsoft 要填
     llmForm_->setRowVisible(model_, isLlmEngine(kind));
     llmForm_->setRowVisible(region_, kind == "azure");
+    const bool custom = kind == "custom-http";
+    llmForm_->setRowVisible(headers_, custom);
+    llmForm_->setRowVisible(bodyTemplate_, custom);
+    llmForm_->setRowVisible(responsePath_, custom);
+    if (custom) {
+        endpoint_->setPlaceholderText(
+            QStringLiteral("https://…（可以用 {{text}} {{source}} {{key}}）"));
+    }
     // 金鑰是分開存的：換了引擎，原本那一家的金鑰不會拿來用
     const bool hasKey = std::ranges::any_of(settings_.engines, [&](const core::EngineSettings& e) {
         return e.id == kind && !e.encryptedApiKey.empty();
@@ -260,7 +311,9 @@ void SettingsWindow::updateEnabled() {
     const bool llm = useLlm_->isChecked();
     for (QWidget* widget : {static_cast<QWidget*>(llmKind_), static_cast<QWidget*>(endpoint_),
                             static_cast<QWidget*>(model_), static_cast<QWidget*>(region_),
-                            static_cast<QWidget*>(key_), static_cast<QWidget*>(fallback_)}) {
+                            static_cast<QWidget*>(headers_), static_cast<QWidget*>(bodyTemplate_),
+                            static_cast<QWidget*>(responsePath_), static_cast<QWidget*>(key_),
+                            static_cast<QWidget*>(fallback_)}) {
         widget->setEnabled(llm);
     }
 }
@@ -272,6 +325,9 @@ void SettingsWindow::collectFromWidgets() {
     choice.endpoint = endpoint_->text().trimmed().toStdString();
     choice.model = model_->text().trimmed().toStdString();
     choice.region = region_->text().trimmed().toStdString();
+    choice.headers = headers_->toPlainText().toStdString();
+    choice.bodyTemplate = bodyTemplate_->toPlainText().toStdString();
+    choice.responsePath = responsePath_->text().trimmed().toStdString();
     choice.fallbackToGoogle = fallback_->isChecked();
 
     // 空白代表「不更改」，原本的金鑰會被沿用（enginesFor 處理）

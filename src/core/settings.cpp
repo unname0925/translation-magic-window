@@ -40,6 +40,9 @@ EngineSettings readEngine(const json& object) {
     read(object, "model", engine.model);
     read(object, "encryptedApiKey", engine.encryptedApiKey);
     read(object, "region", engine.region);
+    read(object, "headers", engine.headers);
+    read(object, "bodyTemplate", engine.bodyTemplate);
+    read(object, "responsePath", engine.responsePath);
     return engine;
 }
 
@@ -192,7 +195,10 @@ std::string serializeSettings(const Settings& settings, int schemaVersion) {
                            {"endpoint", engine.endpoint},
                            {"model", engine.model},
                            {"encryptedApiKey", engine.encryptedApiKey},
-                           {"region", engine.region}});
+                           {"region", engine.region},
+                           {"headers", engine.headers},
+                           {"bodyTemplate", engine.bodyTemplate},
+                           {"responsePath", engine.responsePath}});
     }
     const json document = {
         {"schemaVersion", schemaVersion},

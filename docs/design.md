@@ -747,6 +747,16 @@ public:
 - **系統訊息**：你是翻譯引擎。把 `segments` 中的每個字串翻譯成台灣繁體中文，保留語氣和角色口吻，專有名詞依照 `glossary` 翻譯。只輸出和 `segments` 等長的 JSON 字串陣列，不要加任何說明。
 - **使用者訊息**：`{"source_lang": "...", "context": [...], "glossary": {...}, "segments": [...]}`
 
+#### 自訂 HTTP 範本（M2-07）
+
+`net/custom_http_translator`，設定視窗「其他引擎」選「自訂 HTTP 範本」：自己填網址、標頭（一行一個
+「名稱: 值」）、請求內容的範本、譯文在回應 JSON 裡的路徑（`translations[0].text` 這種寫法），
+就能接上沒有內建的服務。佔位符：`{{text}}`（原文；在 JSON 範本裡已經跳脫好，在網址裡做網址編碼）、
+`{{source}}`（ja／en／ko／auto）、`{{target}}`（zh-TW）、`{{key}}`（金鑰，加密存放，送出時才填入）。
+一段送一次；請求內容空著就用 GET；沒寫 Content-Type 時自動補 `application/json`。存檔前檢查
+（網址開頭、有 `{{text}}`、有譯文路徑、標頭格式，`core/custom_http_check`），有問題用紅字說明、不存。
+看不懂ルビ標記，用 `net/ruby_notes` 的做法。
+
 #### 付費翻譯服務（M2-07）
 
 `net/service_translators`：DeepL、Microsoft Translator、Google Cloud Translation（Basic v2）。設定視窗的

@@ -6,6 +6,8 @@ find_package(nlohmann_json CONFIG REQUIRED)
 add_library(tmw_net STATIC
     cpr_http_client.cpp
     cpr_http_client.h
+    custom_http_translator.cpp
+    custom_http_translator.h
     google_translator.cpp
     google_translator.h
     http_client.cpp

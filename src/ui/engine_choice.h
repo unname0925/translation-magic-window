@@ -19,11 +19,16 @@ struct EngineChoice {
     // false：只用 Google（免費、不用金鑰，但用多了會被限流）；true：用 engineId 那個引擎
     bool useLlm = false;
     // 主要的引擎（M2-07）："openai-compatible"（Ollama、OpenAI、Gemini…）、"anthropic"（Claude）、
-    // "deepl"、"azure"（Microsoft Translator）、"google-cloud"（Google Cloud Translation）
+    // "deepl"、"azure"（Microsoft Translator）、"google-cloud"（Google Cloud Translation）、
+    // "custom-http"（自訂 HTTP 範本）
     std::string engineId = "openai-compatible";
     std::string endpoint;  // 例如 http://127.0.0.1:11434/v1；留空用預設
     std::string model;     // LLM 的模型，例如 hy-mt2
     std::string region;    // Microsoft Translator 的區域，例如 eastasia
+    // 自訂 HTTP 範本（engineId 是 "custom-http"）
+    std::string headers;
+    std::string bodyTemplate;
+    std::string responsePath;
     // 主要的引擎失敗時改用 Google
     bool fallbackToGoogle = true;
     // 已經存了金鑰（畫面上顯示「已設定」，不會把金鑰讀出來）

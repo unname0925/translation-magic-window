@@ -9,6 +9,7 @@
 #include "core/translator_chain.h"
 #include "net/anthropic_translator.h"
 #include "net/cpr_http_client.h"
+#include "net/custom_http_translator.h"
 #include "net/google_translator.h"
 #include "net/openai_translator.h"
 #include "net/service_translators.h"
@@ -89,6 +90,26 @@ std::shared_ptr<core::ITranslator> makeEngine(const core::EngineSettings& engine
             return std::make_shared<net::AzureTranslator>(std::move(http), std::move(options));
         }
         return std::make_shared<net::GoogleCloudTranslator>(std::move(http), std::move(options));
+    }
+    if (engine.id == "custom-http") {
+        net::CustomHttpOptions options;
+        options.url = engine.endpoint;
+        options.headers = engine.headers;
+        options.bodyTemplate = engine.bodyTemplate;
+        options.responsePath = engine.responsePath;
+        if (!engine.encryptedApiKey.empty()) {
+            const std::optional<std::string> key = platform::decryptSecret(engine.encryptedApiKey);
+            if (!key) {
+                problems.push_back("引擎 custom-http 的金鑰解不開，改成不帶金鑰");
+            } else {
+                options.apiKey = *key;
+            }
+        }
+        if (const std::string problem = net::customHttpProblem(options); !problem.empty()) {
+            problems.push_back("自訂 HTTP 範本不能用（" + problem + "），略過");
+            return nullptr;
+        }
+        return std::make_shared<net::CustomHttpTranslator>(std::move(http), std::move(options));
     }
     problems.push_back("不認得的翻譯引擎：" + engine.id);
     return nullptr;

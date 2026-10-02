@@ -17,6 +17,7 @@ class QFormLayout;
 class QKeySequenceEdit;
 class QLabel;
 class QLineEdit;
+class QPlainTextEdit;
 class QRadioButton;
 class QSpinBox;
 
@@ -55,8 +56,13 @@ private:
     QComboBox* llmKind_ = nullptr;  // 每一項的 data 是引擎的 id
     QLineEdit* endpoint_ = nullptr;
     QLineEdit* model_ = nullptr;
-    QLineEdit* region_ = nullptr;     // Microsoft Translator 的區域
-    QFormLayout* llmForm_ = nullptr;  // 依引擎顯示或隱藏「模型」「區域」那幾列
+    QLineEdit* region_ = nullptr;  // Microsoft Translator 的區域
+    // 自訂 HTTP 範本
+    QPlainTextEdit* headers_ = nullptr;
+    QPlainTextEdit* bodyTemplate_ = nullptr;
+    QLineEdit* responsePath_ = nullptr;
+    QLabel* engineProblem_ = nullptr;  // 引擎設定有問題時的說明（紅字），存檔時才檢查
+    QFormLayout* llmForm_ = nullptr;   // 依引擎顯示或隱藏「模型」「區域」那幾列
     QLineEdit* key_ = nullptr;
     QLabel* keyNote_ = nullptr;
     QCheckBox* fallback_ = nullptr;

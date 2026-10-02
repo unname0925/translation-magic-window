@@ -12,6 +12,7 @@
 #include <QKeySequenceEdit>
 #include <QLabel>
 #include <QLineEdit>
+#include <QPlainTextEdit>
 #include <QPushButton>
 #include <QRadioButton>
 #include <QSpinBox>
@@ -247,6 +248,32 @@ TEST_F(SettingsWindowTest, DeepLCanBeChosenAndHidesTheModelField) {
     const core::Settings saved = save(window);
     ASSERT_FALSE(saved.engines.empty());
     EXPECT_EQ(saved.engines[0].id, "deepl");
+}
+
+TEST_F(SettingsWindowTest, ACustomHttpTemplateIsCheckedAndSaved) {
+    SettingsWindow window(core::Settings{}, platform::encryptSecret);
+    window.findChild<QRadioButton*>(QStringLiteral("useLlm"))->setChecked(true);
+    auto* kind = window.findChild<QComboBox*>(QStringLiteral("llmKind"));
+    kind->setCurrentIndex(kind->findData(QStringLiteral("custom-http")));
+    field(window, "endpoint")->setText(QStringLiteral("https://libretranslate.example/translate"));
+    auto* body = window.findChild<QPlainTextEdit*>(QStringLiteral("bodyTemplate"));
+    body->setPlainText(QStringLiteral(R"({"q": "hello"})"));  // 忘了放 {{text}}
+    field(window, "responsePath")->setText(QStringLiteral("translatedText"));
+
+    bool savedSomething = false;
+    QObject::connect(&window, &SettingsWindow::saved, [&] { savedSomething = true; });
+    window.findChild<QDialogButtonBox*>()->button(QDialogButtonBox::Save)->click();
+    EXPECT_FALSE(savedSomething) << "範本送不出原文，存了也不能用";
+    EXPECT_TRUE(window.findChild<QLabel*>(QStringLiteral("engineProblem"))
+                    ->text()
+                    .contains(QStringLiteral("{{text}}")));
+
+    body->setPlainText(QStringLiteral(R"({"q": "{{text}}", "target": "{{target}}"})"));
+    const core::Settings saved = save(window);
+    ASSERT_FALSE(saved.engines.empty());
+    EXPECT_EQ(saved.engines[0].id, "custom-http");
+    EXPECT_EQ(saved.engines[0].bodyTemplate, R"({"q": "{{text}}", "target": "{{target}}"})");
+    EXPECT_EQ(saved.engines[0].responsePath, "translatedText");
 }
 
 // M2-06：這幾項是目前情境的值

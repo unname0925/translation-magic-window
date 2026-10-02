@@ -8,8 +8,8 @@ namespace {
 
 constexpr const char* kGoogleId = "google";
 // 設定畫面認得、可以當主要引擎的（M2-07）
-constexpr std::array<const char*, 5> kPrimaryIds{"openai-compatible", "anthropic", "deepl", "azure",
-                                                 "google-cloud"};
+constexpr std::array<const char*, 6> kPrimaryIds{
+    "openai-compatible", "anthropic", "deepl", "azure", "google-cloud", "custom-http"};
 
 const core::EngineSettings* find(const core::Settings& settings, const std::string& id) {
     const auto found = std::ranges::find_if(
@@ -38,6 +38,9 @@ EngineChoice engineChoiceFrom(const core::Settings& settings) {
         choice.endpoint = llm->endpoint;
         choice.model = llm->model;
         choice.region = llm->region;
+        choice.headers = llm->headers;
+        choice.bodyTemplate = llm->bodyTemplate;
+        choice.responsePath = llm->responsePath;
         choice.hasKey = !llm->encryptedApiKey.empty();
     }
     // 只有一個 Google 的時候，「退回 Google」對使用者沒有意義，維持預設的勾選
@@ -55,6 +58,11 @@ std::vector<core::EngineSettings> enginesFor(const EngineChoice& choice,
         llm.endpoint = choice.endpoint;
         llm.model = isLlmEngine(choice.engineId) ? choice.model : std::string();
         llm.region = choice.engineId == "azure" ? choice.region : std::string();
+        if (choice.engineId == "custom-http") {
+            llm.headers = choice.headers;
+            llm.bodyTemplate = choice.bodyTemplate;
+            llm.responsePath = choice.responsePath;
+        }
         if (!encryptedKey.empty()) {
             llm.encryptedApiKey = encryptedKey;
         } else if (const core::EngineSettings* existing = find(current, choice.engineId)) {
