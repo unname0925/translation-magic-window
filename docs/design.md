@@ -1411,7 +1411,7 @@ translation-magic-window/
 - 正式的產品名稱（目前暫用 Translation Magic Window）。
 - 全域快捷鍵的預設按鍵組合。
 - 最低支援的 Windows 11 版本：擷取節流用的 `MinUpdateInterval` 要 24H2，沒有時改由使用端降低讀取頻率（4.2）；正式的最低版本在 M1 用實機決定。
-- 安裝程式要用什麼技術（Inno Setup、WiX 或 MSIX）。
+- 安裝程式要用什麼技術：**已決定 Inno Setup**（MSIX 一定要簽章，2026-10-02，見 execution-plan 的 M5-01）。
 - 觸發參數的預設值（在 M1 實測後調整）。
 - **DirectML.dll 的授權**（2026-10-02 決定）：先用 Windows 內建的 DirectML，不行再附上套件的版本。實作：建置預設不複製 DirectML.dll（`-DTMW_BUNDLE_DIRECTML=ON` 才附）；ONNX Runtime 延遲載入 DirectML，Windows 照「程式資料夾 → System32」的順序找到內建的那一份。這台 Windows 11 內建 1.15.5（比套件的 1.15.4 新），OCR 在顯示卡上照常執行，速度相同（800×600 漫畫裁切，中位數 146 ms 對 145 ms）。找不到 DirectML 的舊 Windows：自動模式改用 CPU（`ocr::directMLAvailable`，不讓延遲載入失敗造成當機），記錄檔會寫出實際載入的 DirectML 路徑。
 

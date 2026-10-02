@@ -142,6 +142,17 @@ build/ci/bin/Release/tmw_overlay_preview --manga --language ja --output out 漫�
 不給 `--settings <settings.json>` 時用 Google 翻譯（不用金鑰）。JMdict 和 KANJIDIC2 是
 Electronic Dictionary Research and Development Group 的 CC BY-SA 4.0 授權。
 
+## 產生安裝程式
+
+用 [Inno Setup 6](https://jrsoftware.org/isinfo.php)。建置 Release、下載好模型之後：
+
+```powershell
+python tools/installer/make_installer.py      # 產生 build/installer/TranslationMagicWindow-<版本>-setup.exe
+```
+
+ISCC.exe 預設找 `.cache/innosetup`（用 Inno Setup 安裝檔的 `/PORTABLE=1 /DIR=...` 裝在那裡），或用 `--iscc` 指定。
+安裝程式裝在使用者自己的 `%LOCALAPPDATA%\Programs`，不需要系統管理員權限；漫畫模式、背景修補、內建字型是可選元件。
+
 ## 持續整合
 
 每次推送和 PR，[GitHub Actions](.github/workflows/ci.yml) 會在 Windows 上建置 Debug、Release 和
