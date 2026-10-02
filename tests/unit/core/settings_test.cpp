@@ -222,6 +222,13 @@ TEST(SettingsTest, OverlayIsOffUnlessTurnedOn) {
     EXPECT_TRUE(parseSettings(serializeSettings(settings)).settings.overlay);
 }
 
+TEST(SettingsTest, RemembersTheOverlayFont) {
+    EXPECT_TRUE(parseSettings(R"({"schemaVersion": 1})").settings.overlayFont.empty());
+    Settings settings;
+    settings.overlayFont = "huninn";
+    EXPECT_EQ(parseSettings(serializeSettings(settings)).settings.overlayFont, "huninn");
+}
+
 TEST(SettingsTest, OcrLanguageIsAutomaticUnlessChosen) {
     EXPECT_EQ(parseSettings(R"({"schemaVersion": 1})").settings.ocrLanguage, "auto");
     EXPECT_EQ(parseSettings(R"({"schemaVersion": 1, "ocrLanguage": "ko"})").settings.ocrLanguage,

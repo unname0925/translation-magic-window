@@ -229,6 +229,10 @@ class RealManifestTest(unittest.TestCase):
                     if "huggingface.co" in f.url:
                         # 固定在 commit（40 位十六進位），不能用 main 這種會變動的分支
                         self.assertRegex(f.url, r"/resolve/[0-9a-f]{40}/")
+                    elif "raw.githubusercontent.com" in f.url:
+                        # GitHub 倉庫裡的檔案（例如 google/fonts）：一樣要固定在 commit
+                        self.assertRegex(f.url, r"^https://raw\.githubusercontent\.com/[^/]+/[^/]+/"
+                                                r"[0-9a-f]{40}/")
                     else:
                         self.assertRegex(f.url, r"^https://github\.com/.+/releases/download/")
 

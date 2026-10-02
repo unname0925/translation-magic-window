@@ -181,6 +181,34 @@ TEST_F(OverlayRendererTest, OutlinedTextHasBothColours) {
     EXPECT_GT(black, 30) << "描邊";
 }
 
+// M4-04：內建字型從檔案載入（tools/fetch_models 下載到 models/fonts）。檔案不在時略過
+TEST_F(OverlayRendererTest, UsesABuiltInFontFromItsFile) {
+    const std::filesystem::path file =
+        std::filesystem::path(TMW_MODELS_DIR) / "fonts" / "jf-openhuninn-2.1.ttf";
+    if (!std::filesystem::exists(file)) {
+        GTEST_SKIP() << "沒有 " << file.string();
+    }
+    const std::vector<OverlayItem> items{item(RectI{0, 0, 120, 60}, "做什麼")};
+    const ImageBgra system = renderer_.render(core::SizeI{120, 60}, items);
+
+    ASSERT_TRUE(renderer_.setFont(file));
+    EXPECT_FALSE(renderer_.fontFamily().empty());
+    EXPECT_NE(renderer_.render(core::SizeI{120, 60}, items).pixels, system.pixels)
+        << "換了字型，畫出來要不一樣";
+
+    ASSERT_TRUE(renderer_.setFont({}));
+    EXPECT_EQ(renderer_.render(core::SizeI{120, 60}, items).pixels, system.pixels)
+        << "空路徑換回微軟正黑體";
+}
+
+TEST_F(OverlayRendererTest, AMissingFontFileFallsBackToTheSystemFont) {
+    EXPECT_FALSE(renderer_.setFont("C:/no/such/font.ttf"));
+    EXPECT_TRUE(renderer_.fontFamily().empty());
+    const std::vector<OverlayItem> items{item(RectI{0, 0, 120, 60}, "做什麼")};
+    EXPECT_FALSE(inkBands(renderer_.render(core::SizeI{120, 60}, items), false).empty())
+        << "照樣畫得出字";
+}
+
 TEST_F(OverlayRendererTest, LightTextOnDarkBackgrounds) {
     OverlayItem dark = item(RectI{0, 0, 100, 40}, "危險");
     dark.background = Rgba{20, 20, 20, 255};

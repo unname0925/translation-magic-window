@@ -18,6 +18,7 @@
 
 #include "core/custom_http_check.h"
 #include "core/hotkey.h"
+#include "core/overlay_font.h"
 #include "ui/engine_choice.h"
 
 namespace tmw::ui {
@@ -135,6 +136,14 @@ SettingsWindow::SettingsWindow(core::Settings settings, Encrypt encrypt, QWidget
     auto* languageForm = new QFormLayout;
     languageForm->addRow(QStringLiteral("辨識語言"), ocrLanguage_);
     languageForm->addRow(QStringLiteral("畫面停下來多久才翻"), settleMs_);
+    // 在原位顯示譯文時用的字型（M4-04）。內建字型要先用 tools/fetch_models 下載
+    overlayFont_ = new QComboBox(this);
+    overlayFont_->setObjectName(QStringLiteral("overlayFont"));
+    for (const core::OverlayFont& font : core::kOverlayFonts) {
+        overlayFont_->addItem(QString::fromUtf8(font.label.data(), font.label.size()),
+                              QString::fromUtf8(font.id.data(), font.id.size()));
+    }
+    languageForm->addRow(QStringLiteral("譯文字型"), overlayFont_);
 
     // 快捷鍵（M2-10）：點一下欄位直接按想要的組合；清掉代表不使用那個快捷鍵
     const auto hotkeyEdit = [this](const char* name) {
@@ -237,6 +246,8 @@ void SettingsWindow::applyToWidgets() {
                                      "（下面的辨識設定會記在這個情境裡）"));
     const int language = ocrLanguage_->findData(QString::fromStdString(settings_.ocrLanguage));
     ocrLanguage_->setCurrentIndex(language < 0 ? 0 : language);
+    const int font = overlayFont_->findData(QString::fromStdString(settings_.overlayFont));
+    overlayFont_->setCurrentIndex(font < 0 ? 0 : font);
     key_->clear();
     showHotkey(hotkeyTranslate_, settings_.hotkeys.translate);
     showHotkey(hotkeyDebugDump_, settings_.hotkeys.debugDump);
@@ -341,6 +352,7 @@ void SettingsWindow::collectFromWidgets() {
     settings_.dropEdgeBlocks = !translateEdges_->isChecked();
     settings_.settleMs = settleMs_->value();
     settings_.ocrLanguage = ocrLanguage_->currentData().toString().toStdString();
+    settings_.overlayFont = overlayFont_->currentData().toString().toStdString();
     settings_.hotkeys.translate = hotkeyText(hotkeyTranslate_);
     settings_.hotkeys.debugDump = hotkeyText(hotkeyDebugDump_);
     settings_.hotkeys.capture = hotkeyText(hotkeyCapture_);

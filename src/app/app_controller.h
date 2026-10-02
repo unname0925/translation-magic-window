@@ -104,6 +104,8 @@ private:
     // 在原位顯示譯文（M3）。只在「顯示結果中」而且透鏡沒動過時顯示；
     // 畫面一變、開始拖動或重新處理就先藏起來（M3-04），不會留下錯位的譯文
     void setOverlayEnabled(bool enabled);
+    // 套用設定裡的譯文字型（M4-04）。字型檔不在時用微軟正黑體
+    void applyOverlayFont();
     void refreshOverlay();
     void flashLens(core::Rgba accent);
 

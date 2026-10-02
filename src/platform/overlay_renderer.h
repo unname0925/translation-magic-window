@@ -7,8 +7,10 @@
 // - 直排的段落直排（由上到下、由右到左），標點用直排字形
 #pragma once
 
+#include <filesystem>
 #include <memory>
 #include <span>
+#include <string>
 
 #include "core/geometry.h"
 #include "core/image.h"
@@ -27,6 +29,12 @@ public:
 
     // 預乘 alpha 的 BGRA（UpdateLayeredWindow 要的格式）。沒有譯文的地方完全透明。
     core::ImageBgra render(core::SizeI size, std::span<const core::OverlayItem> items);
+
+    // 譯文用這個字型檔（M4-04 的內建字型，從檔案載入、不安裝到系統）。
+    // 空路徑代表用系統的微軟正黑體。檔案讀不了時回傳 false，並改回微軟正黑體。
+    bool setFont(const std::filesystem::path& file);
+    // 目前用的字型家族名稱；空字串代表微軟正黑體
+    std::wstring fontFamily() const;
 
     // 這一段用的字級（像素）。框太小連最小字級都放不下時回傳最小字級，畫的時候超出的部分裁掉。
     float fitFontSize(const core::OverlayItem& item);

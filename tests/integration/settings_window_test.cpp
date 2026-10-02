@@ -313,5 +313,20 @@ TEST_F(SettingsWindowTest, OcrLanguageSurvivesARestart) {
               QStringLiteral("ko"));
 }
 
+// M4-04：譯文字型
+TEST_F(SettingsWindowTest, TheOverlayFontSurvivesARestart) {
+    SettingsWindow first(core::Settings{}, platform::encryptSecret);
+    auto* font = first.findChild<QComboBox*>(QStringLiteral("overlayFont"));
+    ASSERT_NE(font, nullptr);
+    EXPECT_EQ(font->currentData().toString(), QString()) << "預設用系統的微軟正黑體";
+    font->setCurrentIndex(font->findData(QStringLiteral("huninn")));
+    save(first);
+    EXPECT_EQ(platform::loadSettings(path()).settings.overlayFont, "huninn");
+
+    SettingsWindow second(platform::loadSettings(path()).settings, platform::encryptSecret);
+    EXPECT_EQ(second.findChild<QComboBox*>(QStringLiteral("overlayFont"))->currentData().toString(),
+              QStringLiteral("huninn"));
+}
+
 }  // namespace
 }  // namespace tmw::ui

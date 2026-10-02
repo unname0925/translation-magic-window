@@ -77,6 +77,7 @@ private:
     QKeySequenceEdit* hotkeyCapture_ = nullptr;
     QLabel* hotkeyProblem_ = nullptr;   // 快捷鍵有問題時的說明（紅字），存檔時才檢查
     QComboBox* ocrLanguage_ = nullptr;  // 每一項的 data 是設定檔裡的值（"auto"、"ja"…）
+    QComboBox* overlayFont_ = nullptr;  // data 是 core/overlay_font 的 id
 };
 
 }  // namespace tmw::ui

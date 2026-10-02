@@ -3,7 +3,7 @@
 #include <windows.h>
 
 #include <d2d1.h>
-#include <dwrite.h>
+#include <dwrite_3.h>
 #include <winrt/base.h>
 
 #include <algorithm>
@@ -132,12 +132,24 @@ struct OverlayRenderer::Impl {
         previousBitmap = SelectObject(memoryDc, bitmap);
     }
 
-    winrt::com_ptr<IDWriteTextLayout> layout(const core::OverlayItem& item, float fontSize) {
+    // 內建字型（M4-04）：從檔案載入、不安裝到系統。沒有時用微軟正黑體
+    winrt::com_ptr<IDWriteFontCollection> fontCollection;
+    std::wstring fontFamily;
+
+    winrt::com_ptr<IDWriteTextFormat> textFormat(bool vertical, float size) {
+        const wchar_t* family = !fontFamily.empty() ? fontFamily.c_str()
+                                : vertical          ? kVerticalFont
+                                                    : kHorizontalFont;
         winrt::com_ptr<IDWriteTextFormat> format;
-        check(dwrite->CreateTextFormat(item.vertical ? kVerticalFont : kHorizontalFont, nullptr,
-                                       DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL,
-                                       DWRITE_FONT_STRETCH_NORMAL, fontSize, kLocale, format.put()),
+        check(dwrite->CreateTextFormat(family, fontCollection.get(), DWRITE_FONT_WEIGHT_NORMAL,
+                                       DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, size,
+                                       kLocale, format.put()),
               "IDWriteFactory::CreateTextFormat");
+        return format;
+    }
+
+    winrt::com_ptr<IDWriteTextLayout> layout(const core::OverlayItem& item, float fontSize) {
+        const winrt::com_ptr<IDWriteTextFormat> format = textFormat(item.vertical, fontSize);
         if (item.vertical) {
             // 漫畫的直排：一欄由上到下，欄由右到左
             check(format->SetReadingDirection(DWRITE_READING_DIRECTION_TOP_TO_BOTTOM),
@@ -169,11 +181,7 @@ struct OverlayRenderer::Impl {
     void drawRuby(const core::OverlayItem& item, IDWriteTextLayout* text, D2D1_POINT_2F origin,
                   float fontSize, ID2D1Brush* brush) {
         const float size = fontSize * kRubyScale;
-        winrt::com_ptr<IDWriteTextFormat> format;
-        check(dwrite->CreateTextFormat(item.vertical ? kVerticalFont : kHorizontalFont, nullptr,
-                                       DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL,
-                                       DWRITE_FONT_STRETCH_NORMAL, size, kLocale, format.put()),
-              "IDWriteFactory::CreateTextFormat");
+        const winrt::com_ptr<IDWriteTextFormat> format = textFormat(item.vertical, size);
         if (item.vertical) {
             check(format->SetReadingDirection(DWRITE_READING_DIRECTION_TOP_TO_BOTTOM),
                   "SetReadingDirection");
@@ -245,6 +253,61 @@ OverlayRenderer::OverlayRenderer() : impl_(std::make_unique<Impl>()) {
 }
 
 OverlayRenderer::~OverlayRenderer() = default;
+
+bool OverlayRenderer::setFont(const std::filesystem::path& file) {
+    impl_->fontCollection = nullptr;
+    impl_->fontFamily.clear();
+    if (file.empty()) {
+        return true;
+    }
+    try {
+        // Windows 10 起的字型集合：直接用檔案，不必安裝
+        const auto factory = impl_->dwrite.as<IDWriteFactory5>();
+        winrt::com_ptr<IDWriteFontSetBuilder1> builder;
+        check(factory->CreateFontSetBuilder(builder.put()), "CreateFontSetBuilder");
+        winrt::com_ptr<IDWriteFontFile> fontFile;
+        check(factory->CreateFontFileReference(file.c_str(), nullptr, fontFile.put()),
+              "CreateFontFileReference");
+        check(builder->AddFontFile(fontFile.get()), "AddFontFile");
+        winrt::com_ptr<IDWriteFontSet> set;
+        check(builder->CreateFontSet(set.put()), "CreateFontSet");
+        winrt::com_ptr<IDWriteFontCollection1> collection;
+        check(factory->CreateFontCollectionFromFontSet(set.get(), collection.put()),
+              "CreateFontCollectionFromFontSet");
+        if (collection->GetFontFamilyCount() == 0) {
+            return false;
+        }
+        winrt::com_ptr<IDWriteFontFamily> family;
+        check(collection->GetFontFamily(0, family.put()), "GetFontFamily");
+        winrt::com_ptr<IDWriteLocalizedStrings> names;
+        check(family->GetFamilyNames(names.put()), "GetFamilyNames");
+        UINT32 index = 0;
+        BOOL exists = FALSE;
+        if (FAILED(names->FindLocaleName(L"en-us", &index, &exists)) || !exists) {
+            index = 0;
+        }
+        UINT32 length = 0;
+        check(names->GetStringLength(index, &length), "GetStringLength");
+        std::wstring name(length + 1, L'\0');
+        check(names->GetString(index, name.data(), length + 1), "GetString");
+        name.resize(length);
+        impl_->fontCollection = collection;
+        impl_->fontFamily = std::move(name);
+        return true;
+    } catch (const std::exception&) {
+        impl_->fontCollection = nullptr;
+        impl_->fontFamily.clear();
+        return false;
+    } catch (const winrt::hresult_error&) {
+        impl_->fontCollection = nullptr;
+        impl_->fontFamily.clear();
+        return false;
+    }
+}
+
+std::wstring OverlayRenderer::fontFamily() const {
+    return impl_->fontFamily;
+}
 
 float OverlayRenderer::fitFontSize(const core::OverlayItem& item) {
     const Box box = textBox(item);

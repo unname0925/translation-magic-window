@@ -66,6 +66,8 @@ struct Settings {
     // 在原位顯示譯文：把譯文直接蓋在透鏡底下的原文上（M3，design.md 4.8）。
     // 還在第一版（純色背景、譯文一律用正黑體），所以預設關閉，結果視窗照常顯示。
     bool overlay = false;
+    // 譯文用的字型：core/overlay_font 的 id（M4-04）。空字串是系統的微軟正黑體
+    std::string overlayFont;
     // 辨識語言："auto"（自動判斷）、"ja"、"en"、"ko"。指定之後只用那個語言的模型，
     // 不再判斷（design.md 4.4「語言判斷」第 5 步）。讀不懂的值一律當成 "auto"。
     std::string ocrLanguage = "auto";

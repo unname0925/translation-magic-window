@@ -22,6 +22,7 @@
 #include "core/hotkey.h"
 #include "core/language.h"
 #include "core/opencc_converter.h"
+#include "core/overlay_font.h"
 #include "platform/app_paths.h"
 #include "platform/crash_dump.h"
 #include "platform/debug_dump.h"
@@ -825,6 +826,10 @@ void AppController::applySettings(const core::Settings& settings) {
     if (settings.ocrLanguage != settings_.ocrLanguage) {
         setOcrLanguage(settings.ocrLanguage);
     }
+    if (settings.overlayFont != settings_.overlayFont) {
+        settings_.overlayFont = settings.overlayFont;
+        applyOverlayFont();
+    }
     // 這兩項改的是目前情境的值（切走情境時會存回去）；處理管線在下面重建時套用
     settings_.dropEdgeBlocks = settings.dropEdgeBlocks;
     settings_.settleMs = settings.settleMs;
@@ -897,6 +902,7 @@ void AppController::setOverlayEnabled(bool enabled) {
     }
     try {
         overlayRenderer_ = std::make_unique<platform::OverlayRenderer>();
+        applyOverlayFont();
         overlay_ = std::make_unique<platform::TranslationOverlayWindow>(
             reinterpret_cast<HINSTANCE>(GetWindowLongPtrW(hwnd_, GWLP_HINSTANCE)));
         refreshOverlay();
@@ -907,6 +913,27 @@ void AppController::setOverlayEnabled(bool enabled) {
         overlayRenderer_.reset();
         settings_.overlay = false;
     }
+}
+
+void AppController::applyOverlayFont() {
+    if (overlayRenderer_ == nullptr) {
+        return;
+    }
+    const std::string_view file = core::overlayFontFile(settings_.overlayFont);
+    const std::filesystem::path models = platform::findModelsDirectory();
+    const std::filesystem::path path =
+        file.empty() || models.empty()
+            ? std::filesystem::path()
+            : models / L"fonts" / std::filesystem::path(std::string(file));
+    if (!file.empty() && (path.empty() || !overlayRenderer_->setFont(path))) {
+        // 字型還沒下載（tools/fetch_models --group fonts）：照樣顯示，用微軟正黑體
+        platform::logWarn("找不到譯文字型 " + std::string(file) + "，改用微軟正黑體");
+        overlayRenderer_->setFont({});
+    } else if (file.empty()) {
+        overlayRenderer_->setFont({});
+    }
+    overlayGeneration_ = 0;  // 換了字型要重畫
+    refreshOverlay();
 }
 
 void AppController::refreshOverlay() {

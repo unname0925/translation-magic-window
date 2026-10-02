@@ -115,6 +115,12 @@ tools/eval/.venv/Scripts/python tools/eval/furigana_dict.py build --jmdict .cach
 
 沒有讀音表時程式照常運作，改用「讀音是片假名」判斷。
 
+**譯文的內建字型**（選用）：思源黑體、思源宋體、jf open 粉圓（OFL 授權，共 34 MB）。下載後在設定視窗的「譯文字型」選：
+
+```powershell
+python tools/fetch_models/fetch_models.py --group fonts
+```
+
 **檢查「在原位顯示譯文」的效果**：覆蓋層排除在螢幕擷取之外，截圖看不到它。`tmw_overlay_preview` 對圖片跑完整流程
 （OCR → 翻譯 → 覆蓋層），把螢幕上會看到的樣子存成 PNG：
 
