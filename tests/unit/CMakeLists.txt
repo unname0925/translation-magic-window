@@ -12,6 +12,7 @@ add_executable(tmw_unit_tests
     core/history_test.cpp
     core/hotkey_test.cpp
     core/language_test.cpp
+    core/overlay_plan_test.cpp
     core/lens_layout_test.cpp
     core/opencc_converter_test.cpp
     core/perf_stats_test.cpp
@@ -41,6 +42,7 @@ add_executable(tmw_unit_tests
     ocr/text_detector_test.cpp
     ocr/text_recognizer_test.cpp
     platform/logging_test.cpp
+    platform/overlay_renderer_test.cpp
     platform/png_file_test.cpp
     platform/secret_test.cpp
     platform/settings_file_test.cpp

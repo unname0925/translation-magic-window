@@ -14,6 +14,8 @@ add_library(tmw_platform STATIC
     lens_window.h
     logging.cpp
     logging.h
+    overlay_renderer.cpp
+    overlay_renderer.h
     png_file.cpp
     png_file.h
     screen_capture.cpp
@@ -26,6 +28,8 @@ add_library(tmw_platform STATIC
     single_instance.h
     text_encoding.cpp
     text_encoding.h
+    translation_overlay_window.cpp
+    translation_overlay_window.h
     tray_icon.cpp
     tray_icon.h
     win_error.cpp
@@ -34,5 +38,5 @@ target_include_directories(tmw_platform PUBLIC "${PROJECT_SOURCE_DIR}/src")
 target_compile_features(tmw_platform PUBLIC cxx_std_20)
 find_package(spdlog CONFIG REQUIRED)
 target_link_libraries(tmw_platform
-    PUBLIC tmw_core user32 gdi32 shell32 ole32 d3d11 dxgi windowscodecs windowsapp crypt32 dbghelp
+    PUBLIC tmw_core user32 gdi32 shell32 ole32 d2d1 dwrite d3d11 dxgi windowscodecs windowsapp crypt32 dbghelp
     PRIVATE spdlog::spdlog tmw_options)

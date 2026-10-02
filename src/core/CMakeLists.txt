@@ -35,6 +35,9 @@ add_library(tmw_core STATIC
     lens_layout.h
     opencc_converter.cpp
     opencc_converter.h
+    overlay_item.h
+    overlay_plan.cpp
+    overlay_plan.h
     perf_stats.cpp
     perf_stats.h
     pipeline.cpp

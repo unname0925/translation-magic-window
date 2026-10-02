@@ -2,6 +2,7 @@
 add_subdirectory(capture_bench)
 add_subdirectory(endurance)
 add_subdirectory(ocr_cli)
+add_subdirectory(overlay_preview)
 add_subdirectory(perf_report)
 add_subdirectory(shape_bench)
 add_subdirectory(translate_cli)

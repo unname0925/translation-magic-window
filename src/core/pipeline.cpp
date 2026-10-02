@@ -7,6 +7,7 @@
 #include <string>
 #include <utility>
 
+#include "core/overlay_plan.h"
 #include "core/ruby.h"
 #include "core/translator.h"
 #include "core/utf8.h"
@@ -226,6 +227,7 @@ PipelineResult Pipeline::run(const PipelineJob& job, std::stop_token cancel) {
     for (std::size_t i = 0; i < blocks.size(); ++i) {
         result.groups.push_back(TranslatedBlock{std::move(blocks[i]), std::move(translations[i])});
     }
+    result.overlay = planOverlay(job.frame, result.groups);
 
     if (result.error.empty()) {
         // 留最後幾組當作下一次的上下文

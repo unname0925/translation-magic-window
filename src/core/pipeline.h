@@ -21,6 +21,7 @@
 #include "core/glossary.h"
 #include "core/image.h"
 #include "core/language.h"
+#include "core/overlay_item.h"
 #include "core/ruby.h"
 #include "core/text_layout.h"
 #include "core/translation_service.h"
@@ -75,6 +76,9 @@ struct PipelineResult {
     // 翻譯成功，但不是首選引擎翻的：原因寫在這裡（「改用 google（…：連不上…）」）。
     // 使用者才知道譯文為什麼突然變了樣（M2-08）。
     std::string notice;
+    // 譯文要怎麼蓋在原文上（M3）：座標和 groups 一樣相對於畫面左上角。
+    // 背景色要從畫面取，畫面不會跟著結果帶出去，所以在這裡先規劃好。
+    std::vector<OverlayItem> overlay;
 
     bool empty() const { return groups.empty(); }
 };

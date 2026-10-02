@@ -19,7 +19,9 @@
 #include "platform/capture_frame_source.h"
 #include "platform/debug_overlay_window.h"
 #include "platform/lens_window.h"
+#include "platform/overlay_renderer.h"
 #include "platform/screen_capture.h"
+#include "platform/translation_overlay_window.h"
 #include "platform/tray_icon.h"
 #include "ui/result_window.h"
 #include "ui/settings_window.h"
@@ -99,6 +101,10 @@ private:
 
     // 邊框顏色：平常依照觸發狀態，手動擷取時短暫閃一下成功或失敗的顏色
     void updateAccent();
+    // 在原位顯示譯文（M3）。只在「顯示結果中」而且透鏡沒動過時顯示；
+    // 畫面一變、開始拖動或重新處理就先藏起來（M3-04），不會留下錯位的譯文
+    void setOverlayEnabled(bool enabled);
+    void refreshOverlay();
     void flashLens(core::Rgba accent);
 
     std::filesystem::path dataDirectory_;
@@ -142,6 +148,11 @@ private:
     core::LensState debugOverlayState_ = core::LensState::Showing;
     std::uint64_t debugOverlayGeneration_ = 0;
     core::RectI debugOverlayRect_{};
+    // 譯文覆蓋層：關掉時兩個都是空的
+    std::unique_ptr<platform::OverlayRenderer> overlayRenderer_;
+    std::unique_ptr<platform::TranslationOverlayWindow> overlay_;
+    // 目前貼在畫面上的是哪一次的結果（0 = 沒有）
+    std::uint64_t overlayGeneration_ = 0;
 
     std::unique_ptr<platform::TrayIcon> tray_;
     std::unique_ptr<platform::LensWindow> lens_;

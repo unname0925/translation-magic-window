@@ -250,6 +250,7 @@ AppController::AppController(HINSTANCE instance, std::filesystem::path dataDirec
         }
 
         setUpPipeline();
+        setOverlayEnabled(settings_.overlay);
 
         resultWindow_ = std::make_unique<ui::ResultWindow>();
         resultWindow_->restoreGeometry(settings_.resultWindow.geometry);
@@ -375,6 +376,10 @@ LRESULT AppController::handleMessage(UINT message, WPARAM wParam, LPARAM lParam)
                     setGameMode(!settings_.gameMode);
                     saveSettings();
                     break;
+                case kCommandToggleOverlay:
+                    setOverlayEnabled(!settings_.overlay);
+                    saveSettings();
+                    break;
                 case kCommandEditGlossary:
                     openGlossary();
                     break;
@@ -416,6 +421,7 @@ LRESULT AppController::handleMessage(UINT message, WPARAM wParam, LPARAM lParam)
             if (wParam == kTimerTick) {
                 trigger_->tick();
                 refreshDebugOverlay();
+                refreshOverlay();
             } else if (wParam == kTimerRestoreAccent) {
                 KillTimer(hwnd_, kTimerRestoreAccent);
                 flashing_ = false;
@@ -458,6 +464,8 @@ void AppController::showTrayMenu(POINT anchor) {
     }
     AppendMenuW(menu, MF_STRING | (lens_->isVisible() ? MF_CHECKED : MF_UNCHECKED),
                 kCommandToggleLens, L"顯示透鏡");
+    AppendMenuW(menu, MF_STRING | (settings_.overlay ? MF_CHECKED : MF_UNCHECKED),
+                kCommandToggleOverlay, L"在原位顯示譯文");
     AppendMenuW(menu, MF_STRING, kCommandOpenResults, L"開啟結果視窗");
     AppendMenuW(
         menu, MF_STRING, kCommandTranslateNow,
@@ -876,6 +884,61 @@ void AppController::refreshDebugOverlay() {
     debugOverlay_->update(rect, overlay);
 }
 
+void AppController::setOverlayEnabled(bool enabled) {
+    settings_.overlay = enabled;
+    overlayGeneration_ = 0;
+    if (!enabled) {
+        overlay_.reset();
+        overlayRenderer_.reset();
+        return;
+    }
+    if (overlay_ != nullptr) {
+        return;
+    }
+    try {
+        overlayRenderer_ = std::make_unique<platform::OverlayRenderer>();
+        overlay_ = std::make_unique<platform::TranslationOverlayWindow>(
+            reinterpret_cast<HINSTANCE>(GetWindowLongPtrW(hwnd_, GWLP_HINSTANCE)));
+        refreshOverlay();
+        platform::logInfo("在原位顯示譯文");
+    } catch (const std::exception& error) {
+        platform::logWarn(std::string("無法在原位顯示譯文：") + error.what());
+        overlay_.reset();
+        overlayRenderer_.reset();
+        settings_.overlay = false;
+    }
+}
+
+void AppController::refreshOverlay() {
+    if (overlay_ == nullptr || lens_ == nullptr) {
+        return;
+    }
+    // 結果要是透鏡「現在」底下的畫面：透鏡移動過、畫面變了、正在重新處理，譯文都會錯位
+    const bool current = lens_->isVisible() && !paused_ && lastResult_.has_value() &&
+                         trigger_->state() == core::LensState::Showing &&
+                         lastResult_->region == lens_->contentScreenRect() &&
+                         !lastResult_->overlay.empty();
+    if (!current) {
+        overlay_->hide();
+        overlayGeneration_ = 0;
+        return;
+    }
+    // 每 100 毫秒都會走到這裡，同一個結果不重畫
+    if (lastResult_->generation == overlayGeneration_ && overlay_->isVisible()) {
+        return;
+    }
+    const core::RectI& region = lastResult_->region;
+    try {
+        const core::ImageBgra image = overlayRenderer_->render(
+            core::SizeI{region.width(), region.height()}, lastResult_->overlay);
+        overlay_->show(core::PointI{region.left, region.top}, image);
+        overlayGeneration_ = lastResult_->generation;
+    } catch (const std::exception& error) {
+        platform::logWarn(std::string("畫不出譯文覆蓋層：") + error.what());
+        overlay_->hide();
+    }
+}
+
 std::filesystem::path AppController::writeDebugDump() {
     // 擷取當下的畫面。失敗（例如透鏡藏起來了）不算致命，報告照樣寫。
     std::optional<core::ImageBgra> capture;
@@ -930,6 +993,7 @@ void AppController::onPipelineResult(const core::PipelineResult& result) {
     }
     perf_.add(result.timings);
     refreshDebugOverlay();
+    refreshOverlay();
     if (!result.error.empty()) {
         platform::log(platform::LogLevel::Warn, context, "翻譯失敗：" + result.error);
     }
@@ -952,7 +1016,8 @@ void AppController::onPipelineResult(const core::PipelineResult& result) {
     resultWindow_->addCard(*card);
     // 視窗還沒開著才把它叫出來。透鏡放在一直變的內容上（遊戲、網頁漫畫）時，
     // 每隔幾秒把結果視窗拉到遊戲畫面前面是不能用的；要一直在最上層的話有「置頂」可以開。
-    if (!resultWindow_->isVisible()) {
+    // 譯文已經蓋在原文上時也不叫：使用者看的是透鏡，結果視窗是要回頭看才開的。
+    if (!resultWindow_->isVisible() && overlay_ == nullptr) {
         showResultWindow();
     }
 }

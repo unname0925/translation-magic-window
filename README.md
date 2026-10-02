@@ -113,7 +113,16 @@ tools/eval/.venv/Scripts/python tools/eval/furigana_dict.py build --jmdict .cach
     --kanjidic .cache/dict/kanjidic2.xml.gz --output models/furigana/readings.tsv
 ```
 
-沒有讀音表時程式照常運作，改用「讀音是片假名」判斷。JMdict 和 KANJIDIC2 是
+沒有讀音表時程式照常運作，改用「讀音是片假名」判斷。
+
+**檢查「在原位顯示譯文」的效果**：覆蓋層排除在螢幕擷取之外，截圖看不到它。`tmw_overlay_preview` 對圖片跑完整流程
+（OCR → 翻譯 → 覆蓋層），把螢幕上會看到的樣子存成 PNG：
+
+```powershell
+build/ci/bin/Release/tmw_overlay_preview --manga --language ja --output out 漫畫.png
+```
+
+不給 `--settings <settings.json>` 時用 Google 翻譯（不用金鑰）。JMdict 和 KANJIDIC2 是
 Electronic Dictionary Research and Development Group 的 CC BY-SA 4.0 授權。
 
 ## 持續整合

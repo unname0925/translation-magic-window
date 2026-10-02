@@ -39,6 +39,7 @@ enum Command : UINT {
     kCommandProfileManga = 20,
     kCommandProfileGame = 21,
     kCommandProfileWeb = 22,
+    kCommandToggleOverlay = 23,
 };
 
 }  // namespace tmw::app

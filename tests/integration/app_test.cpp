@@ -24,6 +24,7 @@
 #include "platform/lens_window.h"
 #include "platform/png_file.h"
 #include "platform/screen_capture.h"
+#include "platform/translation_overlay_window.h"
 #include "support/app_process.h"
 #include "support/mouse_input.h"
 #include "support/test_window.h"
@@ -189,6 +190,57 @@ TEST_F(AppTest, TranslateNowOpensTheResultWindowWithACard) {
     }
     ASSERT_NE(results, nullptr) << "結果視窗一直沒有出現。主程式的記錄：\n" << appLog();
     EXPECT_TRUE(IsWindowVisible(results));
+}
+
+// M3-01、M3-04：在原位顯示譯文。譯文要蓋在透鏡裡面、不能被擷取進去（否則下一次 OCR
+// 讀到的是譯文），底下的畫面一變就要先藏起來，不能留下錯位的譯文。
+// 需要網路（預設的引擎是 Google）；畫出來的樣子由 OverlayRendererTest 負責。
+TEST_F(AppTest, TranslationIsDrawnOverTheTextAndHiddenWhenItChanges) {
+    // 先暫停：文字一放上去自動翻譯就會開始，要先打開覆蓋層、取好「沒有譯文」的畫面
+    ASSERT_TRUE(app_->postCommand(app::kCommandTogglePause));
+    ASSERT_TRUE(app_->postCommand(app::kCommandToggleOverlay));
+    const HWND overlay = app_->waitForWindow(platform::TranslationOverlayWindow::kClassName,
+                                             std::chrono::seconds(10));
+    ASSERT_NE(overlay, nullptr) << "主程式的記錄：\n" << appLog();
+
+    TestWindow::Options options;
+    options.mode = TestWindow::Mode::Text;
+    options.lines = {L"The quick brown fox", L"jumps over the lazy dog"};
+    options.margin = 48;
+    auto text = std::make_unique<TestWindow>(windowRectOf(lens_), options);
+    SetWindowPos(text->hwnd(), lens_, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+    test::waitForComposition();
+
+    const LensGeometry lens = lensGeometry();
+    platform::ScreenCapture capture;
+    const auto before = capture.readRegion(lens.window, kCaptureTimeout);
+    ASSERT_TRUE(before.has_value());
+    ASSERT_FALSE(IsWindowVisible(overlay));
+
+    ASSERT_TRUE(app_->postCommand(app::kCommandTogglePause));
+    ASSERT_TRUE(waitUntil([&] { return IsWindowVisible(overlay) != FALSE; }, 60000ms))
+        << "譯文一直沒有蓋上去（沒有網路時翻譯會失敗）。主程式的記錄：\n"
+        << appLog();
+
+    const core::RectI where = windowRectOf(overlay);
+    EXPECT_TRUE(core::intersect(where, lens.window) == where)
+        << "譯文要在透鏡裡面：" << describe(where) << " 透鏡 " << describe(lens.window);
+    EXPECT_EQ(app_->findWindowByTitle(L"翻譯結果"), nullptr)
+        << "譯文已經蓋在原文上，不必再把結果視窗叫出來";
+
+    const auto after = capture.readRegion(lens.window, kCaptureTimeout);
+    ASSERT_TRUE(after.has_value());
+    EXPECT_TRUE(after->pixels == before->pixels) << "譯文出現在擷取結果中，下一次 OCR 會讀到它";
+
+    // 底下的文字消失：畫面變了，譯文要馬上藏起來
+    text.reset();
+    EXPECT_TRUE(waitUntil([&] { return IsWindowVisible(overlay) == FALSE; }, kUiTimeout))
+        << "畫面變了，譯文還留在原地";
+
+    ASSERT_TRUE(app_->postCommand(app::kCommandToggleOverlay));
+    EXPECT_TRUE(waitUntil(
+        [&] { return app_->findWindow(platform::TranslationOverlayWindow::kClassName) == nullptr; },
+        kUiTimeout));
 }
 
 // M1-12：系統匣選單的「開啟結果視窗」

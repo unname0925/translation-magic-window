@@ -106,6 +106,7 @@ SettingsLoad parseSettings(std::string_view json_text,
     read(document, "verboseDiagnostics", settings.verboseDiagnostics);
     read(document, "mangaMode", settings.mangaMode);
     read(document, "gameMode", settings.gameMode);
+    read(document, "overlay", settings.overlay);
     read(document, "ocrLanguage", settings.ocrLanguage);
     read(document, "dropEdgeBlocks", settings.dropEdgeBlocks);
     readInt(document, "settleMs", settings.settleMs);
@@ -205,6 +206,7 @@ std::string serializeSettings(const Settings& settings, int schemaVersion) {
         {"verboseDiagnostics", settings.verboseDiagnostics},
         {"mangaMode", settings.mangaMode},
         {"gameMode", settings.gameMode},
+        {"overlay", settings.overlay},
         {"ocrLanguage", settings.ocrLanguage},
         {"dropEdgeBlocks", settings.dropEdgeBlocks},
         {"settleMs", settings.settleMs},

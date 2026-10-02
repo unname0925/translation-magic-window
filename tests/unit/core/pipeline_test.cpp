@@ -125,6 +125,15 @@ TEST_F(PipelineTest, TurnsLinesIntoTranslatedGroups) {
     EXPECT_TRUE(result.error.empty());
 }
 
+TEST_F(PipelineTest, PlansWhereTheTranslationsAreDrawn) {
+    ocr_.lines = {line(20, 20, 200, 44, "Hello there"), line(20, 150, 200, 174, "Another block")};
+    const PipelineResult result = run(job());
+    ASSERT_EQ(result.overlay.size(), 2u) << "畫面只在處理管線裡，背景色要在這裡先取好";
+    EXPECT_EQ(result.overlay[0].text, "譯:Hello there");
+    EXPECT_EQ(result.overlay[0].background, (Rgba{0, 0, 0, 255})) << "測試畫面是全黑的";
+    EXPECT_EQ(result.overlay[0].foreground, (Rgba{255, 255, 255, 255}));
+}
+
 TEST_F(PipelineTest, DropsBlocksCutOffByTheLensEdge) {
     ocr_.lines = {line(20, 20, 200, 44, "完整的句子"), line(0, 150, 200, 174, "被切掉的")};
     const PipelineResult result = run(job());
