@@ -10,6 +10,7 @@
 #include <QPushButton>
 #include <QRadioButton>
 #include <QVBoxLayout>
+#include <algorithm>
 #include <utility>
 
 #include "ui/engine_choice.h"
@@ -22,17 +23,21 @@ SettingsWindow::SettingsWindow(core::Settings settings, Encrypt encrypt, QWidget
 
     googleOnly_ = new QRadioButton(
         QStringLiteral("Google（免費、不用金鑰；用多了會被限流，翻譯品質也較差）"), this);
-    useLlm_ = new QRadioButton(QStringLiteral("LLM（OpenAI 相容格式）"), this);
+    useLlm_ = new QRadioButton(QStringLiteral("LLM"), this);
     // objectName 讓測試（和之後的自動化）可以直接指名抓到欄位
     googleOnly_->setObjectName(QStringLiteral("googleOnly"));
     useLlm_->setObjectName(QStringLiteral("useLlm"));
 
+    // LLM 的格式（M2-07）：同一份 OpenAI 相容的實作接得到大部分服務，Claude 用它的原生 API
+    llmKind_ = new QComboBox(this);
+    llmKind_->setObjectName(QStringLiteral("llmKind"));
+    llmKind_->addItem(QStringLiteral("OpenAI 相容（Ollama、LM Studio、OpenAI、Gemini…）"),
+                      QStringLiteral("openai-compatible"));
+    llmKind_->addItem(QStringLiteral("Claude（Anthropic 官方 API）"), QStringLiteral("anthropic"));
     endpoint_ = new QLineEdit(this);
     endpoint_->setObjectName(QStringLiteral("endpoint"));
-    endpoint_->setPlaceholderText(QStringLiteral("http://127.0.0.1:11434/v1"));
     model_ = new QLineEdit(this);
     model_->setObjectName(QStringLiteral("model"));
-    model_->setPlaceholderText(QStringLiteral("hy-mt2"));
     key_ = new QLineEdit(this);
     key_->setObjectName(QStringLiteral("key"));
     key_->setEchoMode(QLineEdit::Password);
@@ -42,6 +47,7 @@ SettingsWindow::SettingsWindow(core::Settings settings, Encrypt encrypt, QWidget
     fallback_->setObjectName(QStringLiteral("fallback"));
 
     auto* llmForm = new QFormLayout;
+    llmForm->addRow(QStringLiteral("格式"), llmKind_);
     llmForm->addRow(QStringLiteral("網址"), endpoint_);
     llmForm->addRow(QStringLiteral("模型"), model_);
     llmForm->addRow(QStringLiteral("金鑰"), key_);
@@ -92,6 +98,7 @@ SettingsWindow::SettingsWindow(core::Settings settings, Encrypt encrypt, QWidget
     layout->addWidget(buttons);
 
     connect(googleOnly_, &QRadioButton::toggled, this, [this] { updateEnabled(); });
+    connect(llmKind_, &QComboBox::currentIndexChanged, this, [this] { updateLlmHints(); });
     connect(buttons, &QDialogButtonBox::accepted, this, [this] {
         collectFromWidgets();
         emit saved(settings_);
@@ -108,6 +115,8 @@ void SettingsWindow::applyToWidgets() {
     googleOnly_->setChecked(!choice.useLlm);
     endpoint_->setText(QString::fromStdString(choice.endpoint));
     model_->setText(QString::fromStdString(choice.model));
+    const int kind = llmKind_->findData(QString::fromStdString(choice.llmId));
+    llmKind_->setCurrentIndex(kind < 0 ? 0 : kind);
     fallback_->setChecked(choice.fallbackToGoogle);
     verbose_->setChecked(settings_.verboseDiagnostics);
     mangaMode_->setChecked(settings_.mangaMode);
@@ -115,15 +124,32 @@ void SettingsWindow::applyToWidgets() {
     const int language = ocrLanguage_->findData(QString::fromStdString(settings_.ocrLanguage));
     ocrLanguage_->setCurrentIndex(language < 0 ? 0 : language);
     key_->clear();
-    keyNote_->setText(choice.hasKey ? QStringLiteral("已經設定過金鑰。留空表示不更改。")
-                                    : QStringLiteral("本機服務（Ollama、LM Studio）不用填金鑰。"));
+    updateLlmHints();
     updateEnabled();
+}
+
+void SettingsWindow::updateLlmHints() {
+    const std::string kind = llmKind_->currentData().toString().toStdString();
+    const bool claude = kind == "anthropic";
+    // 網址留空就用預設值：Claude 是官方的網址，OpenAI 相容格式預設接本機的 Ollama
+    endpoint_->setPlaceholderText(claude ? QStringLiteral("https://api.anthropic.com")
+                                         : QStringLiteral("http://127.0.0.1:11434/v1"));
+    model_->setPlaceholderText(claude ? QStringLiteral("claude-opus-5") : QStringLiteral("hy-mt2"));
+    // 金鑰是分開存的：換了格式，原本那一家的金鑰不會拿來用
+    const bool hasKey = std::ranges::any_of(settings_.engines, [&](const core::EngineSettings& e) {
+        return e.id == kind && !e.encryptedApiKey.empty();
+    });
+    keyNote_->setText(hasKey ? QStringLiteral("已經設定過金鑰。留空表示不更改。")
+                      : claude
+                          ? QStringLiteral("Claude 一定要金鑰（在 console.anthropic.com 申請）。")
+                          : QStringLiteral("本機服務（Ollama、LM Studio）不用填金鑰。"));
 }
 
 void SettingsWindow::updateEnabled() {
     const bool llm = useLlm_->isChecked();
-    for (QWidget* widget : {static_cast<QWidget*>(endpoint_), static_cast<QWidget*>(model_),
-                            static_cast<QWidget*>(key_), static_cast<QWidget*>(fallback_)}) {
+    for (QWidget* widget : {static_cast<QWidget*>(llmKind_), static_cast<QWidget*>(endpoint_),
+                            static_cast<QWidget*>(model_), static_cast<QWidget*>(key_),
+                            static_cast<QWidget*>(fallback_)}) {
         widget->setEnabled(llm);
     }
 }
@@ -131,6 +157,7 @@ void SettingsWindow::updateEnabled() {
 void SettingsWindow::collectFromWidgets() {
     EngineChoice choice;
     choice.useLlm = useLlm_->isChecked();
+    choice.llmId = llmKind_->currentData().toString().toStdString();
     choice.endpoint = endpoint_->text().trimmed().toStdString();
     choice.model = model_->text().trimmed().toStdString();
     choice.fallbackToGoogle = fallback_->isChecked();

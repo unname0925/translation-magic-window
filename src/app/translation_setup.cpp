@@ -7,6 +7,7 @@
 #include "core/opencc_converter.h"
 #include "core/text_converter.h"
 #include "core/translator_chain.h"
+#include "net/anthropic_translator.h"
 #include "net/cpr_http_client.h"
 #include "net/google_translator.h"
 #include "net/openai_translator.h"
@@ -47,6 +48,25 @@ std::shared_ptr<core::ITranslator> makeEngine(const core::EngineSettings& engine
             }
         }
         return std::make_shared<net::OpenAiTranslator>(std::move(http), std::move(options));
+    }
+    if (engine.id == "anthropic") {
+        net::AnthropicTranslator::Options options;
+        if (!engine.endpoint.empty()) {
+            options.baseUrl = engine.endpoint;
+        }
+        if (!engine.model.empty()) {
+            options.model = engine.model;
+        }
+        const std::optional<std::string> key =
+            engine.encryptedApiKey.empty() ? std::nullopt
+                                           : platform::decryptSecret(engine.encryptedApiKey);
+        if (!key) {
+            // Claude 的 API 一定要金鑰：沒有就不加進引擎鏈，免得每次都先等它失敗
+            problems.push_back("引擎 anthropic 沒有可用的金鑰，略過");
+            return nullptr;
+        }
+        options.apiKey = *key;
+        return std::make_shared<net::AnthropicTranslator>(std::move(http), std::move(options));
     }
     problems.push_back("不認得的翻譯引擎：" + engine.id);
     return nullptr;

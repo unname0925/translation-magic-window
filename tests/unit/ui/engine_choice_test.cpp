@@ -113,5 +113,37 @@ TEST(EngineChoiceTest, RoundTripsThroughTheSettings) {
     EXPECT_EQ(written.engines, current.engines);
 }
 
+// M2-07：LLM 可以是 OpenAI 相容格式，也可以是 Claude 的原生 API
+TEST(EngineChoiceTest, ReadsAClaudeEngine) {
+    const EngineChoice choice = engineChoiceFrom(
+        withEngines({{"anthropic", "", "claude-opus-5", "金鑰"}, {"google", "", "", ""}}));
+    EXPECT_TRUE(choice.useLlm);
+    EXPECT_EQ(choice.llmId, "anthropic");
+    EXPECT_EQ(choice.model, "claude-opus-5");
+    EXPECT_TRUE(choice.hasKey);
+}
+
+TEST(EngineChoiceTest, WritesTheChosenLlmKind) {
+    EngineChoice choice;
+    choice.useLlm = true;
+    choice.llmId = "anthropic";
+    choice.model = "claude-opus-5";
+    const auto engines = enginesFor(choice, core::Settings{}, "加密的金鑰");
+    EXPECT_EQ(idsOf(engines), (std::vector<std::string>{"anthropic", "google"}));
+    EXPECT_EQ(engines[0].encryptedApiKey, "加密的金鑰");
+}
+
+TEST(EngineChoiceTest, SwitchingLlmKindDoesNotCarryTheOtherKeyOver) {
+    // OpenAI 的金鑰拿去給 Claude 用一定失敗，還會把金鑰送到別家的伺服器
+    const core::Settings current =
+        withEngines({{"openai-compatible", "https://api.openai.com/v1", "gpt", "openai金鑰"}});
+    EngineChoice choice = engineChoiceFrom(current);
+    choice.llmId = "anthropic";
+    const auto engines = enginesFor(choice, current, "");
+    ASSERT_FALSE(engines.empty());
+    EXPECT_EQ(engines[0].id, "anthropic");
+    EXPECT_TRUE(engines[0].encryptedApiKey.empty());
+}
+
 }  // namespace
 }  // namespace tmw::ui

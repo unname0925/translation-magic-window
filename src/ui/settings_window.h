@@ -38,12 +38,15 @@ private:
     void applyToWidgets();
     void collectFromWidgets();
     void updateEnabled();
+    // LLM 的格式換了：網址和模型的提示、金鑰說明跟著換
+    void updateLlmHints();
 
     core::Settings settings_;
     Encrypt encrypt_;
 
     QRadioButton* googleOnly_ = nullptr;
     QRadioButton* useLlm_ = nullptr;
+    QComboBox* llmKind_ = nullptr;  // 每一項的 data 是引擎的 id
     QLineEdit* endpoint_ = nullptr;
     QLineEdit* model_ = nullptr;
     QLineEdit* key_ = nullptr;

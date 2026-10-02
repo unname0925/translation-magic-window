@@ -10,6 +10,10 @@ add_library(tmw_net STATIC
     google_translator.h
     http_client.cpp
     http_client.h
+    anthropic_translator.cpp
+    anthropic_translator.h
+    llm_prompt.cpp
+    llm_prompt.h
     openai_translator.cpp
     openai_translator.h
     rate_limiter.cpp

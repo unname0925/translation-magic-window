@@ -173,6 +173,27 @@ TEST_F(SettingsWindowTest, MangaModeSurvivesARestart) {
     EXPECT_TRUE(second.findChild<QCheckBox*>(QStringLiteral("mangaMode"))->isChecked());
 }
 
+TEST_F(SettingsWindowTest, ClaudeCanBeChosenAsTheLlm) {
+    // M2-07：Claude 用它的原生 API，金鑰和 OpenAI 相容的那個分開存
+    SettingsWindow first(core::Settings{}, platform::encryptSecret);
+    first.findChild<QRadioButton*>(QStringLiteral("useLlm"))->setChecked(true);
+    auto* kind = first.findChild<QComboBox*>(QStringLiteral("llmKind"));
+    ASSERT_NE(kind, nullptr);
+    kind->setCurrentIndex(kind->findData(QStringLiteral("anthropic")));
+    field(first, "key")->setText(QStringLiteral("sk-ant-秘密"));
+    save(first);
+
+    const core::Settings saved = platform::loadSettings(path()).settings;
+    ASSERT_FALSE(saved.engines.empty());
+    EXPECT_EQ(saved.engines[0].id, "anthropic");
+    EXPECT_EQ(platform::decryptSecret(saved.engines[0].encryptedApiKey),
+              std::optional<std::string>("sk-ant-秘密"));
+
+    SettingsWindow second(saved, platform::encryptSecret);
+    EXPECT_EQ(second.findChild<QComboBox*>(QStringLiteral("llmKind"))->currentData().toString(),
+              QStringLiteral("anthropic"));
+}
+
 TEST_F(SettingsWindowTest, OcrLanguageSurvivesARestart) {
     SettingsWindow first(core::Settings{}, platform::encryptSecret);
     auto* language = first.findChild<QComboBox*>(QStringLiteral("ocrLanguage"));

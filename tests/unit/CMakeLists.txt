@@ -27,6 +27,7 @@ add_executable(tmw_unit_tests
     core/utf8_test.cpp
     net/cpr_http_client_test.cpp
     net/google_translator_test.cpp
+    net/anthropic_translator_test.cpp
     net/openai_translator_test.cpp
     net/rate_limiter_test.cpp
     ocr/comic_text_detector_test.cpp

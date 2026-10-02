@@ -747,6 +747,24 @@ public:
 - **系統訊息**：你是翻譯引擎。把 `segments` 中的每個字串翻譯成台灣繁體中文，保留語氣和角色口吻，專有名詞依照 `glossary` 翻譯。只輸出和 `segments` 等長的 JSON 字串陣列，不要加任何說明。
 - **使用者訊息**：`{"source_lang": "...", "context": [...], "glossary": {...}, "segments": [...]}`
 
+#### Claude 的原生 API（M2-07）
+
+`net/anthropic_translator`，設定視窗 LLM 的「格式」選「Claude（Anthropic 官方 API）」。
+提示詞和下面 OpenAI 相容格式的引擎完全一樣（兩者共用 `net/llm_prompt`），差別只在 API：
+
+- 整批翻譯用 structured outputs（`output_config.format`，譯文陣列包在 `{"translations": [...]}`
+  裡），保證回傳 JSON；串流時從 `[` 開始解析，照樣收完一段就先顯示一段。
+- `output_config.effort` 預設 `low`：翻譯不需要長考。預設模型 `claude-opus-5`。
+- 開啟伺服器端的備援（`fallbacks: "default"`，beta `server-side-fallback-2026-07-01`）：
+  模型的安全分類拒答時，伺服器依原因改用別的模型。仍然被拒絕（`stop_reason: refusal`）就是
+  `Rejected`；被長度上限截斷（`max_tokens`）是 `BadResponse`，走對齊的退路。
+- 回應裡的思考區塊略過，只取文字區塊。不送 `temperature`（新模型不接受非預設的取樣參數）。
+- 沒有金鑰就不加進引擎鏈。金鑰和 OpenAI 相容的那個分開存，換格式時不會把舊金鑰送去另一家。
+
+**順便修掉的問題**：串流時 API 回的錯誤內容也是從串流回呼收到的，`response.body` 是空的，
+所以金鑰錯誤時只看得到「HTTP 401」。兩個 LLM 引擎現在都會留一份收到的原文，從裡面找出
+API 的錯誤說明（例如「invalid x-api-key」）。
+
 #### OpenAI 相容格式的 LLM 引擎（M1-08）
 
 `net/openai_translator`。同一個格式可以接 OpenAI、Gemini、DeepSeek、OpenRouter，以及本機的

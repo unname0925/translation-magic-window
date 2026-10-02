@@ -15,6 +15,8 @@ namespace tmw::ui {
 struct EngineChoice {
     // false：只用 Google（免費、不用金鑰，但用多了會被限流）
     bool useLlm = false;
+    // 哪一種 LLM："openai-compatible"（Ollama、OpenAI、Gemini…）或 "anthropic"（Claude 原生 API）
+    std::string llmId = "openai-compatible";
     std::string endpoint;  // 例如 http://127.0.0.1:11434/v1
     std::string model;     // 例如 hy-mt2
     // LLM 失敗時改用 Google

@@ -175,6 +175,20 @@ TEST_F(OpenAiTranslatorTest, ResendsOneByOneWithoutJsonWhenTheArrayIsBroken) {
         << "逐段重送時不要 JSON，只要譯文";
 }
 
+TEST_F(OpenAiTranslatorTest, KeepsTheApisReasonWhenStreaming) {
+    // 串流時錯誤內容也是從回呼收到的，原本只剩「HTTP 401」，看不出是金鑰錯了
+    http_->reply(R"({"error":{"message":"Incorrect API key provided"}})", 401);
+    OpenAiTranslator translator = makeTranslator();
+    try {
+        translate(translator, {"こんにちは"});
+        FAIL() << "401 應該丟例外";
+    } catch (const TranslatorError& error) {
+        EXPECT_EQ(error.kind(), TranslateError::Rejected);
+        EXPECT_NE(std::string(error.what()).find("Incorrect API key"), std::string::npos)
+            << error.what();
+    }
+}
+
 TEST_F(OpenAiTranslatorTest, ReportsQuotaAndServerProblems) {
     OpenAiTranslator::Options options;
     options.stream = false;
