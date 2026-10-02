@@ -17,6 +17,7 @@ class QKeySequenceEdit;
 class QLabel;
 class QLineEdit;
 class QRadioButton;
+class QSpinBox;
 
 namespace tmw::ui {
 
@@ -59,6 +60,9 @@ private:
     QCheckBox* verbose_ = nullptr;
     QCheckBox* mangaMode_ = nullptr;
     QCheckBox* gameMode_ = nullptr;
+    QCheckBox* translateEdges_ = nullptr;  // 勾起來代表 dropEdgeBlocks = false
+    QSpinBox* settleMs_ = nullptr;
+    QLabel* profileNote_ = nullptr;  // 目前的情境
     QKeySequenceEdit* hotkeyTranslate_ = nullptr;
     QKeySequenceEdit* hotkeyDebugDump_ = nullptr;
     QKeySequenceEdit* hotkeyCapture_ = nullptr;

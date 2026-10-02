@@ -14,6 +14,7 @@
 #include <QLineEdit>
 #include <QPushButton>
 #include <QRadioButton>
+#include <QSpinBox>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -228,6 +229,29 @@ TEST_F(SettingsWindowTest, TheSameHotkeyTwiceIsNotSaved) {
     ASSERT_NE(problem, nullptr);
     EXPECT_TRUE(problem->text().contains(QStringLiteral("Ctrl+Alt+Shift+T")))
         << problem->text().toStdString();
+}
+
+// M2-06：這幾項是目前情境的值
+TEST_F(SettingsWindowTest, TheProfileValuesAreEditable) {
+    core::Settings start;
+    core::switchProfile(start, "game");
+    SettingsWindow window(start, platform::encryptSecret);
+    auto* edges = window.findChild<QCheckBox*>(QStringLiteral("translateEdges"));
+    auto* settle = window.findChild<QSpinBox*>(QStringLiteral("settleMs"));
+    ASSERT_NE(edges, nullptr);
+    ASSERT_NE(settle, nullptr);
+    EXPECT_TRUE(edges->isChecked()) << "遊戲情境預設翻譯碰到邊緣的句子";
+    EXPECT_EQ(settle->value(), 600);
+    EXPECT_TRUE(window.findChild<QLabel*>(QStringLiteral("profileNote"))
+                    ->text()
+                    .contains(QStringLiteral("遊戲")));
+
+    settle->setValue(800);
+    edges->setChecked(false);
+    const core::Settings saved = save(window);
+    EXPECT_EQ(saved.settleMs, 800);
+    EXPECT_TRUE(saved.dropEdgeBlocks);
+    EXPECT_EQ(saved.profile, "game");
 }
 
 TEST_F(SettingsWindowTest, OcrLanguageSurvivesARestart) {

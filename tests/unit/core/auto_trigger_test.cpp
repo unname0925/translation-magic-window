@@ -62,6 +62,16 @@ TEST_F(AutoTriggerTest, ProcessesOnceAfterContentSettles) {
     EXPECT_EQ(requests_.size(), 1u) << "畫面沒變就不應該重複處理";
 }
 
+TEST_F(AutoTriggerTest, TheSettleTimeCanChangeWhileRunning) {
+    // M2-06：切換情境模式時換等待時間（遊戲 600ms）
+    trigger_->setSettleTime(600ms);
+    frames_.setContent(solid(100));
+    runFor(500ms);
+    EXPECT_TRUE(requests_.empty()) << "還沒等滿 600ms";
+    runFor(200ms);
+    EXPECT_EQ(requests_.size(), 1u);
+}
+
 TEST_F(AutoTriggerTest, DoesNotResampleWhenScreenIsStatic) {
     frames_.setContent(solid(100));
     runFor(5s);

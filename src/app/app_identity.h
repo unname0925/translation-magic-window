@@ -34,6 +34,11 @@ enum Command : UINT {
     kCommandLanguageKorean = 16,
     kCommandEditGlossary = 17,
     kCommandToggleGameMode = 18,
+    // 情境模式（系統匣的子選單）：不使用、漫畫、遊戲、網頁
+    kCommandProfileNone = 19,
+    kCommandProfileManga = 20,
+    kCommandProfileGame = 21,
+    kCommandProfileWeb = 22,
 };
 
 }  // namespace tmw::app

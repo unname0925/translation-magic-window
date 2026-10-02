@@ -103,6 +103,25 @@ SettingsLoad parseSettings(std::string_view json_text,
     read(document, "mangaMode", settings.mangaMode);
     read(document, "gameMode", settings.gameMode);
     read(document, "ocrLanguage", settings.ocrLanguage);
+    read(document, "dropEdgeBlocks", settings.dropEdgeBlocks);
+    readInt(document, "settleMs", settings.settleMs);
+    settings.settleMs = std::clamp(settings.settleMs, 100, 3000);
+    read(document, "profile", settings.profile);
+    if (const auto it = document.find("profiles"); it != document.end() && it->is_object()) {
+        for (const auto& [id, entry] : it->items()) {
+            if (!entry.is_object()) {
+                continue;
+            }
+            ProfileValues values = defaultProfile(id);
+            read(entry, "mangaMode", values.mangaMode);
+            read(entry, "gameMode", values.gameMode);
+            read(entry, "ocrLanguage", values.ocrLanguage);
+            read(entry, "dropEdgeBlocks", values.dropEdgeBlocks);
+            readInt(entry, "settleMs", values.settleMs);
+            values.settleMs = std::clamp(values.settleMs, 100, 3000);
+            settings.profiles[id] = values;
+        }
+    }
     if (settings.ocrLanguage != "auto" &&
         languageFromCode(settings.ocrLanguage) == Language::Unknown) {
         settings.ocrLanguage = "auto";
@@ -126,6 +145,45 @@ SettingsLoad parseSettings(std::string_view json_text,
     return result;
 }
 
+namespace {
+
+json profilesJson(const std::map<std::string, ProfileValues>& profiles) {
+    json out = json::object();
+    for (const auto& [id, values] : profiles) {
+        out[id] = {{"mangaMode", values.mangaMode},
+                   {"gameMode", values.gameMode},
+                   {"ocrLanguage", values.ocrLanguage},
+                   {"dropEdgeBlocks", values.dropEdgeBlocks},
+                   {"settleMs", values.settleMs}};
+    }
+    return out;
+}
+
+}  // namespace
+
+ProfileValues currentProfileValues(const Settings& settings) {
+    return ProfileValues{settings.mangaMode, settings.gameMode, settings.ocrLanguage,
+                         settings.dropEdgeBlocks, settings.settleMs};
+}
+
+void switchProfile(Settings& settings, std::string_view id) {
+    if (!settings.profile.empty()) {
+        settings.profiles[settings.profile] = currentProfileValues(settings);
+    }
+    settings.profile = std::string(id);
+    if (id.empty()) {
+        return;
+    }
+    const auto found = settings.profiles.find(settings.profile);
+    const ProfileValues values =
+        found != settings.profiles.end() ? found->second : defaultProfile(id);
+    settings.mangaMode = values.mangaMode;
+    settings.gameMode = values.gameMode;
+    settings.ocrLanguage = values.ocrLanguage;
+    settings.dropEdgeBlocks = values.dropEdgeBlocks;
+    settings.settleMs = values.settleMs;
+}
+
 std::string serializeSettings(const Settings& settings, int schemaVersion) {
     json engines = json::array();
     for (const EngineSettings& engine : settings.engines) {
@@ -140,6 +198,10 @@ std::string serializeSettings(const Settings& settings, int schemaVersion) {
         {"mangaMode", settings.mangaMode},
         {"gameMode", settings.gameMode},
         {"ocrLanguage", settings.ocrLanguage},
+        {"dropEdgeBlocks", settings.dropEdgeBlocks},
+        {"settleMs", settings.settleMs},
+        {"profile", settings.profile},
+        {"profiles", profilesJson(settings.profiles)},
         {"engines", std::move(engines)},
         {"resultWindow",
          {{"fontScale", settings.resultWindow.fontScale},

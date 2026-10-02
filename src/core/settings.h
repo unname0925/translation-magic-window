@@ -7,12 +7,14 @@
 #pragma once
 
 #include <functional>
+#include <map>
 #include <nlohmann/json_fwd.hpp>
 #include <span>
 #include <string>
 #include <string_view>
 #include <vector>
 
+#include "core/context_profile.h"
 #include "core/geometry.h"
 
 namespace tmw::core {
@@ -59,6 +61,14 @@ struct Settings {
     // 辨識語言："auto"（自動判斷）、"ja"、"en"、"ko"。指定之後只用那個語言的模型，
     // 不再判斷（design.md 4.4「語言判斷」第 5 步）。讀不懂的值一律當成 "auto"。
     std::string ocrLanguage = "auto";
+    // 碰到透鏡邊緣、被切掉一部分的句子不翻（design.md 4.4）。遊戲情境預設關掉。
+    bool dropEdgeBlocks = true;
+    // 畫面停下來多久才處理（毫秒，100～3000，design.md 4.3）
+    int settleMs = 400;
+    // 情境模式（M2-06，core/context_profile.h）：現在選的情境（空字串是沒選），
+    // 以及每個情境上一次的設定。上面那幾個欄位一直是現在生效的值。
+    std::string profile;
+    std::map<std::string, ProfileValues> profiles;
     // 翻譯引擎的順序就是引擎鏈的順序（design.md 4.5）
     std::vector<EngineSettings> engines;
     ResultWindowSettings resultWindow;
@@ -66,6 +76,12 @@ struct Settings {
 
     friend bool operator==(const Settings&, const Settings&) = default;
 };
+
+// 現在生效的那幾個值（存回情境用）
+ProfileValues currentProfileValues(const Settings& settings);
+// 切換情境：現在的值存回原本的情境，再載入新情境上一次的值（第一次用時是內建的預設值）。
+// id 是空字串代表不使用情境：現在的值維持不變。
+void switchProfile(Settings& settings, std::string_view id);
 
 // 把設定檔從某個版本改成下一個版本。清單中的第 n 個函式負責「版本 n+1 → n+2」。
 using SettingsMigration = std::function<void(nlohmann::json&)>;

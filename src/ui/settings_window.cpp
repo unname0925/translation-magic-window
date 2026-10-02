@@ -10,6 +10,7 @@
 #include <QLineEdit>
 #include <QPushButton>
 #include <QRadioButton>
+#include <QSpinBox>
 #include <QVBoxLayout>
 #include <algorithm>
 #include <utility>
@@ -74,6 +75,20 @@ SettingsWindow::SettingsWindow(core::Settings settings, Encrypt encrypt, QWidget
         QStringLiteral("遊戲模式（只看文字區域有沒有變；閃爍的游標、角色動畫不會讓翻譯一直等）"),
         this);
     gameMode_->setObjectName(QStringLiteral("gameMode"));
+    // 情境模式（M2-06）：下面這幾項記在目前的情境裡，切到別的情境時各自恢復
+    profileNote_ = new QLabel(this);
+    profileNote_->setObjectName(QStringLiteral("profileNote"));
+    profileNote_->setWordWrap(true);
+    translateEdges_ = new QCheckBox(
+        QStringLiteral(
+            "也翻譯碰到透鏡邊緣的句子（捲動網頁時會翻到殘句；遊戲對話框常貼著邊時要打開）"),
+        this);
+    translateEdges_->setObjectName(QStringLiteral("translateEdges"));
+    settleMs_ = new QSpinBox(this);
+    settleMs_->setObjectName(QStringLiteral("settleMs"));
+    settleMs_->setRange(100, 3000);
+    settleMs_->setSingleStep(50);
+    settleMs_->setSuffix(QStringLiteral(" 毫秒"));
 
     // 自動判斷時，日文、英文的畫面只跑主模型；韓文要多跑一次判斷。
     // 固定只看某一種語言的人指定它，就連判斷都省了（design.md 4.4「語言判斷」）。
@@ -85,6 +100,7 @@ SettingsWindow::SettingsWindow(core::Settings settings, Encrypt encrypt, QWidget
     ocrLanguage_->addItem(QStringLiteral("韓文"), QStringLiteral("ko"));
     auto* languageForm = new QFormLayout;
     languageForm->addRow(QStringLiteral("辨識語言"), ocrLanguage_);
+    languageForm->addRow(QStringLiteral("畫面停下來多久才翻"), settleMs_);
 
     // 快捷鍵（M2-10）：點一下欄位直接按想要的組合；清掉代表不使用那個快捷鍵
     const auto hotkeyEdit = [this](const char* name) {
@@ -116,9 +132,11 @@ SettingsWindow::SettingsWindow(core::Settings settings, Encrypt encrypt, QWidget
 
     auto* layout = new QVBoxLayout(this);
     layout->addWidget(engines);
+    layout->addWidget(profileNote_);
     layout->addLayout(languageForm);
     layout->addWidget(mangaMode_);
     layout->addWidget(gameMode_);
+    layout->addWidget(translateEdges_);
     layout->addWidget(verbose_);
     layout->addWidget(hotkeys);
     layout->addWidget(buttons);
@@ -157,6 +175,14 @@ void SettingsWindow::applyToWidgets() {
     verbose_->setChecked(settings_.verboseDiagnostics);
     mangaMode_->setChecked(settings_.mangaMode);
     gameMode_->setChecked(settings_.gameMode);
+    translateEdges_->setChecked(!settings_.dropEdgeBlocks);
+    settleMs_->setValue(settings_.settleMs);
+    profileNote_->setText(
+        settings_.profile.empty()
+            ? QStringLiteral(
+                  "情境：不使用（可以在系統匣的「情境」選漫畫、遊戲或網頁，各自記住一組設定）")
+            : QString::fromStdString("情境：" + core::profileName(settings_.profile) +
+                                     "（下面的辨識設定會記在這個情境裡）"));
     const int language = ocrLanguage_->findData(QString::fromStdString(settings_.ocrLanguage));
     ocrLanguage_->setCurrentIndex(language < 0 ? 0 : language);
     key_->clear();
@@ -230,6 +256,8 @@ void SettingsWindow::collectFromWidgets() {
     settings_.verboseDiagnostics = verbose_->isChecked();
     settings_.mangaMode = mangaMode_->isChecked();
     settings_.gameMode = gameMode_->isChecked();
+    settings_.dropEdgeBlocks = !translateEdges_->isChecked();
+    settings_.settleMs = settleMs_->value();
     settings_.ocrLanguage = ocrLanguage_->currentData().toString().toStdString();
     settings_.hotkeys.translate = hotkeyText(hotkeyTranslate_);
     settings_.hotkeys.debugDump = hotkeyText(hotkeyDebugDump_);

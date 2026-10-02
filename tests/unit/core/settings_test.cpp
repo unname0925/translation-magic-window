@@ -150,6 +150,64 @@ TEST(SettingsTest, HotkeysDefaultToTheOriginalKeysAndSurviveARoundTrip) {
     EXPECT_EQ(parseSettings(serializeSettings(settings)).settings.hotkeys, settings.hotkeys);
 }
 
+// M2-06：情境模式
+TEST(ProfileTest, NoProfileMeansTheOldBehaviour) {
+    const Settings settings = parseSettings(R"({"schemaVersion": 1, "mangaMode": true})").settings;
+    EXPECT_EQ(settings.profile, "");
+    EXPECT_TRUE(settings.mangaMode) << "舊的設定檔照樣讀";
+    EXPECT_TRUE(settings.dropEdgeBlocks);
+    EXPECT_EQ(settings.settleMs, 400);
+}
+
+TEST(ProfileTest, AFirstVisitUsesTheBuiltInValues) {
+    Settings settings;
+    switchProfile(settings, "game");
+    EXPECT_EQ(settings.profile, "game");
+    EXPECT_TRUE(settings.gameMode);
+    EXPECT_FALSE(settings.mangaMode);
+    EXPECT_FALSE(settings.dropEdgeBlocks) << "遊戲的對話框常貼著透鏡邊";
+    EXPECT_EQ(settings.settleMs, 600);
+
+    switchProfile(settings, "manga");
+    EXPECT_TRUE(settings.mangaMode);
+    EXPECT_FALSE(settings.gameMode);
+    EXPECT_EQ(settings.settleMs, 300);
+}
+
+TEST(ProfileTest, EachProfileRemembersWhatWasChangedInIt) {
+    Settings settings;
+    switchProfile(settings, "manga");
+    settings.ocrLanguage = "ja";  // 在漫畫情境裡指定日文
+    switchProfile(settings, "web");
+    EXPECT_EQ(settings.ocrLanguage, "auto") << "網頁情境還是自己的設定";
+    switchProfile(settings, "manga");
+    EXPECT_EQ(settings.ocrLanguage, "ja") << "切回漫畫時恢復";
+}
+
+TEST(ProfileTest, LeavingProfilesKeepsTheCurrentValues) {
+    Settings settings;
+    switchProfile(settings, "game");
+    switchProfile(settings, "");
+    EXPECT_EQ(settings.profile, "");
+    EXPECT_TRUE(settings.gameMode) << "不用情境時維持現在的值，不會突然變回別的";
+}
+
+TEST(ProfileTest, ProfilesSurviveARoundTrip) {
+    Settings settings;
+    switchProfile(settings, "manga");
+    settings.settleMs = 250;
+    switchProfile(settings, "game");
+    const Settings reloaded = parseSettings(serializeSettings(settings)).settings;
+    EXPECT_EQ(reloaded.profile, "game");
+    EXPECT_EQ(reloaded.profiles, settings.profiles);
+    EXPECT_EQ(reloaded.profiles.at("manga").settleMs, 250);
+}
+
+TEST(ProfileTest, SettleTimeIsKeptInARange) {
+    EXPECT_EQ(parseSettings(R"({"schemaVersion": 1, "settleMs": 5})").settings.settleMs, 100);
+    EXPECT_EQ(parseSettings(R"({"schemaVersion": 1, "settleMs": 99999})").settings.settleMs, 3000);
+}
+
 TEST(SettingsTest, GameModeIsOffUnlessTurnedOn) {
     EXPECT_FALSE(parseSettings(R"({"schemaVersion": 1})").settings.gameMode);
     Settings settings;

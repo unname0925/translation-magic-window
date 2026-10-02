@@ -64,6 +64,9 @@ public:
     // 空的代表沒讀到文字，回到看整個範圍。不是遊戲模式時忽略。透鏡移動後自動清掉。
     void setFocusRegions(std::span<const RectI> regions);
 
+    // 畫面停下來多久才處理（切換情境模式時）
+    void setSettleTime(Duration settleTime) { machine_.setSettleTime(settleTime); }
+
     // 執行中切換遊戲模式（設定視窗、系統匣）。關掉時一併清掉文字區域。
     void setFocusOnText(bool enabled);
 

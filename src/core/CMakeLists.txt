@@ -8,6 +8,8 @@ add_library(tmw_core STATIC
     clock.h
     command_line.cpp
     command_line.h
+    context_profile.cpp
+    context_profile.h
     color.h
     debug_overlay.cpp
     debug_overlay.h

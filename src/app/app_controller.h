@@ -74,6 +74,10 @@ private:
     void setOcrLanguage(const std::string& code);
     // 遊戲模式：第一次辨識之後只看文字區域（M2-06）
     void setGameMode(bool enabled);
+    // 情境模式（M2-06）：""（不使用）、"manga"、"game"、"web"
+    void setProfile(const std::string& id);
+    // settings_ 裡現在生效的值套用到 OCR、觸發器、處理管線
+    void applyProfileValues();
     // 依 settings_.hotkeys 註冊全域快捷鍵（M2-10）。回傳註冊不了的（被其他程式佔用或看不懂），
     // 例如「Ctrl+Alt+T（立即翻譯）」
     std::vector<std::string> registerHotkeys();

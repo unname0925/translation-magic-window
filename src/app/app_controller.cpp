@@ -155,6 +155,28 @@ constexpr std::array<LanguageMenuItem, 4> kLanguageMenu{{
     {kCommandLanguageKorean, "ko", L"韓文"},
 }};
 
+// 系統匣「情境」子選單的每一項（M2-06）
+struct ProfileMenuItem {
+    UINT command;
+    const char* id;
+    const wchar_t* label;
+};
+constexpr std::array<ProfileMenuItem, 4> kProfileMenu{{
+    {kCommandProfileNone, "", L"不使用"},
+    {kCommandProfileManga, "manga", L"漫畫"},
+    {kCommandProfileGame, "game", L"遊戲"},
+    {kCommandProfileWeb, "web", L"網頁"},
+}};
+
+std::string profileForCommand(UINT command) {
+    for (const ProfileMenuItem& item : kProfileMenu) {
+        if (item.command == command) {
+            return item.id;
+        }
+    }
+    return "";
+}
+
 std::string ocrLanguageForCommand(UINT command) {
     for (const LanguageMenuItem& item : kLanguageMenu) {
         if (item.command == command) {
@@ -204,6 +226,7 @@ AppController::AppController(HINSTANCE instance, std::filesystem::path dataDirec
         };
         core::AutoTriggerConfig triggerConfig;
         triggerConfig.focusOnText = settings_.gameMode;
+        triggerConfig.settleTime = std::chrono::milliseconds(settings_.settleMs);
         trigger_ = std::make_unique<core::AutoTrigger>(clock_, *frameSource_, triggerConfig,
                                                        std::move(triggerCallbacks));
 
@@ -342,6 +365,12 @@ LRESULT AppController::handleMessage(UINT message, WPARAM wParam, LPARAM lParam)
                     setMangaMode(!settings_.mangaMode);
                     saveSettings();
                     break;
+                case kCommandProfileNone:
+                case kCommandProfileManga:
+                case kCommandProfileGame:
+                case kCommandProfileWeb:
+                    setProfile(profileForCommand(LOWORD(wParam)));
+                    break;
                 case kCommandToggleGameMode:
                     setGameMode(!settings_.gameMode);
                     saveSettings();
@@ -439,6 +468,17 @@ void AppController::showTrayMenu(POINT anchor) {
                 kCommandToggleMangaMode, L"漫畫模式（依對話框分段）");
     AppendMenuW(menu, MF_STRING | (settings_.gameMode ? MF_CHECKED : MF_UNCHECKED),
                 kCommandToggleGameMode, L"遊戲模式（只看文字區域）");
+    if (const HMENU profiles = CreatePopupMenu(); profiles != nullptr) {
+        for (const ProfileMenuItem& item : kProfileMenu) {
+            AppendMenuW(profiles, MF_STRING, item.command, item.label);
+            if (settings_.profile == item.id) {
+                CheckMenuRadioItem(profiles, kProfileMenu.front().command,
+                                   kProfileMenu.back().command, item.command, MF_BYCOMMAND);
+            }
+        }
+        // 子選單交給父選單管理，DestroyMenu(menu) 時一起釋放
+        AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(profiles), L"情境");
+    }
     if (const HMENU languages = CreatePopupMenu(); languages != nullptr) {
         for (const LanguageMenuItem& item : kLanguageMenu) {
             AppendMenuW(languages, MF_STRING, item.command, item.label);
@@ -622,6 +662,22 @@ void AppController::unregisterHotkeys() {
     captureHotkeyRegistered_ = translateHotkeyRegistered_ = debugDumpHotkeyRegistered_ = false;
 }
 
+void AppController::setProfile(const std::string& id) {
+    core::switchProfile(settings_, id);
+    applyProfileValues();
+    saveSettings();
+    platform::logInfo("情境：" + (id.empty() ? std::string("不使用") : core::profileName(id)));
+}
+
+void AppController::applyProfileValues() {
+    // 情境切換或設定視窗存檔之後，把現在的值一次套用到各個地方
+    setMangaMode(settings_.mangaMode);  // 模型載入失敗時它會把 mangaMode 留在 false
+    setGameMode(settings_.gameMode);
+    setOcrLanguage(settings_.ocrLanguage);
+    trigger_->setSettleTime(std::chrono::milliseconds(settings_.settleMs));
+    rebuildTranslation();  // 處理管線的「碰到邊緣的句子不翻」
+}
+
 void AppController::setGameMode(bool enabled) {
     settings_.gameMode = enabled;
     trigger_->setFocusOnText(enabled);
@@ -690,7 +746,9 @@ void AppController::rebuildTranslation() {
     platform::logInfo("翻譯引擎鏈：" +
                       (engines.empty() ? std::string("（沒有可用的引擎）") : engines));
 
-    pipeline_ = std::make_unique<core::Pipeline>(*ocr_, *translation_);
+    core::PipelineOptions pipelineOptions;
+    pipelineOptions.dropEdgeBlocks = settings_.dropEdgeBlocks;
+    pipeline_ = std::make_unique<core::Pipeline>(*ocr_, *translation_, pipelineOptions);
     worker_ =
         std::make_unique<core::PipelineWorker>(*pipeline_, [this](core::PipelineResult result) {
             // 這裡是工作執行緒。回到 UI 執行緒才能碰透鏡和結果視窗（design.md 3.3）。
@@ -746,6 +804,10 @@ void AppController::applySettings(const core::Settings& settings) {
     if (settings.ocrLanguage != settings_.ocrLanguage) {
         setOcrLanguage(settings.ocrLanguage);
     }
+    // 這兩項改的是目前情境的值（切走情境時會存回去）；處理管線在下面重建時套用
+    settings_.dropEdgeBlocks = settings.dropEdgeBlocks;
+    settings_.settleMs = settings.settleMs;
+    trigger_->setSettleTime(std::chrono::milliseconds(settings_.settleMs));
     if (!settingsPath_.empty()) {
         platform::saveSettings(settingsPath_, settings_);
     }

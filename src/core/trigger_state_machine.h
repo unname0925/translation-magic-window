@@ -39,6 +39,9 @@ class TriggerStateMachine {
 public:
     TriggerStateMachine(const IClock& clock, Duration settleTime);
 
+    // 執行中換等待時間（切換情境模式時）。正在等的那一次也用新的時間判斷。
+    void setSettleTime(Duration settleTime) { settleTime_ = settleTime; }
+
     LensState state() const { return state_; }
     std::uint64_t generation() const { return generation_; }
 
