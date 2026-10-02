@@ -747,6 +747,26 @@ public:
 - **系統訊息**：你是翻譯引擎。把 `segments` 中的每個字串翻譯成台灣繁體中文，保留語氣和角色口吻，專有名詞依照 `glossary` 翻譯。只輸出和 `segments` 等長的 JSON 字串陣列，不要加任何說明。
 - **使用者訊息**：`{"source_lang": "...", "context": [...], "glossary": {...}, "segments": [...]}`
 
+#### 付費翻譯服務（M2-07）
+
+`net/service_translators`：DeepL、Microsoft Translator、Google Cloud Translation（Basic v2）。設定視窗的
+「其他引擎」選它們，填金鑰（Microsoft 的區域型資源另外填區域）。三家都是一次送一個陣列、回傳等長的陣列，
+超過各家一次的上限（50／100／128 段）就分批。
+
+- **DeepL**：`/v2/translate`，目標 `ZH-HANT`；金鑰以 `:fx` 結尾的免費方案自動用 `api-free.deepl.com`；
+  前文放在 `context`（只當參考、不翻譯也不計費）；456（額度用完）歸類成被限流。
+- **Microsoft**：`/translate?api-version=3.0&to=zh-Hant`，金鑰在 `Ocp-Apim-Subscription-Key`，
+  區域在 `Ocp-Apim-Subscription-Region`。
+- **Google Cloud**：`/language/translate/v2`，目標 `zh-TW`、`format: text`（不然引號會變成 `&quot;`）；
+  金鑰放在 `X-Goog-Api-Key` 標頭，不放網址（網址比較容易被記錄）。
+- 都看不懂 `{本文|讀音}`：和 Google 網頁翻譯共用 `net/ruby_notes`（特殊讀音另外翻、附在後面）。
+- 專有名詞表不支援：各家的詞彙表要先用 API 建好，不能每次請求帶。
+- 沒有金鑰就不加進引擎鏈。
+
+**驗證程度**：請求和回應依各家官方文件；沒有金鑰，所以沒有翻譯過真的句子。用假金鑰打過三家的真實網址，
+確認網址正確、錯誤的格式和解析一致（DeepL：403「Forbidden…」放在最上層的 `message`，原本的解析只看
+`error.message` 而漏掉，已修正；Microsoft：401；Google Cloud：400「API key not valid」）。
+
 #### Claude 的原生 API（M2-07）
 
 `net/anthropic_translator`，設定視窗 LLM 的「格式」選「Claude（Anthropic 官方 API）」。

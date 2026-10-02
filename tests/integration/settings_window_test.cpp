@@ -231,6 +231,24 @@ TEST_F(SettingsWindowTest, TheSameHotkeyTwiceIsNotSaved) {
         << problem->text().toStdString();
 }
 
+TEST_F(SettingsWindowTest, DeepLCanBeChosenAndHidesTheModelField) {
+    SettingsWindow window(core::Settings{}, platform::encryptSecret);
+    window.show();  // 列的顯示或隱藏要在視窗顯示之後才看得出來
+    window.findChild<QRadioButton*>(QStringLiteral("useLlm"))->setChecked(true);
+    auto* kind = window.findChild<QComboBox*>(QStringLiteral("llmKind"));
+    kind->setCurrentIndex(kind->findData(QStringLiteral("deepl")));
+    EXPECT_FALSE(field(window, "model")->isVisible()) << "翻譯服務沒有模型可選";
+    EXPECT_FALSE(field(window, "region")->isVisible()) << "區域只有 Microsoft 要填";
+    kind->setCurrentIndex(kind->findData(QStringLiteral("azure")));
+    EXPECT_TRUE(field(window, "region")->isVisible());
+
+    kind->setCurrentIndex(kind->findData(QStringLiteral("deepl")));
+    field(window, "key")->setText(QStringLiteral("abc:fx"));
+    const core::Settings saved = save(window);
+    ASSERT_FALSE(saved.engines.empty());
+    EXPECT_EQ(saved.engines[0].id, "deepl");
+}
+
 // M2-06：這幾項是目前情境的值
 TEST_F(SettingsWindowTest, TheProfileValuesAreEditable) {
     core::Settings start;

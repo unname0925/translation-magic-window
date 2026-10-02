@@ -26,7 +26,7 @@ std::string llmUserMessage(const core::TranslateRequest& request,
 core::TranslateError classifyHttpFailure(const HttpResponse& response);
 
 // 給使用者看的失敗原因。回應內容可能含有原文，只留狀態碼和 API 自己的錯誤說明
-// （error.message，OpenAI 和 Anthropic 都是這個位置）。
+// （大多數服務放在 error.message，DeepL 放在最上層的 message）。
 std::string describeHttpFailure(const HttpResponse& response);
 
 }  // namespace tmw::net

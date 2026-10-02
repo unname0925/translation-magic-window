@@ -12,14 +12,19 @@
 
 namespace tmw::ui {
 
+// 主要引擎是不是 LLM（要填模型、會照專有名詞表翻）
+bool isLlmEngine(const std::string& id);
+
 struct EngineChoice {
-    // false：只用 Google（免費、不用金鑰，但用多了會被限流）
+    // false：只用 Google（免費、不用金鑰，但用多了會被限流）；true：用 engineId 那個引擎
     bool useLlm = false;
-    // 哪一種 LLM："openai-compatible"（Ollama、OpenAI、Gemini…）或 "anthropic"（Claude 原生 API）
-    std::string llmId = "openai-compatible";
-    std::string endpoint;  // 例如 http://127.0.0.1:11434/v1
-    std::string model;     // 例如 hy-mt2
-    // LLM 失敗時改用 Google
+    // 主要的引擎（M2-07）："openai-compatible"（Ollama、OpenAI、Gemini…）、"anthropic"（Claude）、
+    // "deepl"、"azure"（Microsoft Translator）、"google-cloud"（Google Cloud Translation）
+    std::string engineId = "openai-compatible";
+    std::string endpoint;  // 例如 http://127.0.0.1:11434/v1；留空用預設
+    std::string model;     // LLM 的模型，例如 hy-mt2
+    std::string region;    // Microsoft Translator 的區域，例如 eastasia
+    // 主要的引擎失敗時改用 Google
     bool fallbackToGoogle = true;
     // 已經存了金鑰（畫面上顯示「已設定」，不會把金鑰讀出來）
     bool hasKey = false;

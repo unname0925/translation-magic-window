@@ -26,7 +26,7 @@ SettingsWindow::SettingsWindow(core::Settings settings, Encrypt encrypt, QWidget
 
     googleOnly_ = new QRadioButton(
         QStringLiteral("Google（免費、不用金鑰；用多了會被限流，翻譯品質也較差）"), this);
-    useLlm_ = new QRadioButton(QStringLiteral("LLM"), this);
+    useLlm_ = new QRadioButton(QStringLiteral("其他引擎（LLM 或付費翻譯服務）"), this);
     // objectName 讓測試（和之後的自動化）可以直接指名抓到欄位
     googleOnly_->setObjectName(QStringLiteral("googleOnly"));
     useLlm_->setObjectName(QStringLiteral("useLlm"));
@@ -37,6 +37,12 @@ SettingsWindow::SettingsWindow(core::Settings settings, Encrypt encrypt, QWidget
     llmKind_->addItem(QStringLiteral("OpenAI 相容（Ollama、LM Studio、OpenAI、Gemini…）"),
                       QStringLiteral("openai-compatible"));
     llmKind_->addItem(QStringLiteral("Claude（Anthropic 官方 API）"), QStringLiteral("anthropic"));
+    llmKind_->addItem(QStringLiteral("DeepL"), QStringLiteral("deepl"));
+    llmKind_->addItem(QStringLiteral("Microsoft Translator"), QStringLiteral("azure"));
+    llmKind_->addItem(QStringLiteral("Google Cloud Translation"), QStringLiteral("google-cloud"));
+    region_ = new QLineEdit(this);
+    region_->setObjectName(QStringLiteral("region"));
+    region_->setPlaceholderText(QStringLiteral("全域資源留空；區域型資源填區域，例如 eastasia"));
     endpoint_ = new QLineEdit(this);
     endpoint_->setObjectName(QStringLiteral("endpoint"));
     model_ = new QLineEdit(this);
@@ -50,9 +56,11 @@ SettingsWindow::SettingsWindow(core::Settings settings, Encrypt encrypt, QWidget
     fallback_->setObjectName(QStringLiteral("fallback"));
 
     auto* llmForm = new QFormLayout;
-    llmForm->addRow(QStringLiteral("格式"), llmKind_);
+    llmForm->addRow(QStringLiteral("引擎"), llmKind_);
     llmForm->addRow(QStringLiteral("網址"), endpoint_);
     llmForm->addRow(QStringLiteral("模型"), model_);
+    llmForm->addRow(QStringLiteral("區域"), region_);
+    llmForm_ = llmForm;
     llmForm->addRow(QStringLiteral("金鑰"), key_);
     llmForm->addRow(QString(), keyNote_);
     llmForm->addRow(QString(), fallback_);
@@ -169,7 +177,8 @@ void SettingsWindow::applyToWidgets() {
     googleOnly_->setChecked(!choice.useLlm);
     endpoint_->setText(QString::fromStdString(choice.endpoint));
     model_->setText(QString::fromStdString(choice.model));
-    const int kind = llmKind_->findData(QString::fromStdString(choice.llmId));
+    region_->setText(QString::fromStdString(choice.region));
+    const int kind = llmKind_->findData(QString::fromStdString(choice.engineId));
     llmKind_->setCurrentIndex(kind < 0 ? 0 : kind);
     fallback_->setChecked(choice.fallbackToGoogle);
     verbose_->setChecked(settings_.verboseDiagnostics);
@@ -216,26 +225,42 @@ void SettingsWindow::showHotkey(QKeySequenceEdit* edit, const std::string& text)
 
 void SettingsWindow::updateLlmHints() {
     const std::string kind = llmKind_->currentData().toString().toStdString();
-    const bool claude = kind == "anthropic";
-    // 網址留空就用預設值：Claude 是官方的網址，OpenAI 相容格式預設接本機的 Ollama
-    endpoint_->setPlaceholderText(claude ? QStringLiteral("https://api.anthropic.com")
-                                         : QStringLiteral("http://127.0.0.1:11434/v1"));
-    model_->setPlaceholderText(claude ? QStringLiteral("claude-opus-5") : QStringLiteral("hy-mt2"));
-    // 金鑰是分開存的：換了格式，原本那一家的金鑰不會拿來用
+    // 網址留空就用各家的預設值；OpenAI 相容格式預設接本機的 Ollama
+    const QString endpoint =
+        kind == "anthropic"      ? QStringLiteral("https://api.anthropic.com")
+        : kind == "deepl"        ? QStringLiteral("依金鑰自動選免費版或付費版")
+        : kind == "azure"        ? QStringLiteral("https://api.cognitive.microsofttranslator.com")
+        : kind == "google-cloud" ? QStringLiteral("https://translation.googleapis.com")
+                                 : QStringLiteral("http://127.0.0.1:11434/v1");
+    endpoint_->setPlaceholderText(endpoint);
+    model_->setPlaceholderText(kind == "anthropic" ? QStringLiteral("claude-opus-5")
+                                                   : QStringLiteral("hy-mt2"));
+    // 模型只有 LLM 要填，區域只有 Microsoft 要填
+    llmForm_->setRowVisible(model_, isLlmEngine(kind));
+    llmForm_->setRowVisible(region_, kind == "azure");
+    // 金鑰是分開存的：換了引擎，原本那一家的金鑰不會拿來用
     const bool hasKey = std::ranges::any_of(settings_.engines, [&](const core::EngineSettings& e) {
         return e.id == kind && !e.encryptedApiKey.empty();
     });
-    keyNote_->setText(hasKey ? QStringLiteral("已經設定過金鑰。留空表示不更改。")
-                      : claude
-                          ? QStringLiteral("Claude 一定要金鑰（在 console.anthropic.com 申請）。")
-                          : QStringLiteral("本機服務（Ollama、LM Studio）不用填金鑰。"));
+    const QString needKey =
+        kind == "anthropic" ? QStringLiteral("Claude 一定要金鑰（在 console.anthropic.com 申請）。")
+        : kind == "deepl"   ? QStringLiteral("DeepL 一定要金鑰（免費方案每月 50 萬字）。")
+        : kind == "azure" ? QStringLiteral("Microsoft Translator 一定要金鑰（Azure 的翻譯資源）。")
+        : kind == "google-cloud"
+            ? QStringLiteral("Google Cloud 一定要 API 金鑰（要先啟用 Cloud Translation API）。")
+            : QStringLiteral("本機服務（Ollama、LM Studio）不用填金鑰。");
+    QString note = hasKey ? QStringLiteral("已經設定過金鑰。留空表示不更改。") : needKey;
+    if (!isLlmEngine(kind)) {
+        note += QStringLiteral("翻譯服務不會照專有名詞表翻。");
+    }
+    keyNote_->setText(note);
 }
 
 void SettingsWindow::updateEnabled() {
     const bool llm = useLlm_->isChecked();
     for (QWidget* widget : {static_cast<QWidget*>(llmKind_), static_cast<QWidget*>(endpoint_),
-                            static_cast<QWidget*>(model_), static_cast<QWidget*>(key_),
-                            static_cast<QWidget*>(fallback_)}) {
+                            static_cast<QWidget*>(model_), static_cast<QWidget*>(region_),
+                            static_cast<QWidget*>(key_), static_cast<QWidget*>(fallback_)}) {
         widget->setEnabled(llm);
     }
 }
@@ -243,9 +268,10 @@ void SettingsWindow::updateEnabled() {
 void SettingsWindow::collectFromWidgets() {
     EngineChoice choice;
     choice.useLlm = useLlm_->isChecked();
-    choice.llmId = llmKind_->currentData().toString().toStdString();
+    choice.engineId = llmKind_->currentData().toString().toStdString();
     choice.endpoint = endpoint_->text().trimmed().toStdString();
     choice.model = model_->text().trimmed().toStdString();
+    choice.region = region_->text().trimmed().toStdString();
     choice.fallbackToGoogle = fallback_->isChecked();
 
     // 空白代表「不更改」，原本的金鑰會被沿用（enginesFor 處理）

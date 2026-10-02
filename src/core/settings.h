@@ -25,6 +25,7 @@ struct EngineSettings {
     std::string endpoint;         // 自訂網址（空字串表示用預設）
     std::string model;            // LLM 的模型名稱
     std::string encryptedApiKey;  // DPAPI 加密後再轉成 base64；記錄檔和除錯傾印都不會包含
+    std::string region;           // Microsoft Translator 區域型資源的區域（例如 eastasia）
 
     friend bool operator==(const EngineSettings&, const EngineSettings&) = default;
 };

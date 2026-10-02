@@ -10,6 +10,7 @@
 
 #include "core/ruby.h"
 #include "core/translation_alignment.h"
+#include "net/ruby_notes.h"
 
 namespace tmw::net {
 namespace {
@@ -131,56 +132,20 @@ std::string GoogleTranslator::requestOnce(std::string_view text,
 std::vector<std::string> GoogleTranslator::translate(std::span<const std::string> segments,
                                                      const core::TranslateRequest& request,
                                                      std::stop_token cancel) {
-    // 這個端點看不懂 `{本文|讀音}`，標記會被它翻掉或弄壞，對齊檢查就會一直判定格式錯誤。
-    // 所以先還原成只有本文（design.md 4.5：一般翻譯引擎看不懂這種標記）。
-    // 標記的是作者刻意的特殊讀音（core::markSpecialRuby），拿掉就失去作者想表達的意思：
-    // 本文和讀音各自當成一段跟著同一批送出去翻，再附在那一段譯文的後面（M2-14）。
-    std::vector<std::string> toSend;
-    toSend.reserve(segments.size());
-    std::vector<std::vector<std::pair<std::string, std::string>>> rubyOf(segments.size());
-    std::map<std::string, std::size_t> extraIndex;  // 本文或讀音 -> 在 toSend 的位置
-    std::vector<std::string> extras;
-    for (std::size_t i = 0; i < segments.size(); ++i) {
-        toSend.push_back(core::stripRubyMarkup(segments[i]));
-        rubyOf[i] = core::rubyMarkupPairs(segments[i]);
-        for (const auto& [base, reading] : rubyOf[i]) {
-            for (const std::string& word : {base, reading}) {
-                if (extraIndex.try_emplace(word, segments.size() + extras.size()).second) {
-                    extras.push_back(word);
-                }
+    // 這個端點看不懂 `{本文|讀音}`：標記還原成本文，特殊讀音另外翻、附在後面（net/ruby_notes）
+    return translateWithRubyNotes(segments, [&](std::span<const std::string> all) {
+        const core::BatchTranslate batch =
+            [&](std::span<const std::string> batchSegments) -> std::vector<std::string> {
+            const std::string reply = requestOnce(join(batchSegments), request, cancel);
+            if (batchSegments.size() == 1) {
+                return {flatten(reply)};
             }
-        }
-    }
-    toSend.insert(toSend.end(), extras.begin(), extras.end());
-
-    const core::BatchTranslate batch =
-        [&](std::span<const std::string> batchSegments) -> std::vector<std::string> {
-        const std::string reply = requestOnce(join(batchSegments), request, cancel);
-        if (batchSegments.size() == 1) {
-            return {flatten(reply)};
-        }
-        return core::splitLines(reply);
-    };
-    // 這個端點沒有隨機性，整批重送只會多等一秒，所以對不上就直接逐段
-    std::vector<std::string> translated = core::translateAligned(
-        toSend, batch, core::AlignOptions{.batchAttempts = 1, .checkRubyMarkers = false});
-
-    // 「我要認真打一場　［本気（マジ）→ 認真（玩真的）］」
-    translated.resize(segments.size() + extras.size());
-    for (std::size_t i = 0; i < segments.size(); ++i) {
-        if (rubyOf[i].empty()) {
-            continue;
-        }
-        std::string note;
-        for (const auto& [base, reading] : rubyOf[i]) {
-            note += note.empty() ? "" : "、";
-            note += base + "（" + reading + "）→ " + translated[extraIndex.at(base)] + "（" +
-                    translated[extraIndex.at(reading)] + "）";
-        }
-        translated[i] += "　［" + note + "］";
-    }
-    translated.resize(segments.size());
-    return translated;
+            return core::splitLines(reply);
+        };
+        // 這個端點沒有隨機性，整批重送只會多等一秒，所以對不上就直接逐段
+        return core::translateAligned(
+            all, batch, core::AlignOptions{.batchAttempts = 1, .checkRubyMarkers = false});
+    });
 }
 
 }  // namespace tmw::net

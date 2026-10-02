@@ -13,6 +13,7 @@
 
 class QCheckBox;
 class QComboBox;
+class QFormLayout;
 class QKeySequenceEdit;
 class QLabel;
 class QLineEdit;
@@ -54,6 +55,8 @@ private:
     QComboBox* llmKind_ = nullptr;  // 每一項的 data 是引擎的 id
     QLineEdit* endpoint_ = nullptr;
     QLineEdit* model_ = nullptr;
+    QLineEdit* region_ = nullptr;     // Microsoft Translator 的區域
+    QFormLayout* llmForm_ = nullptr;  // 依引擎顯示或隱藏「模型」「區域」那幾列
     QLineEdit* key_ = nullptr;
     QLabel* keyNote_ = nullptr;
     QCheckBox* fallback_ = nullptr;

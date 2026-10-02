@@ -18,6 +18,10 @@ add_library(tmw_net STATIC
     openai_translator.h
     rate_limiter.cpp
     rate_limiter.h
+    ruby_notes.cpp
+    ruby_notes.h
+    service_translators.cpp
+    service_translators.h
     sse.cpp
     sse.h)
 target_include_directories(tmw_net PUBLIC "${PROJECT_SOURCE_DIR}/src")

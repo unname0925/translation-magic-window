@@ -11,6 +11,7 @@
 #include "net/cpr_http_client.h"
 #include "net/google_translator.h"
 #include "net/openai_translator.h"
+#include "net/service_translators.h"
 #include "platform/secret.h"
 
 namespace tmw::app {
@@ -67,6 +68,27 @@ std::shared_ptr<core::ITranslator> makeEngine(const core::EngineSettings& engine
         }
         options.apiKey = *key;
         return std::make_shared<net::AnthropicTranslator>(std::move(http), std::move(options));
+    }
+    if (engine.id == "deepl" || engine.id == "azure" || engine.id == "google-cloud") {
+        const std::optional<std::string> key =
+            engine.encryptedApiKey.empty() ? std::nullopt
+                                           : platform::decryptSecret(engine.encryptedApiKey);
+        if (!key) {
+            problems.push_back("引擎 " + engine.id + " 沒有可用的金鑰，略過");
+            return nullptr;
+        }
+        net::ServiceOptions options;
+        options.id = engine.id;
+        options.apiKey = *key;
+        options.endpoint = engine.endpoint;
+        options.region = engine.region;
+        if (engine.id == "deepl") {
+            return std::make_shared<net::DeepLTranslator>(std::move(http), std::move(options));
+        }
+        if (engine.id == "azure") {
+            return std::make_shared<net::AzureTranslator>(std::move(http), std::move(options));
+        }
+        return std::make_shared<net::GoogleCloudTranslator>(std::move(http), std::move(options));
     }
     problems.push_back("不認得的翻譯引擎：" + engine.id);
     return nullptr;

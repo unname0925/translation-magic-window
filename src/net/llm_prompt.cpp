@@ -88,12 +88,15 @@ std::string describeHttpFailure(const HttpResponse& response) {
     std::string out = "HTTP " + std::to_string(response.status);
     const nlohmann::json parsed =
         nlohmann::json::parse(response.body, nullptr, /*allow_exceptions=*/false);
-    const auto error = parsed.is_object() ? parsed.find("error") : parsed.end();
-    if (error != parsed.end() && error->is_object()) {
-        const auto message = error->find("message");
-        if (message != error->end() && message->is_string()) {
-            out += "：" + message->get<std::string>();
-        }
+    if (!parsed.is_object()) {
+        return out;
+    }
+    // OpenAI、Anthropic、Microsoft、Google Cloud 放在 error.message；DeepL 放在最上層的 message
+    const auto error = parsed.find("error");
+    const nlohmann::json* holder = error != parsed.end() && error->is_object() ? &*error : &parsed;
+    const auto message = holder->find("message");
+    if (message != holder->end() && message->is_string()) {
+        out += "：" + message->get<std::string>();
     }
     return out;
 }

@@ -24,6 +24,7 @@
 #include "net/cpr_http_client.h"
 #include "net/google_translator.h"
 #include "net/openai_translator.h"
+#include "net/service_translators.h"
 #include "platform/text_encoding.h"
 
 namespace {
@@ -34,7 +35,8 @@ void print(const std::string& utf8) {
 }
 
 int usage() {
-    print("用法：tmw_translate_cli [--engine google|openai|anthropic] [--lang ja|en|ko|auto]");
+    print("用法：tmw_translate_cli [--engine google|openai|anthropic|deepl|azure|google-cloud]");
+    print("      [--lang ja|en|ko|auto] [--region 區域（azure）]");
     print("      [--base-url URL] [--model 名稱] [--key-env 環境變數] [--no-stream]");
     print("      [--glossary 專有名詞表.txt] [--print-request] 文字...");
     print("--print-request：只印出 anthropic 引擎要送出的請求內容，不連線（錄測試資料用）。");
@@ -58,6 +60,7 @@ int wmain(int argc, wchar_t** argv) {
     std::string baseUrl;
     std::string model;
     bool printRequest = false;
+    std::string region;
     tmw::core::Glossary glossary;
     std::vector<std::string> segments;
     for (int i = 1; i < argc; ++i) {
@@ -70,6 +73,8 @@ int wmain(int argc, wchar_t** argv) {
             baseUrl = tmw::platform::wideToUtf8(argv[++i]);
         } else if (argument == "--model" && i + 1 < argc) {
             model = tmw::platform::wideToUtf8(argv[++i]);
+        } else if (argument == "--region" && i + 1 < argc) {
+            region = tmw::platform::wideToUtf8(argv[++i]);
         } else if (argument == "--print-request") {
             printRequest = true;
         } else if (argument == "--key-env" && i + 1 < argc) {
@@ -95,8 +100,9 @@ int wmain(int argc, wchar_t** argv) {
     if (segments.empty()) {
         return usage();
     }
-    if (engine != "google" && engine != "openai" && engine != "anthropic") {
-        print("--engine 只能是 google、openai 或 anthropic");
+    const bool service = engine == "deepl" || engine == "azure" || engine == "google-cloud";
+    if (engine != "google" && engine != "openai" && engine != "anthropic" && !service) {
+        print("--engine 只能是 google、openai、anthropic、deepl、azure 或 google-cloud");
         return 2;
     }
     if (!baseUrl.empty()) {
@@ -143,10 +149,21 @@ int wmain(int argc, wchar_t** argv) {
     claude.apiKey = llm.apiKey;
     tmw::net::AnthropicTranslator anthropic(http, claude);
     anthropic.setOnSegment(onSegment);
+    tmw::net::ServiceOptions serviceOptions;
+    serviceOptions.id = engine;
+    serviceOptions.apiKey = llm.apiKey;
+    serviceOptions.endpoint = baseUrl;
+    serviceOptions.region = region;
+    tmw::net::DeepLTranslator deepl(http, serviceOptions);
+    tmw::net::AzureTranslator azure(http, serviceOptions);
+    tmw::net::GoogleCloudTranslator googleCloud(http, serviceOptions);
     tmw::core::ITranslator& translator =
-        engine == "google"      ? static_cast<tmw::core::ITranslator&>(google)
-        : engine == "anthropic" ? static_cast<tmw::core::ITranslator&>(anthropic)
-                                : openai;
+        engine == "google"         ? static_cast<tmw::core::ITranslator&>(google)
+        : engine == "anthropic"    ? static_cast<tmw::core::ITranslator&>(anthropic)
+        : engine == "deepl"        ? static_cast<tmw::core::ITranslator&>(deepl)
+        : engine == "azure"        ? static_cast<tmw::core::ITranslator&>(azure)
+        : engine == "google-cloud" ? static_cast<tmw::core::ITranslator&>(googleCloud)
+                                   : openai;
 
     const auto start = std::chrono::steady_clock::now();
     try {

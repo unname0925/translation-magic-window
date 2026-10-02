@@ -118,7 +118,7 @@ TEST(EngineChoiceTest, ReadsAClaudeEngine) {
     const EngineChoice choice = engineChoiceFrom(
         withEngines({{"anthropic", "", "claude-opus-5", "金鑰"}, {"google", "", "", ""}}));
     EXPECT_TRUE(choice.useLlm);
-    EXPECT_EQ(choice.llmId, "anthropic");
+    EXPECT_EQ(choice.engineId, "anthropic");
     EXPECT_EQ(choice.model, "claude-opus-5");
     EXPECT_TRUE(choice.hasKey);
 }
@@ -126,7 +126,7 @@ TEST(EngineChoiceTest, ReadsAClaudeEngine) {
 TEST(EngineChoiceTest, WritesTheChosenLlmKind) {
     EngineChoice choice;
     choice.useLlm = true;
-    choice.llmId = "anthropic";
+    choice.engineId = "anthropic";
     choice.model = "claude-opus-5";
     const auto engines = enginesFor(choice, core::Settings{}, "加密的金鑰");
     EXPECT_EQ(idsOf(engines), (std::vector<std::string>{"anthropic", "google"}));
@@ -138,11 +138,36 @@ TEST(EngineChoiceTest, SwitchingLlmKindDoesNotCarryTheOtherKeyOver) {
     const core::Settings current =
         withEngines({{"openai-compatible", "https://api.openai.com/v1", "gpt", "openai金鑰"}});
     EngineChoice choice = engineChoiceFrom(current);
-    choice.llmId = "anthropic";
+    choice.engineId = "anthropic";
     const auto engines = enginesFor(choice, current, "");
     ASSERT_FALSE(engines.empty());
     EXPECT_EQ(engines[0].id, "anthropic");
     EXPECT_TRUE(engines[0].encryptedApiKey.empty());
+}
+
+TEST(EngineChoiceTest, TranslationServicesKeepTheirRegionButNoModel) {
+    // Microsoft 要區域；翻譯服務沒有「模型」，就算畫面上殘留著也不寫進去
+    EngineChoice choice;
+    choice.useLlm = true;
+    choice.engineId = "azure";
+    choice.model = "hy-mt2";
+    choice.region = "eastasia";
+    const auto engines = enginesFor(choice, core::Settings{}, "金鑰");
+    ASSERT_FALSE(engines.empty());
+    EXPECT_EQ(engines[0].id, "azure");
+    EXPECT_EQ(engines[0].region, "eastasia");
+    EXPECT_EQ(engines[0].model, "");
+
+    const EngineChoice read = engineChoiceFrom(core::Settings{.engines = engines});
+    EXPECT_EQ(read.engineId, "azure");
+    EXPECT_EQ(read.region, "eastasia");
+}
+
+TEST(EngineChoiceTest, OnlyTheLlmsAreLlms) {
+    EXPECT_TRUE(isLlmEngine("openai-compatible"));
+    EXPECT_TRUE(isLlmEngine("anthropic"));
+    EXPECT_FALSE(isLlmEngine("deepl"));
+    EXPECT_FALSE(isLlmEngine("google"));
 }
 
 }  // namespace
