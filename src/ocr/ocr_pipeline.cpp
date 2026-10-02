@@ -5,6 +5,8 @@
 #include <chrono>
 #include <cmath>
 #include <cstddef>
+#include <filesystem>
+#include <stdexcept>
 #include <string>
 #include <utility>
 
@@ -47,13 +49,28 @@ OcrPipeline::OcrPipeline(const std::filesystem::path& detectionModelDir,
                          const OcrOptions& options)
     : options_(options),
       detector_(detectionModelDir, device, options.detection),
-      recognizer_(recognitionModelDir, device) {
+      mainDirectory_(recognitionModelDir),
+      device_(device) {
     if (!koreanRecognitionModelDir.empty()) {
         korean_.emplace(koreanRecognitionModelDir, device);
+    }
+    // 指定韓文時主模型用不到，先不載入（省下約 117 MB，M2-04）；之後改了語言才在第一次用到時載入。
+    // 資料夾不在就現在報錯，不要等到執行到一半
+    if (options_.warmUpScript != core::Language::Korean || !korean_.has_value()) {
+        mainRecognizer();
+    } else if (!std::filesystem::exists(mainDirectory_)) {
+        throw std::runtime_error("找不到辨識模型：" + mainDirectory_.string());
     }
     if (options_.warmUpOnStart) {
         warmUp();
     }
+}
+
+TextRecognizer& OcrPipeline::mainRecognizer() {
+    if (!main_.has_value()) {
+        main_.emplace(mainDirectory_, device_);
+    }
+    return *main_;
 }
 
 cv::Size lensDetectionInput() {
@@ -70,7 +87,7 @@ void OcrPipeline::warmUp() {
 
     TextRecognizer& recognizer =
         options_.warmUpScript == core::Language::Korean && korean_.has_value() ? *korean_
-                                                                               : recognizer_;
+                                                                               : mainRecognizer();
     const cv::Mat crop(48, 512, CV_8UC3, cv::Scalar(255, 255, 255));
     if (options_.batchRecognition) {
         const std::array<cv::Mat, 1> crops{crop};
@@ -127,19 +144,19 @@ OcrRun OcrPipeline::run(const cv::Mat& bgr, core::Language script, OcrTimings* t
 
     OcrRun out;
     if (!korean_.has_value()) {
-        out.lines = recognizeCrops(recognizer_, boxes, crops);
+        out.lines = recognizeCrops(mainRecognizer(), boxes, crops);
         out.script = core::Language::Unknown;  // 沒有第二個模型，沒有什麼好判斷的
     } else if (script == core::Language::Korean) {
         out.lines = recognizeCrops(*korean_, boxes, crops);
         out.script = core::Language::Korean;
     } else if (script != core::Language::Unknown) {
-        out.lines = recognizeCrops(recognizer_, boxes, crops);
+        out.lines = recognizeCrops(mainRecognizer(), boxes, crops);
         out.script = script;
     } else {
         // 還不知道是哪種文字：先讀主模型，看起來可能是韓文才叫韓文模型，
         // 再整張一起決定（design.md 4.4「語言判斷」）。
         // 逐行比分數不可行：PP-OCRv6 讀韓文會給亂讀的結果很高的分數。
-        std::vector<TextLine> main = recognizeCrops(recognizer_, boxes, crops);
+        std::vector<TextLine> main = recognizeCrops(mainRecognizer(), boxes, crops);
         const auto join = [](const std::vector<TextLine>& lines) {
             std::string text;
             for (const TextLine& line : lines) {

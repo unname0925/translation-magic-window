@@ -78,8 +78,6 @@ public:
     // 指定 Korean 或 Japanese／English 就只跑那一個，省掉一半的辨識時間。
     OcrRun run(const cv::Mat& bgr, core::Language script, OcrTimings* timings = nullptr);
 
-    const TextRecognizer& recognizer() const { return recognizer_; }
-
     // 有沒有載入韓文模型
     bool hasKoreanModel() const { return korean_.has_value(); }
 
@@ -91,6 +89,9 @@ private:
     // 在這裡做完，使用者的第一次翻譯就不會卡住。
     void warmUp();
 
+    // 主模型，還沒載入就現在載入
+    TextRecognizer& mainRecognizer();
+
     // 用某一個辨識模型讀出所有裁切圖的文字
     std::vector<TextLine> recognizeCrops(TextRecognizer& recognizer,
                                          const std::vector<DetectedBox>& boxes,
@@ -98,7 +99,11 @@ private:
 
     OcrOptions options_;
     TextDetector detector_;
-    TextRecognizer recognizer_;
+    // 主模型（日文／英文）。指定韓文時先不載入，第一次用到時才建立（mainRecognizer）。
+    // 只有處理用的那一個執行緒會呼叫 run，所以不需要鎖。
+    std::filesystem::path mainDirectory_;
+    Device device_;
+    std::optional<TextRecognizer> main_;
     // 韓文辨識模型（PP-OCRv6 不支援韓文）。沒載入時只用主模型。
     std::optional<TextRecognizer> korean_;
 };
