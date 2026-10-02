@@ -30,6 +30,15 @@ Device resolveDevice(Device requested, bool firstAdapterIsHardware);
 // DirectML 會用的第一張顯示卡是不是硬體（DXGI 的 DXGI_ADAPTER_FLAG_SOFTWARE）
 bool firstAdapterIsHardware();
 
+// 找得到 DirectML.dll 嗎。程式預設不附 DirectML.dll（它是 Microsoft 的專有授權，本程式是
+// GPL-3.0）， 用 Windows 內建在 System32 的那一份；很舊的 Windows 10 沒有它。ONNX Runtime
+// 是延遲載入 DirectML 的， 沒有它時一用 DirectML 就會當掉，所以要先檢查。
+bool directMLAvailable();
+
+// 實際載入的 DirectML.dll 的完整路徑（記錄檔和除錯傾印用，看得出用的是系統內建的還是程式附的）。
+// 還沒載入或找不到時是空的。
+std::filesystem::path loadedDirectMLPath();
+
 struct Tensor {
     std::vector<std::int64_t> shape;
     std::vector<float> data;

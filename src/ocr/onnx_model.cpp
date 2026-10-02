@@ -63,6 +63,22 @@ bool firstAdapterIsHardware() {
     return hardware;
 }
 
+bool directMLAvailable() {
+    // 和 ONNX Runtime 延遲載入時一樣的搜尋順序：先找程式資料夾，再找 System32。
+    // 載入後就留著（之後 ONNX Runtime 會用到同一份）
+    return LoadLibraryExW(L"DirectML.dll", nullptr, 0) != nullptr;
+}
+
+std::filesystem::path loadedDirectMLPath() {
+    const HMODULE module = GetModuleHandleW(L"DirectML.dll");
+    if (module == nullptr) {
+        return {};
+    }
+    wchar_t path[MAX_PATH]{};
+    const DWORD length = GetModuleFileNameW(module, path, MAX_PATH);
+    return length == 0 ? std::filesystem::path() : std::filesystem::path(path);
+}
+
 struct OnnxModel::Impl {
     Device device = Device::Cpu;
     Ort::Session session{nullptr};
@@ -80,6 +96,10 @@ Ort::Session createSession(const std::filesystem::path& onnxFile, Device device,
         options.SetGraphOptimizationLevel(ORT_DISABLE_ALL);
     }
     if (device == Device::DirectML) {
+        if (!directMLAvailable()) {
+            // 不能讓 ONNX Runtime 去延遲載入：找不到 DLL 是無法攔截的當機
+            throw Ort::Exception("DirectML.dll not found (Windows too old?)", ORT_FAIL);
+        }
         // DirectML 的限制：不能用 memory pattern，也不能平行執行（見 design.md 4.4）
         options.DisableMemPattern();
         options.SetExecutionMode(ORT_SEQUENTIAL);

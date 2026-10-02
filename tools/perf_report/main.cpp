@@ -210,6 +210,9 @@ int wmain(int argc, wchar_t** argv) {
         tmw::ocr::OcrService& ocr = *ocrHolder;
         printMemory("載入模型後");
         std::printf("裝置：%s\n", std::string(tmw::ocr::deviceName(ocr.device())).c_str());
+        if (const auto directML = tmw::ocr::loadedDirectMLPath(); !directML.empty()) {
+            std::printf("DirectML：%s\n", directML.string().c_str());
+        }
 
         tmw::core::PerfStats overall;
         nlohmann::json report;

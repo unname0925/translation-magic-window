@@ -40,7 +40,7 @@ VCPKG_PACKAGES = [
 NUGET_PACKAGES = [
     ("ONNX Runtime 1.24.4（onnxruntime.dll）", "microsoft.ml.onnxruntime.directml.1.24.4.zip",
      "LICENSE", "ThirdPartyNotices.txt"),
-    ("DirectML 1.15.4（DirectML.dll）", "microsoft.ai.directml.1.15.4.zip", "LICENSE.txt",
+    ("DirectML 1.15.4（DirectML.dll；預設不附、用 Windows 內建的，以 -DTMW_BUNDLE_DIRECTML=ON 建置時才附上）", "microsoft.ai.directml.1.15.4.zip", "LICENSE.txt",
      "ThirdPartyNotices.txt"),
 ]
 

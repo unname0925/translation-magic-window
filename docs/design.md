@@ -71,7 +71,7 @@ M0 用真實環境和 90 張真實截圖驗證每個高風險的技術點。選�
 | OCR 速度超過預算（透鏡大小 283 ms，預算 150 ms） | M1-03：同一張畫面的多行合成一批，寬度補齊到固定級距 |
 | 擬聲詞辨識不出來（所有模型的 CER 都在 80% 以上） | M2-16：對照表比對、專門的模型，或只標出位置 |
 | 免費雲端 LLM 的每日額度很小 | 介面顯示額度用完並自動換下一個引擎；說明文件標示各引擎的免費額度 |
-| DirectML.dll 的授權和 GPL-3.0 的相容性 | M5 發布前由你決定（見第 11 節） |
+| DirectML.dll 的授權和 GPL-3.0 的相容性 | 已決定：預設不附，用 Windows 內建的（見第 11 節） |
 
 ---
 
@@ -1413,7 +1413,7 @@ translation-magic-window/
 - 最低支援的 Windows 11 版本：擷取節流用的 `MinUpdateInterval` 要 24H2，沒有時改由使用端降低讀取頻率（4.2）；正式的最低版本在 M1 用實機決定。
 - 安裝程式要用什麼技術（Inno Setup、WiX 或 MSIX）。
 - 觸發參數的預設值（在 M1 實測後調整）。
-- **DirectML.dll 的授權**：它是微軟的專有元件（允許再散布），和 GPL-3.0 的程式一起發布時，需要在授權中加上額外許可（GPLv3 第 7 條），或改用 Windows 內建的 DirectML（可能比 ONNX Runtime 需要的版本舊）。M5 發布前由你決定。
+- **DirectML.dll 的授權**（2026-10-02 決定）：先用 Windows 內建的 DirectML，不行再附上套件的版本。實作：建置預設不複製 DirectML.dll（`-DTMW_BUNDLE_DIRECTML=ON` 才附）；ONNX Runtime 延遲載入 DirectML，Windows 照「程式資料夾 → System32」的順序找到內建的那一份。這台 Windows 11 內建 1.15.5（比套件的 1.15.4 新），OCR 在顯示卡上照常執行，速度相同（800×600 漫畫裁切，中位數 146 ms 對 145 ms）。找不到 DirectML 的舊 Windows：自動模式改用 CPU（`ocr::directMLAvailable`，不讓延遲載入失敗造成當機），記錄檔會寫出實際載入的 DirectML 路徑。
 
 ---
 

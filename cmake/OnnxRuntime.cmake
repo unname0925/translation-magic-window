@@ -40,12 +40,19 @@ set_target_properties(onnxruntime::onnxruntime PROPERTIES
     INTERFACE_INCLUDE_DIRECTORIES
         "${tmw_onnxruntime_SOURCE_DIR}/build/native/include;${tmw_directml_SOURCE_DIR}/include")
 
-# 執行時需要放在執行檔旁邊的 DLL。DirectML.dll 要用套件附的版本（1.15.4）：
-# Windows 內建的 DirectML.dll 可能比 ONNX Runtime 需要的版本舊。
+# 執行時需要放在執行檔旁邊的 DLL。
+#
+# DirectML.dll 預設不附：它是 Microsoft 的專有授權（允許隨程式散布，但不是開源授權），本程式是 GPL-3.0。
+# ONNX Runtime 是延遲載入 DirectML.dll 的，不附的話會用 Windows 內建在 System32 的那一份
+# （Windows 11 24H2 是 1.15.5，比套件附的 1.15.4 新）。沒有它的舊 Windows 會自動改用 CPU
+# （ocr::directMLAvailable）。真的需要時用 -DTMW_BUNDLE_DIRECTML=ON 附上套件的版本。
+option(TMW_BUNDLE_DIRECTML "Copy the DirectML redistributable next to the executables" OFF)
 set(TMW_ONNXRUNTIME_DLLS
     "${_tmw_ort_native}/onnxruntime.dll"
-    "${_tmw_ort_native}/onnxruntime_providers_shared.dll"
-    "${tmw_directml_SOURCE_DIR}/bin/x64-win/DirectML.dll")
+    "${_tmw_ort_native}/onnxruntime_providers_shared.dll")
+if(TMW_BUNDLE_DIRECTML)
+    list(APPEND TMW_ONNXRUNTIME_DLLS "${tmw_directml_SOURCE_DIR}/bin/x64-win/DirectML.dll")
+endif()
 foreach(dll IN LISTS TMW_ONNXRUNTIME_DLLS)
     if(NOT EXISTS "${dll}")
         message(FATAL_ERROR "ONNX Runtime 套件中找不到 ${dll}")

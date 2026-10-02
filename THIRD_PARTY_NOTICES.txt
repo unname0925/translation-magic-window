@@ -21,7 +21,7 @@ Third-party components, models, fonts and data used by Translation Magic Window
 - spdlog：記錄檔
 - fmt：字串格式（spdlog 使用）
 - ONNX Runtime 1.24.4（onnxruntime.dll）
-- DirectML 1.15.4（DirectML.dll）
+- DirectML 1.15.4（DirectML.dll；預設不附、用 Windows 內建的，以 -DTMW_BUNDLE_DIRECTML=ON 建置時才附上）
 - Qt 6.9.3（qtbase：Qt6Core、Qt6Gui、Qt6Widgets 和平台外掛）（LGPL-3.0-only）
 - JMdict、KANJIDIC2（models/furigana/readings.tsv 由它們產生）（CC BY-SA 4.0）
 - Noto Sans TC、Noto Serif TC（models/fonts）（SIL Open Font License 1.1）
@@ -6851,7 +6851,7 @@ Redistribution and use in source and binary forms, with or without modification,
 THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ==============================================================================
-DirectML 1.15.4（DirectML.dll）
+DirectML 1.15.4（DirectML.dll；預設不附、用 Windows 內建的，以 -DTMW_BUNDLE_DIRECTML=ON 建置時才附上）
 ==============================================================================
 
 MICROSOFT SOFTWARE LICENSE TERMS

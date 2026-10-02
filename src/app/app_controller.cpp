@@ -23,6 +23,7 @@
 #include "core/language.h"
 #include "core/opencc_converter.h"
 #include "core/overlay_font.h"
+#include "ocr/onnx_model.h"
 #include "platform/app_paths.h"
 #include "platform/crash_dump.h"
 #include "platform/debug_dump.h"
@@ -587,6 +588,10 @@ void AppController::setUpPipeline() {
         return;
     }
     platform::logInfo(std::string("OCR 裝置：") + std::string(ocr::deviceName(ocr_->device())));
+    if (const std::filesystem::path directML = ocr::loadedDirectMLPath(); !directML.empty()) {
+        // 預設用 Windows 內建的那一份（System32）；程式資料夾裡有附的話會先用附的
+        platform::logInfo("DirectML：" + platform::pathToUtf8(directML));
+    }
     // ルビ的一般讀音表（M2-13，tools/eval/furigana_dict.py build 產生）。沒有就用片假名規則
     {
         std::ifstream file(models / L"furigana" / L"readings.tsv", std::ios::binary);
