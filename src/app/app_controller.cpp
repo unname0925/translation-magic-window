@@ -23,6 +23,7 @@
 #include "core/language.h"
 #include "core/opencc_converter.h"
 #include "core/overlay_font.h"
+#include "ocr/lama_inpainter.h"
 #include "ocr/onnx_model.h"
 #include "platform/app_paths.h"
 #include "platform/crash_dump.h"
@@ -558,6 +559,9 @@ void AppController::process(const core::ProcessRequest& request) {
     job.manual = request.manual;
     job.language = settings_.ocrLanguage;
     job.glossary = currentGlossary();
+    if (overlay_ != nullptr) {
+        job.inpainter = inpainter_;  // 只有譯文要蓋在原文上時才修補背景
+    }
     platform::log(platform::LogLevel::Info, context,
                   std::string(request.manual ? "手動" : "自動") + "觸發，開始處理");
     worker_->submit(std::move(job));
@@ -900,6 +904,7 @@ void AppController::setOverlayEnabled(bool enabled) {
     if (!enabled) {
         overlay_.reset();
         overlayRenderer_.reset();
+        inpainter_.reset();  // 釋放 LaMa 占的記憶體
         return;
     }
     if (overlay_ != nullptr) {
@@ -908,6 +913,7 @@ void AppController::setOverlayEnabled(bool enabled) {
     try {
         overlayRenderer_ = std::make_unique<platform::OverlayRenderer>();
         applyOverlayFont();
+        setUpInpainter();
         overlay_ = std::make_unique<platform::TranslationOverlayWindow>(
             reinterpret_cast<HINSTANCE>(GetWindowLongPtrW(hwnd_, GWLP_HINSTANCE)));
         refreshOverlay();
@@ -918,6 +924,24 @@ void AppController::setOverlayEnabled(bool enabled) {
         overlayRenderer_.reset();
         settings_.overlay = false;
     }
+}
+
+void AppController::setUpInpainter() {
+    // 背景修補（M4-01）只用顯示卡：CPU 上每塊要 1.2～1.5 秒，照設計改用純色填補
+    if (ocr_ == nullptr || ocr_->device() != ocr::Device::DirectML) {
+        platform::logInfo("背景修補：OCR 沒有用顯示卡，背景不是純色的段落用純色或不蓋");
+        return;
+    }
+    const std::filesystem::path model =
+        ocr::LamaInpainter::modelPath(platform::findModelsDirectory());
+    if (!std::filesystem::exists(model)) {
+        platform::logInfo("背景修補：沒有 LaMa 模型（" + platform::pathToUtf8(model) +
+                          "），背景不是純色的段落用純色或不蓋");
+        return;
+    }
+    // 第一次真的需要修補時才載入模型
+    inpainter_ = std::make_shared<ocr::LamaInpainter>(model);
+    platform::logInfo("背景修補：可以用（第一次需要時載入 LaMa）");
 }
 
 void AppController::applyOverlayFont() {

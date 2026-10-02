@@ -90,6 +90,10 @@ Rgba median(const std::vector<Color>& colors) {
 
 }  // namespace
 
+double contrastRatio(Rgba a, Rgba b) {
+    return contrast(toColor(a), toColor(b));
+}
+
 std::optional<TextStyle> estimateTextStyle(const ImageBgra& frame, const RectI& rect,
                                            Rgba background) {
     const RectI area{std::max(0, rect.left), std::max(0, rect.top),

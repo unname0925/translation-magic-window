@@ -37,6 +37,7 @@ add_executable(tmw_unit_tests
     net/service_translators_test.cpp
     net/rate_limiter_test.cpp
     ocr/comic_text_detector_test.cpp
+    ocr/lama_inpainter_test.cpp
     ocr/manga_ocr_test.cpp
     ocr/model_choice_test.cpp
     ocr/model_config_test.cpp

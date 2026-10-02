@@ -6,6 +6,8 @@ find_package(nlohmann_json CONFIG REQUIRED)
 add_library(tmw_ocr STATIC
     comic_text_detector.cpp
     comic_text_detector.h
+    lama_inpainter.cpp
+    lama_inpainter.h
     manga_ocr.cpp
     manga_ocr.h
     model_choice.cpp

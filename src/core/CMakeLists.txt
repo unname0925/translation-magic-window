@@ -29,6 +29,7 @@ add_library(tmw_core STATIC
     hotkey.h
     history.h
     image.h
+    inpainter.h
     language.cpp
     language.h
     lens_layout.cpp

@@ -69,7 +69,8 @@ DebugOverlay buildDebugOverlay(const PipelineResult& result, const RectI& overla
                              languageCode(result.language) + "）");
     overlay.status.push_back("OCR " + roundedMs(result.timings.ocrMs) + "／分段 " +
                              roundedMs(result.timings.layoutMs) + "／翻譯 " +
-                             roundedMs(result.timings.translationMs));
+                             roundedMs(result.timings.translationMs) + "／覆蓋 " +
+                             roundedMs(result.timings.overlayMs));
     overlay.status.push_back("共 " + roundedMs(result.timings.totalMs()));
     if (result.unchanged) {
         overlay.status.push_back("和上一次一樣");

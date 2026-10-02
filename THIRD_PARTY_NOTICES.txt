@@ -7084,6 +7084,9 @@ jf open 粉圓（models/fonts）
 - manga-ocr-base：manga-ocr original PyTorch weights (exported to ONNX in M0-15)
   授權：Apache-2.0
   來源：https://huggingface.co/kha-white/manga-ocr-base/tree/aa6573bd10b0d446cbf622e29c3e084914df9741
+- lama：LaMa inpainting ONNX (M4-01). Run tools/eval/lama_for_directml.py afterwards to make lama_fp32_dml.onnx for DirectML
+  授權：Apache-2.0
+  來源：https://huggingface.co/Carve/LaMa-ONNX/tree/c3c0c9e468934d62e79c329e35d82dd09ff8c444
 - fonts：Built-in Traditional Chinese fonts for the overlay: gothic, serif and rounded (M4-04)
   授權：OFL-1.1
   來源：https://github.com/google/fonts/tree/9710da1eacb3be272583c3224dcb70f9da6eadbb/ofl and https://github.com/justfont/open-huninn-font/releases/tag/v2.1

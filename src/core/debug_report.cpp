@@ -67,6 +67,7 @@ json toJson(const PipelineResult& result) {
                 {"timings", json{{"ocrMs", result.timings.ocrMs},
                                  {"layoutMs", result.timings.layoutMs},
                                  {"translationMs", result.timings.translationMs},
+                                 {"overlayMs", result.timings.overlayMs},
                                  {"totalMs", result.timings.totalMs()}}},
                 {"groups", std::move(groups)}};
 }

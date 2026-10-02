@@ -7,6 +7,7 @@
 
 #include "core/color.h"
 #include "core/geometry.h"
+#include "core/image.h"
 #include "core/text_layout.h"
 
 namespace tmw::core {
@@ -27,6 +28,8 @@ struct OverlayItem {
     std::vector<OverlayRuby> ruby;
     bool vertical = false;
     Rgba background;
+    // 背景修補的結果（rect 大小，M4-01）。空的代表用 background 純色填滿
+    ImageBgra patch;
     Rgba foreground;
     // 原文有描邊時的描邊顏色（M4-02）
     std::optional<Rgba> outline;

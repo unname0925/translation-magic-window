@@ -20,6 +20,7 @@
 #include "core/geometry.h"
 #include "core/glossary.h"
 #include "core/image.h"
+#include "core/inpainter.h"
 #include "core/language.h"
 #include "core/overlay_item.h"
 #include "core/ruby.h"
@@ -41,14 +42,19 @@ struct PipelineJob {
     // 使用者的專有名詞表（glossary.txt）。沒有時是 nullptr。
     // UI 執行緒讀檔、工作執行緒只讀，所以用共享的唯讀副本，改檔時換一份新的。
     std::shared_ptr<const Glossary> glossary;
+    // 背景修補（M4-01）。只有打開「在原位顯示譯文」、而且有顯示卡和模型時才有；
+    // 沒有時背景不是純色的段落照舊（遊戲對話框用純色，其餘不蓋）
+    std::shared_ptr<IInpainter> inpainter;
 };
 
 struct PipelineTimings {
     double ocrMs = 0.0;
     double layoutMs = 0.0;
     double translationMs = 0.0;
+    // 規劃覆蓋層（M3），包括背景修補（M4-01，每塊約 0.13 秒）
+    double overlayMs = 0.0;
 
-    double totalMs() const { return ocrMs + layoutMs + translationMs; }
+    double totalMs() const { return ocrMs + layoutMs + translationMs + overlayMs; }
 };
 
 // 一組：一個對話框或一個段落

@@ -227,7 +227,9 @@ PipelineResult Pipeline::run(const PipelineJob& job, std::stop_token cancel) {
     for (std::size_t i = 0; i < blocks.size(); ++i) {
         result.groups.push_back(TranslatedBlock{std::move(blocks[i]), std::move(translations[i])});
     }
-    result.overlay = planOverlay(job.frame, result.groups);
+    const auto overlayStart = std::chrono::steady_clock::now();
+    result.overlay = planOverlay(job.frame, result.groups, job.inpainter.get());
+    result.timings.overlayMs = millisecondsSince(overlayStart);
 
     if (result.error.empty()) {
         // 留最後幾組當作下一次的上下文

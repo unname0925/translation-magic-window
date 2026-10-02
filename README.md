@@ -117,6 +117,15 @@ tools/eval/.venv/Scripts/python tools/eval/furigana_dict.py build --jmdict .cach
 
 沒有讀音表時程式照常運作，改用「讀音是片假名」判斷。
 
+**背景修補**（選用，需要顯示卡）：在原位顯示譯文時，把畫在圖上的字抹掉再畫譯文（遊戲的半透明對話框效果最好）。
+模型 208 MB，下載後要改寫成顯示卡跑得動的版本（需要 `pip install onnx`）：
+
+```powershell
+python tools/fetch_models/fetch_models.py --group inpaint
+tools/eval/.venv/Scripts/python tools/eval/lama_for_directml.py `
+    --input models/lama/lama_fp32.onnx --output models/lama/lama_fp32_dml.onnx
+```
+
 **譯文的內建字型**（選用）：思源黑體、思源宋體、jf open 粉圓（OFL 授權，共 34 MB）。下載後在設定視窗的「譯文字型」選：
 
 ```powershell

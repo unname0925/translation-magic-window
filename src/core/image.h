@@ -21,6 +21,8 @@ struct ImageBgra {
     bool empty() const { return width <= 0 || height <= 0; }
     std::size_t stride() const { return static_cast<std::size_t>(width) * 4; }
 
+    friend bool operator==(const ImageBgra&, const ImageBgra&) = default;
+
     std::uint8_t* pixel(int x, int y) {
         return pixels.data() + static_cast<std::size_t>(y) * stride() +
                static_cast<std::size_t>(x) * 4;

@@ -27,6 +27,34 @@ constexpr double kMinLooseUniformity = 0.9;
 constexpr float kMinScoreForLoose = 0.9f;
 // - OCR 分數這麼低的多半是把圖示、花紋讀成了字（遊戲的按鈕讀成「迴」），不蓋
 constexpr float kMinScore = 0.5f;
+// 背景修補（M4-01）只給至少這麼多個字的段落：「！」「2-」這種不是要翻的文字
+constexpr int kMinLettersForInpainting = 2;
+// 譯文和補出來的背景至少要有這麼多亮度對比（WCAG 對大字的要求）
+constexpr double kMinPatchContrast = 3.0;
+
+// 英文字母、假名、漢字、韓文（標點、數字、符號不算）
+bool isLetterLike(char32_t c) {
+    return (c >= U'a' && c <= U'z') || (c >= U'A' && c <= U'Z') || (c >= 0x3041 && c <= 0x30FA) ||
+           (c >= 0x3400 && c <= 0x9FFF) || (c >= 0xAC00 && c <= 0xD7AF) ||
+           (c >= 0xFF21 && c <= 0xFF3A) || (c >= 0xFF41 && c <= 0xFF5A);
+}
+
+Rgba averageColor(const ImageBgra& image) {
+    std::uint64_t r = 0;
+    std::uint64_t g = 0;
+    std::uint64_t b = 0;
+    const std::uint64_t count = static_cast<std::uint64_t>(image.width) * image.height;
+    for (std::size_t i = 0; i + 3 < image.pixels.size(); i += 4) {
+        b += image.pixels[i];
+        g += image.pixels[i + 1];
+        r += image.pixels[i + 2];
+    }
+    if (count == 0) {
+        return Rgba{255, 255, 255, 255};
+    }
+    return Rgba{static_cast<std::uint8_t>(r / count), static_cast<std::uint8_t>(g / count),
+                static_cast<std::uint8_t>(b / count), 255};
+}
 
 // net/ruby_notes 接在譯文後面的註解：「　［本気（マジ）→ 認真（玩真的）、…］」
 constexpr std::string_view kNotesOpen = "　［";
@@ -239,8 +267,20 @@ bool worthCovering(const ImageBgra& frame, const RectI& rect, Rgba background, f
            backgroundUniformity(frame, rect, background, 2, kLooseTolerance) >= kMinLooseUniformity;
 }
 
+bool worthInpainting(const TextBlock& block) {
+    if (block.score < kMinScoreForLoose) {
+        return false;  // 擬聲詞、把花紋讀成字的：修補了也只是抹掉原圖
+    }
+    int letters = 0;
+    for (std::size_t i = 0; i < block.text.size();) {
+        letters += isLetterLike(nextCodePoint(block.text, i)) ? 1 : 0;
+    }
+    return letters >= kMinLettersForInpainting;
+}
+
 std::vector<OverlayItem> planOverlay(const ImageBgra& frame,
-                                     std::span<const TranslatedBlock> groups) {
+                                     std::span<const TranslatedBlock> groups,
+                                     IInpainter* inpainter) {
     std::vector<OverlayItem> items;
     for (const TranslatedBlock& group : groups) {
         if (group.translation.empty()) {
@@ -256,16 +296,40 @@ std::vector<OverlayItem> planOverlay(const ImageBgra& frame,
         item.ruby = std::move(text.ruby);
         item.vertical = group.block.orientation == Orientation::Vertical;
         item.background = sampleBackground(frame, item.rect);
-        if (!worthCovering(frame, item.rect, item.background, group.block.score)) {
+        if (group.block.score < kMinScore) {
+            continue;
+        }
+        const bool plain =
+            backgroundUniformity(frame, item.rect, item.background) >= kMinUniformity;
+        if (!plain && inpainter != nullptr && worthInpainting(group.block)) {
+            // 背景不是純色：抹掉原文、補成周圍的樣子（M4-01）。補不出來就照下面的規則
+            if (std::optional<ImageBgra> patch = inpainter->inpaint(frame, item.rect)) {
+                item.patch = std::move(*patch);
+            }
+        }
+        if (item.patch.empty() &&
+            !worthCovering(frame, item.rect, item.background, group.block.score)) {
             continue;
         }
         // 照著原文的顏色畫（M4-02）；估計不出來（墨水太少、看不清楚）時用黑字或白字
-        if (const std::optional<TextStyle> colors =
-                estimateTextStyle(frame, source, item.background)) {
+        const std::optional<TextStyle> colors = estimateTextStyle(frame, source, item.background);
+        if (colors) {
             item.foreground = colors->fill;
             item.outline = colors->outline;
         } else {
             item.foreground = readableTextColor(item.background);
+        }
+        if (!item.patch.empty()) {
+            // 補出來的背景有圖案，背景色只是外圍的中位數，照它估的顏色不一定可靠：
+            // 和補出來的背景對比不夠就改用黑字或白字，並一律加一圈相反顏色的描邊
+            const Rgba under = averageColor(item.patch);
+            if (contrastRatio(item.foreground, under) < kMinPatchContrast) {
+                item.foreground = readableTextColor(under);
+                item.outline.reset();
+            }
+            if (!item.outline) {
+                item.outline = readableTextColor(item.foreground);
+            }
         }
         item.size = group.block.size;
         item.lineThickness = lineThickness(group.block);

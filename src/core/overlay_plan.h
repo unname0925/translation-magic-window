@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "core/image.h"
+#include "core/inpainter.h"
 #include "core/overlay_item.h"
 #include "core/pipeline.h"
 
@@ -48,9 +49,17 @@ OverlayText overlayText(std::string_view translation);
 // 覆蓋層排除在擷取之外，螢幕截圖看不到它。兩張圖大小要一樣，否則 below 不變。
 void compositeOver(ImageBgra& below, const ImageBgra& above);
 
-// 每一段譯文要怎麼蓋。沒有譯文的段落（翻譯失敗）和背景不是純色的段落（擬聲詞、畫在圖上的字，
-// 用純色蓋上去會是一塊色塊）不蓋，原文照樣看得到。
+// 背景不是純色時，值不值得用修補把原文抹掉：OCR 很有把握，而且至少有兩個字
+// （擬聲詞、「！」、把花紋讀成的字不修補，免得抹掉原圖）
+bool worthInpainting(const TextBlock& block);
+
+// 每一段譯文要怎麼蓋。
+// - 背景是純色：用背景色填滿
+// - 背景不是純色、有 inpainter、而且 worthInpainting：抹掉原文補成周圍的樣子（OverlayItem::patch）
+// - 其餘照 worthCovering：遊戲的半透明對話框用純色，擬聲詞和畫在圖上的字不蓋
+// 沒有譯文的段落（翻譯失敗）不蓋，原文照樣看得到。
 std::vector<OverlayItem> planOverlay(const ImageBgra& frame,
-                                     std::span<const TranslatedBlock> groups);
+                                     std::span<const TranslatedBlock> groups,
+                                     IInpainter* inpainter = nullptr);
 
 }  // namespace tmw::core

@@ -106,6 +106,8 @@ private:
     void setOverlayEnabled(bool enabled);
     // 套用設定裡的譯文字型（M4-04）。字型檔不在時用微軟正黑體
     void applyOverlayFont();
+    // 背景修補（M4-01）：OCR 用顯示卡而且有 LaMa 模型時才有
+    void setUpInpainter();
     void refreshOverlay();
     void flashLens(core::Rgba accent);
 
@@ -153,6 +155,8 @@ private:
     // 譯文覆蓋層：關掉時兩個都是空的
     std::unique_ptr<platform::OverlayRenderer> overlayRenderer_;
     std::unique_ptr<platform::TranslationOverlayWindow> overlay_;
+    // 背景修補。工作執行緒在用的時候 job 也握著它，所以是 shared_ptr
+    std::shared_ptr<core::IInpainter> inpainter_;
     // 目前貼在畫面上的是哪一次的結果（0 = 沒有）
     std::uint64_t overlayGeneration_ = 0;
 

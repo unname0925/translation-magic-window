@@ -293,6 +293,21 @@
       ]
     },
     {
+      "id": "lama",
+      "group": "inpaint",
+      "purpose": "LaMa inpainting ONNX (M4-01). Run tools/eval/lama_for_directml.py afterwards to make lama_fp32_dml.onnx for DirectML",
+      "license": "Apache-2.0",
+      "source": "https://huggingface.co/Carve/LaMa-ONNX/tree/c3c0c9e468934d62e79c329e35d82dd09ff8c444",
+      "files": [
+        {
+          "name": "lama_fp32.onnx",
+          "url": "https://huggingface.co/Carve/LaMa-ONNX/resolve/c3c0c9e468934d62e79c329e35d82dd09ff8c444/lama_fp32.onnx",
+          "size": 208044816,
+          "sha256": "1faef5301d78db7dda502fe59966957ec4b79dd64e16f03ed96913c7a4eb68d6"
+        }
+      ]
+    },
+    {
       "id": "fonts",
       "group": "fonts",
       "purpose": "Built-in Traditional Chinese fonts for the overlay: gothic, serif and rounded (M4-04)",

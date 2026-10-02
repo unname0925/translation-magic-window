@@ -209,6 +209,27 @@ TEST_F(OverlayRendererTest, AMissingFontFileFallsBackToTheSystemFont) {
         << "照樣畫得出字";
 }
 
+// M4-01：背景修補過的段落，底下畫的是補出來的圖，不是純色
+TEST_F(OverlayRendererTest, InpaintedBackgroundsAreDrawnUnderTheText) {
+    OverlayItem patched = item(RectI{10, 10, 110, 50}, "");
+    patched.patch = ImageBgra(100, 40);
+    for (int y = 0; y < 40; ++y) {
+        for (int x = 0; x < 100; ++x) {
+            std::uint8_t* p = patched.patch.pixel(x, y);
+            p[0] = static_cast<std::uint8_t>(x * 2);  // 左右漸層
+            p[1] = 50;
+            p[2] = 200;
+            p[3] = 255;
+        }
+    }
+    const std::vector<OverlayItem> items{patched};
+    const ImageBgra image = renderer_.render(core::SizeI{120, 60}, items);
+    EXPECT_EQ(image.pixel(12, 30)[0], 4) << "左邊是補出來的圖的左邊";
+    EXPECT_EQ(image.pixel(108, 30)[0], 196);
+    EXPECT_EQ(image.pixel(60, 30)[2], 200);
+    EXPECT_EQ(image.pixel(5, 5)[3], 0) << "範圍外照樣透明";
+}
+
 TEST_F(OverlayRendererTest, LightTextOnDarkBackgrounds) {
     OverlayItem dark = item(RectI{0, 0, 100, 40}, "危險");
     dark.background = Rgba{20, 20, 20, 255};

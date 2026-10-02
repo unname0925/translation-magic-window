@@ -355,8 +355,22 @@ core::ImageBgra OverlayRenderer::render(core::SizeI size,
             D2D1::RectF(static_cast<float>(item.rect.left), static_cast<float>(item.rect.top),
                         static_cast<float>(item.rect.right), static_cast<float>(item.rect.bottom));
         impl_->target->PushAxisAlignedClip(rect, D2D1_ANTIALIAS_MODE_ALIASED);
-        brush->SetColor(toColor(item.background));
-        impl_->target->FillRectangle(rect, brush.get());
+        if (item.patch.width == item.rect.width() && item.patch.height == item.rect.height()) {
+            // 背景修補的結果（M4-01）：不透明的 BGRA，預乘 alpha 和原本一樣
+            winrt::com_ptr<ID2D1Bitmap> patch;
+            check(impl_->target->CreateBitmap(
+                      D2D1::SizeU(static_cast<UINT32>(item.patch.width),
+                                  static_cast<UINT32>(item.patch.height)),
+                      item.patch.pixels.data(), static_cast<UINT32>(item.patch.stride()),
+                      D2D1::BitmapProperties(D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM,
+                                                               D2D1_ALPHA_MODE_PREMULTIPLIED)),
+                      patch.put()),
+                  "ID2D1RenderTarget::CreateBitmap");
+            impl_->target->DrawBitmap(patch.get(), rect);
+        } else {
+            brush->SetColor(toColor(item.background));
+            impl_->target->FillRectangle(rect, brush.get());
+        }
 
         const float fontSize = fitFontSize(item);
         const winrt::com_ptr<IDWriteTextLayout> text = impl_->layout(item, fontSize);

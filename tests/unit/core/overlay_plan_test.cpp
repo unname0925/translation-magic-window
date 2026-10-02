@@ -151,6 +151,78 @@ TEST(OverlayPlanTest, TheTranslationKeepsTheOriginalTextColour) {
     EXPECT_FALSE(items[0].outline.has_value());
 }
 
+// 假的背景修補：記下被叫了幾次，回傳一塊灰色
+class FakeInpainter final : public IInpainter {
+public:
+    std::optional<ImageBgra> inpaint(const ImageBgra& frame, const RectI& rect) override {
+        (void)frame;
+        ++calls;
+        if (fail) {
+            return std::nullopt;
+        }
+        return solidFrame(rect.width(), rect.height(), Rgba{90, 90, 90, 255});
+    }
+    int calls = 0;
+    bool fail = false;
+};
+
+// 黑白相間的畫：外圍不是純色
+ImageBgra busyFrame() {
+    ImageBgra frame = solidFrame(200, 200, Rgba{255, 255, 255, 255});
+    for (int y = 0; y < 200; ++y) {
+        for (int x = 0; x < 200; ++x) {
+            if (((x / 3) + (y / 3)) % 2 == 0) {
+                std::uint8_t* p = frame.pixel(x, y);
+                p[0] = p[1] = p[2] = 0;
+            }
+        }
+    }
+    return frame;
+}
+
+TEST(OverlayPlanTest, TextOnPicturesIsInpaintedWhenPossible) {
+    // M4-01：背景是畫、OCR 很有把握的一句話：抹掉原文補成周圍的樣子，再畫譯文
+    const ImageBgra frame = busyFrame();
+    FakeInpainter inpainter;
+    const TranslatedBlock line =
+        block(RectI{40, 80, 160, 110}, "要逃跑嗎", Orientation::Horizontal);
+    TranslatedBlock source = line;
+    source.block.text = "脱走でもしたんですかね";
+    const std::vector<OverlayItem> items = planOverlay(frame, std::span(&source, 1), &inpainter);
+    ASSERT_EQ(items.size(), 1u);
+    EXPECT_EQ(inpainter.calls, 1);
+    EXPECT_EQ(items[0].patch.width, items[0].rect.width()) << "補出來的圖和要蓋的範圍一樣大";
+    EXPECT_TRUE(items[0].outline.has_value()) << "畫在有圖案的背景上，加描邊才讀得清楚";
+
+    inpainter.fail = true;
+    EXPECT_TRUE(planOverlay(frame, std::span(&source, 1), &inpainter).empty())
+        << "補不出來（沒有顯示卡）：和以前一樣不蓋";
+}
+
+TEST(OverlayPlanTest, SoundEffectsAndPunctuationAreNotInpainted) {
+    const ImageBgra frame = busyFrame();
+    FakeInpainter inpainter;
+    TranslatedBlock effect = block(RectI{40, 40, 120, 120}, "沙沙", Orientation::Vertical);
+    effect.block.text = "ザワザワ";
+    effect.block.score = 0.6f;  // 擬聲詞：OCR 沒什麼把握
+    TranslatedBlock bang = block(RectI{140, 40, 180, 120}, "！", Orientation::Vertical);
+    bang.block.text = "！";
+    const std::vector<TranslatedBlock> groups{effect, bang};
+    EXPECT_TRUE(planOverlay(frame, groups, &inpainter).empty());
+    EXPECT_EQ(inpainter.calls, 0) << "修補一次要 0.1 秒，不值得的段落連試都不試";
+}
+
+TEST(OverlayPlanTest, PlainBackgroundsAreNotInpainted) {
+    const ImageBgra frame = solidFrame(200, 200, Rgba{255, 255, 255, 255});
+    FakeInpainter inpainter;
+    TranslatedBlock line = block(RectI{40, 80, 160, 110}, "你好", Orientation::Horizontal);
+    line.block.text = "こんにちは";
+    const std::vector<OverlayItem> items = planOverlay(frame, std::span(&line, 1), &inpainter);
+    ASSERT_EQ(items.size(), 1u);
+    EXPECT_TRUE(items[0].patch.empty()) << "純色背景用純色填就好";
+    EXPECT_EQ(inpainter.calls, 0);
+}
+
 TEST(OverlayPlanTest, CompositingShowsWhatIsOnScreen) {
     ImageBgra screen = solidFrame(2, 1, Rgba{200, 100, 50, 255});
     ImageBgra overlay(2, 1);  // 第一個像素透明

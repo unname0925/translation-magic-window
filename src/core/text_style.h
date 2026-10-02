@@ -22,6 +22,9 @@ struct TextStyle {
     friend bool operator==(const TextStyle&, const TextStyle&) = default;
 };
 
+// 兩個顏色的亮度對比（WCAG，1～21）。3 以上大字讀得清楚
+double contrastRatio(Rgba a, Rgba b);
+
 std::optional<TextStyle> estimateTextStyle(const ImageBgra& frame, const RectI& rect,
                                            Rgba background);
 

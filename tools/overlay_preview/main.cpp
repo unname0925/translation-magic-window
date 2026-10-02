@@ -30,6 +30,7 @@
 #include "core/overlay_font.h"
 #include "core/overlay_plan.h"
 #include "core/pipeline.h"
+#include "ocr/lama_inpainter.h"
 #include "ocr/ocr_service.h"
 #include "platform/app_paths.h"
 #include "platform/logging.h"
@@ -143,6 +144,13 @@ int run(const Options& options) {
     core::PipelineOptions pipelineOptions;
     pipelineOptions.furigana = loadFurigana(models);
     core::Pipeline pipeline(ocr, *translation.service, pipelineOptions);
+    // 背景修補（M4-01）：和主程式一樣，只在 OCR 用顯示卡、而且有模型時
+    std::shared_ptr<core::IInpainter> inpainter;
+    if (const auto model = ocr::LamaInpainter::modelPath(models);
+        ocr.device() == ocr::Device::DirectML && std::filesystem::exists(model)) {
+        inpainter = std::make_shared<ocr::LamaInpainter>(model);
+        std::printf("背景修補：LaMa\n");
+    }
     platform::OverlayRenderer renderer;
     if (const std::string_view file = core::overlayFontFile(options.font); !file.empty()) {
         if (!renderer.setFont(models / L"fonts" / std::filesystem::path(std::string(file)))) {
@@ -157,6 +165,7 @@ int run(const Options& options) {
         job.frame = platform::loadImage(path);
         job.region = core::RectI{0, 0, job.frame.width, job.frame.height};
         job.language = options.language;
+        job.inpainter = inpainter;
         pipeline.forget(job.lens);  // 每張圖各自獨立，不拿上一張當上下文
         const core::PipelineResult result = pipeline.run(job, std::stop_token{});
         std::printf("\n== %s（%zu 段）\n", platform::pathToUtf8(path.filename()).c_str(),
@@ -177,6 +186,7 @@ int run(const Options& options) {
                 core::backgroundUniformity(job.frame, padded, bg, 2, 72), group.block.score, r.left,
                 r.top, r.right, r.bottom, group.block.text.c_str(), group.translation.c_str());
         }
+        std::printf("覆蓋層 %.0f ms（含背景修補）\n", result.timings.overlayMs);
         for (const core::OverlayItem& item : result.overlay) {
             std::printf(
                 "  蓋上：底 %d,%d,%d 字 %d,%d,%d%s  %s\n", item.background.r, item.background.g,
