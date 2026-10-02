@@ -1,6 +1,7 @@
 // 譯文蓋在原文位置上的一段（M3）。規劃在 core/overlay_plan，繪製在 platform/overlay_renderer。
 #pragma once
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -27,6 +28,8 @@ struct OverlayItem {
     bool vertical = false;
     Rgba background;
     Rgba foreground;
+    // 原文有描邊時的描邊顏色（M4-02）
+    std::optional<Rgba> outline;
     TextSize size = TextSize::Normal;
     // 原文一行的粗細（像素，各行的中位數）。譯文的字不比它大：短短的譯文放進大框時，
     // 不會被放大成標題。0 = 不知道，只受框的大小限制。

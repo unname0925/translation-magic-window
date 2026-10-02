@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "core/ruby.h"
+#include "core/text_color.h"
 #include "core/utf8.h"
 
 namespace tmw::core {
@@ -258,7 +259,14 @@ std::vector<OverlayItem> planOverlay(const ImageBgra& frame,
         if (!worthCovering(frame, item.rect, item.background, group.block.score)) {
             continue;
         }
-        item.foreground = readableTextColor(item.background);
+        // 照著原文的顏色畫（M4-02）；估計不出來（墨水太少、看不清楚）時用黑字或白字
+        if (const std::optional<TextColors> colors =
+                estimateTextColors(frame, source, item.background)) {
+            item.foreground = colors->fill;
+            item.outline = colors->outline;
+        } else {
+            item.foreground = readableTextColor(item.background);
+        }
         item.size = group.block.size;
         item.lineThickness = lineThickness(group.block);
         items.push_back(std::move(item));

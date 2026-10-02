@@ -161,6 +161,17 @@ int run(const Options& options) {
                 core::backgroundUniformity(job.frame, padded, bg, 2, 72), group.block.score,
                 group.block.text.c_str(), group.translation.c_str());
         }
+        for (const core::OverlayItem& item : result.overlay) {
+            std::printf(
+                "  蓋上：底 %d,%d,%d 字 %d,%d,%d%s  %s\n", item.background.r, item.background.g,
+                item.background.b, item.foreground.r, item.foreground.g, item.foreground.b,
+                item.outline
+                    ? (" 描邊 " + std::to_string(item.outline->r) + "," +
+                       std::to_string(item.outline->g) + "," + std::to_string(item.outline->b))
+                          .c_str()
+                    : "",
+                item.text.c_str());
+        }
         core::ImageBgra shown = job.frame;
         core::compositeOver(
             shown, renderer.render(core::SizeI{shown.width, shown.height}, result.overlay));

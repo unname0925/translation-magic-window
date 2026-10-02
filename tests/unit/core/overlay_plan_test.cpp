@@ -131,6 +131,26 @@ TEST(OverlayPlanTest, IconsReadAsTextAreLeftAlone) {
     EXPECT_TRUE(planOverlay(frame, std::span(&icon, 1)).empty());
 }
 
+TEST(OverlayPlanTest, TheTranslationKeepsTheOriginalTextColour) {
+    // M4-02：深藍底上的黃字，譯文也是黃字（不是一律白字）
+    ImageBgra frame = solidFrame(200, 100, Rgba{20, 30, 70, 255});
+    for (int y = 30; y < 70; ++y) {
+        for (int x = 40; x < 160; ++x) {
+            if ((x / 8) % 2 == 0) {  // 一條條粗筆畫
+                std::uint8_t* p = frame.pixel(x, y);
+                p[0] = 40;
+                p[1] = 210;
+                p[2] = 250;
+            }
+        }
+    }
+    const TranslatedBlock name = block(RectI{40, 30, 160, 70}, "立花", Orientation::Horizontal);
+    const std::vector<OverlayItem> items = planOverlay(frame, std::span(&name, 1));
+    ASSERT_EQ(items.size(), 1u);
+    EXPECT_EQ(items[0].foreground, (Rgba{250, 210, 40, 255}));
+    EXPECT_FALSE(items[0].outline.has_value());
+}
+
 TEST(OverlayPlanTest, CompositingShowsWhatIsOnScreen) {
     ImageBgra screen = solidFrame(2, 1, Rgba{200, 100, 50, 255});
     ImageBgra overlay(2, 1);  // 第一個像素透明

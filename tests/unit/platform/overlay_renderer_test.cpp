@@ -159,6 +159,28 @@ TEST_F(OverlayRendererTest, RubyIsDrawnSmallRightOfVerticalText) {
         << "ルビ在右邊，字比較小";
 }
 
+TEST_F(OverlayRendererTest, OutlinedTextHasBothColours) {
+    // M4-02：白字黑邊（遊戲常見）畫在藍底上
+    OverlayItem outlined = item(RectI{0, 0, 200, 60}, "存檔");
+    outlined.background = Rgba{60, 110, 200, 255};
+    outlined.foreground = Rgba{255, 255, 255, 255};
+    outlined.outline = Rgba{0, 0, 0, 255};
+    outlined.lineThickness = 40;
+    const std::vector<OverlayItem> items{outlined};
+    const ImageBgra image = renderer_.render(core::SizeI{200, 60}, items);
+    int white = 0;
+    int black = 0;
+    for (int y = 0; y < 60; ++y) {
+        for (int x = 0; x < 200; ++x) {
+            const std::uint8_t* p = image.pixel(x, y);
+            white += p[0] > 230 && p[1] > 230 && p[2] > 230 ? 1 : 0;
+            black += p[0] < 25 && p[1] < 25 && p[2] < 25 ? 1 : 0;
+        }
+    }
+    EXPECT_GT(white, 30) << "填色";
+    EXPECT_GT(black, 30) << "描邊";
+}
+
 TEST_F(OverlayRendererTest, LightTextOnDarkBackgrounds) {
     OverlayItem dark = item(RectI{0, 0, 100, 40}, "危險");
     dark.background = Rgba{20, 20, 20, 255};

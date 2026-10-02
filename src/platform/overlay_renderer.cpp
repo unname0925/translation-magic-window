@@ -12,6 +12,7 @@
 #include <cstring>
 #include <stdexcept>
 #include <string>
+#include <utility>
 
 #include "platform/text_encoding.h"
 #include "platform/win_error.h"
@@ -300,9 +301,21 @@ core::ImageBgra OverlayRenderer::render(core::SizeI size,
         const D2D1_POINT_2F origin =
             D2D1::Point2F(rect.left + (item.rect.width() - box.width) / 2,
                           rect.top + (item.rect.height() - box.height) / 2);
+        const auto draw = [&](D2D1_POINT_2F at) {
+            impl_->target->DrawTextLayout(at, text.get(), brush.get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
+            impl_->drawRuby(item, text.get(), at, fontSize, brush.get());
+        };
+        if (item.outline) {
+            // 描邊（M4-02）：往八個方向各偏移一點先畫一次描邊色，填色再蓋在中間
+            const float width = std::max(1.0f, std::round(fontSize / 16.0f));
+            brush->SetColor(toColor(*item.outline));
+            for (const auto [dx, dy] :
+                 {std::pair{-1, -1}, {0, -1}, {1, -1}, {-1, 0}, {1, 0}, {-1, 1}, {0, 1}, {1, 1}}) {
+                draw(D2D1::Point2F(origin.x + dx * width, origin.y + dy * width));
+            }
+        }
         brush->SetColor(toColor(item.foreground));
-        impl_->target->DrawTextLayout(origin, text.get(), brush.get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
-        impl_->drawRuby(item, text.get(), origin, fontSize, brush.get());
+        draw(origin);
         impl_->target->PopAxisAlignedClip();
     }
     check(impl_->target->EndDraw(), "ID2D1RenderTarget::EndDraw");
