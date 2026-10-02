@@ -4,6 +4,7 @@
 1. 私有正確答案裡的ルビ（testdata/private/ja-*/ground_truth.txt，特殊讀音在讀音後面標 !）。
 2. 下面整理的常見例子：漫畫裡常見的特殊讀音（義訓、外來語念法），以及容易被誤判的一般讀音
    （熟字訓、連濁、促音、「々」、只標漢字部分的送假名）。這些是一般的日文知識，不是從截圖來的。
+3. OCR 讀錯的一般讀音（漏濁點、小字變大字、錯一個字、讀出數字）。
 
     tools/eval/.venv/Scripts/python tools/eval/evaluate_furigana.py \\
         --jmdict .cache/dict/JMdict_e.gz --kanjidic .cache/dict/kanjidic2.xml.gz
@@ -42,6 +43,14 @@ ORDINARY = [
     ("下手", "へた"), ("上手", "じょうず"), ("部屋", "へや"), ("二十歳", "はたち"), ("迷子", "まいご"),
     ("本気", "ほんき"), ("地球", "ちきゅう"), ("宇宙", "うちゅう"), ("見", "み"), ("聞", "き"),
     ("故郷", "ふるさと"), ("母", "かあ"), ("父", "とう"), ("兄", "にい"), ("姉", "ねえ"),
+]
+
+# OCR 讀錯的一般讀音：振り仮名很小，常漏濁點、小字讀成大字、錯一個字，或讀出數字和符號。
+# 這些不是作者刻意的讀音，判成特殊的話譯文會多出一堆莫名其妙的註解。
+OCR_MISREAD = [
+    ("学園", "かくえん"), ("自己紹介", "じこしうかい"), ("学校", "かつこう"), ("東京", "とうきよう"),
+    ("皆", "ふんな"), ("女子", "2こ"), ("戸惑", "とま2"), ("共学", "わ4うなく"), ("！", "せい"),
+    ("先生", "せんせ"), ("新学期", "しんがつき"), ("本年度", "ほんねんと"),
 ]
 
 
@@ -87,6 +96,7 @@ def main() -> int:
         evaluate(private, kanji, irregular, "私有正確答案")
     evaluate([(b, r, True) for b, r in SPECIAL] + [(b, r, False) for b, r in ORDINARY],
              kanji, irregular, "整理的例子")
+    evaluate([(b, r, False) for b, r in OCR_MISREAD], kanji, irregular, "OCR 讀錯的一般讀音")
     return 0
 
 

@@ -5,7 +5,10 @@
 // 判斷規則和那支 Python 一模一樣（tools/eval/evaluate_furigana.py 量過準確度）：
 // 1. 拼得出來（考慮連濁、促音、「々」、夾在中間的假名）→ 一般讀音
 // 2. 是表上的正規讀法 → 一般讀音
-// 3. 其餘 → 特殊讀音
+// 3. OCR 讀錯的振り仮名不算特殊讀音：讀音裡有數字、符號、漢字，或本文只有標點 → 一般讀音；
+//    平假名的讀音抹平濁點和小字（学園＝かくえん）、或三個字以上錯一個假名
+//    （自己紹介＝じこしうかい）就拼得出來 → 一般讀音。片假名不放寬（楓男＝フーダン 是刻意的）
+// 4. 其餘 → 特殊讀音
 // 有不認得的漢字時無法判斷（nullopt），呼叫端退回「讀音是片假名」的舊規則。
 #pragma once
 
@@ -34,6 +37,8 @@ private:
     std::map<std::string, std::set<std::string>, std::less<>> kanji_;
     // 拼不出來的正規讀法：（詞, 讀音）
     std::set<std::pair<std::string, std::string>, std::less<>> irregular_;
+    // 同上，讀音抹平了濁點和小字（比對 OCR 讀錯的讀音用）
+    std::set<std::pair<std::string, std::string>, std::less<>> looseIrregular_;
 };
 
 // 片假名轉平假名（其他字不變）

@@ -1,7 +1,9 @@
 #include "core/furigana_readings.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <functional>
+#include <string_view>
 #include <vector>
 
 #include "core/utf8.h"
@@ -31,6 +33,28 @@ bool isKanji(char32_t c) {
     return (c >= 0x4E00 && c <= 0x9FFF) || (c >= 0x3400 && c <= 0x4DBF) || c == U'々';
 }
 
+bool isKana(char32_t c) {
+    return (c >= U'ぁ' && c <= U'ゖ') || (c >= U'ァ' && c <= U'ヺ') || c == U'ー' || c == U'・';
+}
+
+bool isKatakana(char32_t c) {
+    return (c >= U'ァ' && c <= U'ヺ') || c == U'ー';
+}
+
+bool isLatin(char32_t c) {
+    return (c >= U'a' && c <= U'z') || (c >= U'A' && c <= U'Z') || (c >= U'Ａ' && c <= U'Ｚ') ||
+           (c >= U'ａ' && c <= U'ｚ');
+}
+
+// 不是作者寫的讀音，是 OCR 讀錯或配錯的：讀音裡有數字、符號、漢字（振り仮名只會是假名，
+// 偶爾是英文字母），或本文一個字都沒有（ルビ配到了「！」上）
+bool ocrNoise(const std::u32string& base, const std::u32string& reading) {
+    const bool hasWord = std::any_of(
+        base.begin(), base.end(), [](char32_t c) { return isKanji(c) || isKana(c) || isLatin(c); });
+    return !hasWord || std::any_of(reading.begin(), reading.end(),
+                                   [](char32_t c) { return !isKana(c) && !isLatin(c); });
+}
+
 std::u32string decode(std::string_view text) {
     std::u32string out;
     for (std::size_t i = 0; i < text.size();) {
@@ -39,14 +63,37 @@ std::u32string decode(std::string_view text) {
     return out;
 }
 
-std::string encode(char32_t c) {
+std::string encode(std::u32string_view text) {
     std::string out;
-    appendUtf8(out, c);
+    for (const char32_t c : text) {
+        appendUtf8(out, c);
+    }
     return out;
 }
 
 char32_t hiragana(char32_t c) {
     return c >= U'ァ' && c <= U'ヶ' ? c - 0x60 : c;
+}
+
+// OCR 最常讀錯振り仮名的地方抹平：濁點、半濁點拿掉，小字當大字（がっこう → かつこう）
+std::u32string loosen(std::u32string_view text) {
+    static const std::u32string small = U"ぁぃぅぇぉっゃゅょゎゕゖ";
+    static const std::u32string large = U"あいうえおつやゆよわかけ";
+    static const std::u32string voicedKana = U"がぎぐげござじずぜぞだぢづでどばびぶべぼぱぴぷぺぽ";
+    static const std::u32string plainKana = U"かきくけこさしすせそたちつてとはひふへほはひふへほ";
+    std::u32string out;
+    out.reserve(text.size());
+    for (char32_t c : text) {
+        c = hiragana(c);
+        if (const std::size_t at = small.find(c); at != std::u32string::npos) {
+            c = large[at];
+        }
+        if (const std::size_t at = voicedKana.find(c); at != std::u32string::npos) {
+            c = plainKana[at];
+        }
+        out += c;
+    }
+    return out;
 }
 
 // 連濁（か→が、は→ば／ぱ）
@@ -84,6 +131,84 @@ std::vector<std::u32string> variants(const std::u32string& reading) {
     return out;
 }
 
+// rest 的開頭和 form 只差一個假名（換了一個、少了一個、多了一個）時，rest 要用掉幾個字
+// （和 furigana_dict.py 的 one_edit_lengths 相同）
+std::vector<std::size_t> oneEditLengths(std::u32string_view form, std::u32string_view rest) {
+    const std::size_t n = form.size();
+    std::vector<std::size_t> out;
+    if (rest.size() >= n) {
+        std::size_t differences = 0;
+        for (std::size_t k = 0; k < n; ++k) {
+            differences += rest[k] != form[k] ? 1 : 0;
+        }
+        if (differences == 1) {
+            out.push_back(n);
+        }
+    }
+    // 少了一個字：form 拿掉第 k 個，等於 rest 的開頭
+    if (n >= 2 && rest.size() >= n - 1) {
+        for (std::size_t k = 0; k < n; ++k) {
+            if (form.substr(0, k) == rest.substr(0, k) &&
+                form.substr(k + 1) == rest.substr(k, n - 1 - k)) {
+                out.push_back(n - 1);
+                break;
+            }
+        }
+    }
+    // 多了一個字：rest 的開頭拿掉第 k 個，等於 form
+    if (rest.size() >= n + 1) {
+        for (std::size_t k = 0; k <= n; ++k) {
+            if (rest.substr(0, k) == form.substr(0, k) &&
+                rest.substr(k + 1, n - k) == form.substr(k)) {
+                out.push_back(n + 1);
+                break;
+            }
+        }
+    }
+    return out;
+}
+
+// 前 i 個字能不能剛好拼出讀音，最多容許 edits 個錯字（動態規劃）。
+// options[i] 是第 i 個字可能的讀音，和 target 用同一種方式正規化過。
+bool derivable(const std::vector<std::vector<std::u32string>>& options,
+               const std::u32string& target, int edits) {
+    const std::size_t words = options.size();
+    const std::size_t budgets = static_cast<std::size_t>(edits) + 1;
+    // reachable[i][j][e]：前 i 個字拼出讀音的前 j 個假名，用了 e 個錯字
+    std::vector<std::vector<std::vector<bool>>> reachable(
+        words + 1, std::vector<std::vector<bool>>(target.size() + 1, std::vector<bool>(budgets)));
+    reachable[0][0][0] = true;
+    const std::u32string_view whole(target);
+    for (std::size_t i = 0; i < words; ++i) {
+        for (std::size_t j = 0; j <= target.size(); ++j) {
+            for (std::size_t e = 0; e < budgets; ++e) {
+                if (!reachable[i][j][e]) {
+                    continue;
+                }
+                for (const std::u32string& form : options[i]) {
+                    if (form.empty()) {
+                        continue;
+                    }
+                    if (target.compare(j, form.size(), form) == 0) {
+                        reachable[i + 1][j + form.size()][e] = true;
+                    }
+                    if (e + 1 < budgets) {
+                        for (const std::size_t used : oneEditLengths(form, whole.substr(j))) {
+                            reachable[i + 1][j + used][e + 1] = true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return std::any_of(reachable[words][target.size()].begin(),
+                       reachable[words][target.size()].end(), [](bool yes) { return yes; });
+}
+
+// 讀音容許錯一個假名的長度下限：兩個字的讀音錯一個就面目全非了
+// （時間＝とき 不能因為像「じき」就算一般讀音）
+constexpr std::size_t kMinLengthForEdits = 3;
+
 }  // namespace
 
 std::string toHiragana(std::string_view text) {
@@ -114,6 +239,7 @@ std::optional<FuriganaReadings> FuriganaReadings::parse(std::string_view text) {
         std::string_view readings = line.substr(tab + 1);
         if (line[0] == 'W') {
             out.irregular_.emplace(word, std::string(readings));
+            out.looseIrregular_.emplace(word, encode(loosen(decode(readings))));
             continue;
         }
         std::set<std::string>& set = out.kanji_[word];
@@ -133,12 +259,15 @@ std::optional<FuriganaReadings> FuriganaReadings::parse(std::string_view text) {
 
 std::optional<bool> FuriganaReadings::isSpecial(std::string_view base,
                                                 std::string_view reading) const {
+    const std::u32string word = decode(base);
+    const std::u32string spoken = decode(reading);
+    if (ocrNoise(word, spoken)) {
+        return false;
+    }
     const std::string normalized = toHiragana(reading);
     if (irregular_.contains(std::make_pair(std::string(base), normalized))) {
         return false;
     }
-    const std::u32string word = decode(base);
-    const std::u32string target = decode(normalized);
 
     // 每個漢字可能的讀音（含連濁、促音）。有不認得的漢字就判斷不了。
     std::vector<std::vector<std::u32string>> options(word.size());
@@ -150,7 +279,7 @@ std::optional<bool> FuriganaReadings::isSpecial(std::string_view base,
         }
         // 「々」重複前一個字（也可能連濁：人々＝ひとびと）
         const char32_t source = c == U'々' && i > 0 ? word[i - 1] : c;
-        const auto found = kanji_.find(encode(source));
+        const auto found = kanji_.find(encode(std::u32string(1, source)));
         if (found == kanji_.end()) {
             return std::nullopt;
         }
@@ -160,24 +289,25 @@ std::optional<bool> FuriganaReadings::isSpecial(std::string_view base,
             }
         }
     }
+    if (derivable(options, decode(normalized), 0)) {
+        return false;
+    }
 
-    // 動態規劃：reachable[i][j] 代表前 i 個字剛好拼出讀音的前 j 個假名
-    std::vector<std::vector<bool>> reachable(word.size() + 1,
-                                             std::vector<bool>(target.size() + 1, false));
-    reachable[0][0] = true;
-    for (std::size_t i = 0; i < word.size(); ++i) {
-        for (std::size_t j = 0; j <= target.size(); ++j) {
-            if (!reachable[i][j]) {
-                continue;
-            }
-            for (const std::u32string& form : options[i]) {
-                if (!form.empty() && target.compare(j, form.size(), form) == 0) {
-                    reachable[i + 1][j + form.size()] = true;
-                }
-            }
+    // 以下放寬給 OCR 讀錯的平假名。片假名是作者刻意的強烈訊號（楓男＝フーダン）。
+    if (std::any_of(spoken.begin(), spoken.end(), isKatakana)) {
+        return true;
+    }
+    const std::u32string loose = loosen(spoken);
+    if (looseIrregular_.contains(std::make_pair(std::string(base), encode(loose)))) {
+        return false;
+    }
+    for (std::vector<std::u32string>& forms : options) {
+        for (std::u32string& form : forms) {
+            form = loosen(form);
         }
     }
-    return !reachable[word.size()][target.size()];
+    const int edits = spoken.size() >= kMinLengthForEdits ? 1 : 0;
+    return !derivable(options, loose, edits);
 }
 
 }  // namespace tmw::core

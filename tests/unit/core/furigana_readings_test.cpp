@@ -62,6 +62,29 @@ TEST(FuriganaReadingsTest, KatakanaReadingsAreComparedAsHiragana) {
     EXPECT_EQ(table().isSpecial("東京", "トウキョウ"), false);
 }
 
+// 振り仮名很小，OCR 常讀錯。讀錯的一般讀音判成特殊的話，譯文會多出一堆莫名其妙的註解。
+TEST(FuriganaReadingsTest, OcrNoiseIsNotTheAuthorsReading) {
+    EXPECT_EQ(table().isSpecial("学校", "2こう"), false) << "振り仮名不會有數字";
+    EXPECT_EQ(table().isSpecial("本気", "ほん気"), false) << "也不會有漢字";
+    EXPECT_EQ(table().isSpecial("！", "せい"), false) << "ルビ配到了標點上";
+}
+
+TEST(FuriganaReadingsTest, MissingDakutenAndSmallKanaAreForgiven) {
+    EXPECT_EQ(table().isSpecial("学校", "かつこう"), false) << "漏了濁點，小っ讀成大つ";
+    EXPECT_EQ(table().isSpecial("東京", "とうきよう"), false) << "小ょ讀成大よ";
+    EXPECT_EQ(table().isSpecial("今日", "きよう"), false) << "熟字訓也一樣";
+}
+
+TEST(FuriganaReadingsTest, OneWrongKanaIsForgivenOnlyInLongReadings) {
+    EXPECT_EQ(table().isSpecial("東京", "とうきやう"), false);
+    EXPECT_EQ(table().isSpecial("学校", "がくこう"), false) << "多了一個字";
+    EXPECT_EQ(table().isSpecial("今", "いな"), true) << "兩個字錯一個就面目全非了";
+}
+
+TEST(FuriganaReadingsTest, KatakanaReadingsAreNotForgiven) {
+    EXPECT_EQ(table().isSpecial("学校", "ガツコウ"), true) << "片假名是作者刻意的";
+}
+
 TEST(FuriganaReadingsTest, UnknownKanjiCannotBeJudged) {
     EXPECT_EQ(table().isSpecial("楓林", "ふうりん"), std::nullopt);
 }
@@ -112,7 +135,14 @@ TEST(FuriganaReadingsTest, TheRealTableAgreesWithThePythonEvaluation) {
                                                           {"楓林", "ふうりん"},
                                                           {"母", "かあ"},
                                                           {"二十歳", "はたち"},
-                                                          {"本気", "ほんき"}}) {
+                                                          {"本気", "ほんき"},
+                                                          // OCR 讀錯的一般讀音
+                                                          {"学園", "かくえん"},
+                                                          {"自己紹介", "じこしうかい"},
+                                                          {"皆", "ふんな"},
+                                                          {"女子", "2こ"},
+                                                          {"先生", "せんせ"},
+                                                          {"新学期", "しんがつき"}}) {
         EXPECT_EQ(real->isSpecial(base, reading), false) << base << "=" << reading;
     }
 }
