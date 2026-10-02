@@ -171,10 +171,17 @@ bool isSpecialReading(std::string_view reading) {
     return true;
 }
 
-std::string markSpecialRuby(std::string_view text, std::span<const RubyAnnotation> ruby) {
+std::string markSpecialRuby(std::string_view text, std::span<const RubyAnnotation> ruby,
+                            const FuriganaReadings* readings) {
     std::vector<RubyAnnotation> special;
     for (const RubyAnnotation& one : ruby) {
-        if (isSpecialReading(one.reading)) {
+        std::optional<bool> decided;
+        if (readings != nullptr && one.length > 0) {
+            const std::size_t from = byteOffsetOfCharacter(text, one.start);
+            const std::size_t to = byteOffsetOfCharacter(text, one.start + one.length);
+            decided = readings->isSpecial(text.substr(from, to - from), one.reading);
+        }
+        if (decided.value_or(isSpecialReading(one.reading))) {
             special.push_back(one);
         }
     }

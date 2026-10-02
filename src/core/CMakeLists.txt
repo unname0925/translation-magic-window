@@ -17,6 +17,8 @@ add_library(tmw_core STATIC
     debug_overlay.h
     debug_report.cpp
     debug_report.h
+    furigana_readings.cpp
+    furigana_readings.h
     frame_source.h
     geometry.cpp
     geometry.h

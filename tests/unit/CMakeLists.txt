@@ -7,6 +7,7 @@ add_executable(tmw_unit_tests
     core/debug_overlay_test.cpp
     core/debug_report_test.cpp
     core/geometry_test.cpp
+    core/furigana_readings_test.cpp
     core/glossary_test.cpp
     core/history_test.cpp
     core/hotkey_test.cpp
@@ -58,7 +59,9 @@ target_include_directories(tmw_unit_tests PRIVATE "${PROJECT_SOURCE_DIR}/tests")
 target_compile_definitions(tmw_unit_tests PRIVATE
     TMW_OPENCC_DATA_DIR="${TMW_OPENCC_DATA_DIR}"
     # 錄好的 HTTP 回應（CT-01、CT-02）
-    TMW_TEST_DATA_DIR="${PROJECT_SOURCE_DIR}/tests/data")
+    TMW_TEST_DATA_DIR="${PROJECT_SOURCE_DIR}/tests/data"
+    # 本機產生的模型和資料（不進版本控制；沒有時相關測試會略過）
+    TMW_MODELS_DIR="${PROJECT_SOURCE_DIR}/models")
 target_link_libraries(tmw_unit_tests PRIVATE
     tmw_core
     tmw_net

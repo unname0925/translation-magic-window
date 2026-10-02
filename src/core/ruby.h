@@ -12,6 +12,7 @@
 #include <utility>
 #include <vector>
 
+#include "core/furigana_readings.h"
 #include "core/text_layout.h"
 
 namespace tmw::core {
@@ -61,7 +62,10 @@ bool isSpecialReading(std::string_view reading);
 // 送給翻譯引擎的文字：只標記特殊讀音（M2-14）。一般讀音的標記沒有意義，還會害本機的
 // hy-mt2 整批不翻、原文照回（實測「{東京|とうきょう}に行くんだ」原封不動地回來）。
 // 結果視窗顯示原文時仍然用 markRuby 顯示全部ルビ。
-std::string markSpecialRuby(std::string_view text, std::span<const RubyAnnotation> ruby);
+// readings 有給時用辭典判斷（M2-13，core/furigana_readings.h）；沒給、或有不認得的漢字時，
+// 退回 isSpecialReading（讀音是片假名）。
+std::string markSpecialRuby(std::string_view text, std::span<const RubyAnnotation> ruby,
+                            const FuriganaReadings* readings = nullptr);
 
 // 一段文字上標好的 ルビ，搬到同一段話的另一個版本上（manga-ocr 重讀出來的文字，M2-03）。
 // 位置是「第幾個字」，兩個版本的字數不一定一樣（PP-OCR 多讀或少讀了字），所以不能照抄位置：

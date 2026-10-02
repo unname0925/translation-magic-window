@@ -195,7 +195,7 @@ PipelineResult Pipeline::run(const PipelineJob& job, std::stop_token cancel) {
     std::vector<std::string> sources;
     sources.reserve(blocks.size());
     for (const TextBlock& block : blocks) {
-        sources.push_back(markSpecialRuby(block.text, block.ruby));
+        sources.push_back(markSpecialRuby(block.text, block.ruby, options_.furigana.get()));
     }
 
     TranslateRequest request;

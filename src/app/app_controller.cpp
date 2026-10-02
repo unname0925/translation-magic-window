@@ -578,6 +578,18 @@ void AppController::setUpPipeline() {
         return;
     }
     platform::logInfo(std::string("OCR 裝置：") + std::string(ocr::deviceName(ocr_->device())));
+    // ルビ的一般讀音表（M2-13，tools/eval/furigana_dict.py build 產生）。沒有就用片假名規則
+    {
+        std::ifstream file(models / L"furigana" / L"readings.tsv", std::ios::binary);
+        const std::string text((std::istreambuf_iterator<char>(file)),
+                               std::istreambuf_iterator<char>());
+        if (std::optional<core::FuriganaReadings> readings = core::FuriganaReadings::parse(text)) {
+            platform::logInfo("ルビ讀音表：" + std::to_string(readings->kanjiCount()) + " 個漢字");
+            furigana_ = std::make_shared<const core::FuriganaReadings>(std::move(*readings));
+        } else {
+            platform::logInfo("沒有ルビ讀音表，特殊讀音改用「讀音是片假名」判斷");
+        }
+    }
     if (settings_.mangaMode) {
         setMangaMode(true);
     }
@@ -748,6 +760,7 @@ void AppController::rebuildTranslation() {
 
     core::PipelineOptions pipelineOptions;
     pipelineOptions.dropEdgeBlocks = settings_.dropEdgeBlocks;
+    pipelineOptions.furigana = furigana_;
     pipeline_ = std::make_unique<core::Pipeline>(*ocr_, *translation_, pipelineOptions);
     worker_ =
         std::make_unique<core::PipelineWorker>(*pipeline_, [this](core::PipelineResult result) {

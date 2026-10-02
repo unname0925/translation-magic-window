@@ -104,6 +104,18 @@ python tools/fetch_models/fetch_models.py --verify-only   # 只檢查已下載�
 
 每個檔案都固定在特定的版本，下載後會用大小和 SHA-256 驗證。已經下載而且驗證通過的檔案不會重新下載。
 
+**ルビ讀音表**（選用，判斷ルビ是一般讀音還是作者刻意的讀音）：從 EDRDG 下載
+[JMdict_e.gz](http://ftp.edrdg.org/pub/Nihongo/JMdict_e.gz) 和
+[kanjidic2.xml.gz](http://www.edrdg.org/kanjidic/kanjidic2.xml.gz) 放到 `.cache/dict/`，再產生讀音表：
+
+```powershell
+tools/eval/.venv/Scripts/python tools/eval/furigana_dict.py build --jmdict .cache/dict/JMdict_e.gz `
+    --kanjidic .cache/dict/kanjidic2.xml.gz --output models/furigana/readings.tsv
+```
+
+沒有讀音表時程式照常運作，改用「讀音是片假名」判斷。JMdict 和 KANJIDIC2 是
+Electronic Dictionary Research and Development Group 的 CC BY-SA 4.0 授權。
+
 ## 持續整合
 
 每次推送和 PR，[GitHub Actions](.github/workflows/ci.yml) 會在 Windows 上建置 Debug、Release 和

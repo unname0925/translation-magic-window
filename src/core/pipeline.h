@@ -125,6 +125,8 @@ struct PipelineOptions {
     int edgeMargin = 2;
     // 給 LLM 當上下文的「最近幾組」原文和譯文
     std::size_t contextGroups = 4;
+    // ルビ的一般讀音表（M2-13）。沒有時（讀音表還沒產生）用「讀音是片假名」判斷特殊讀音
+    std::shared_ptr<const FuriganaReadings> furigana;
 };
 
 // 一次處理。可以從任何執行緒呼叫，但同一個 Pipeline 不要同時跑兩次

@@ -115,6 +115,8 @@ private:
     core::Settings settings_;
     // 專有名詞表（M2-09）：資料資料夾裡的 glossary.txt，改檔後的下一次處理就重新讀取
     std::shared_ptr<const core::Glossary> glossary_;
+    // ルビ的一般讀音表（M2-13）。沒有時是 nullptr
+    std::shared_ptr<const core::FuriganaReadings> furigana_;
     std::filesystem::file_time_type glossaryTime_{};
     ocr::Device ocrDevice_ = ocr::Device::Auto;
 
