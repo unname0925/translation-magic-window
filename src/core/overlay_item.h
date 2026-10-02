@@ -2,6 +2,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 #include "core/color.h"
 #include "core/geometry.h"
@@ -9,9 +10,20 @@
 
 namespace tmw::core {
 
+// 譯文裡用小字標在詞旁邊的讀音（另有含義的ルビ，design.md 4.8）：
+// 正文的第 start 個字起、共 length 個字，旁邊標 text。位置以「字」計，不是位元組。
+struct OverlayRuby {
+    int start = 0;
+    int length = 0;
+    std::string text;
+
+    friend bool operator==(const OverlayRuby&, const OverlayRuby&) = default;
+};
+
 struct OverlayItem {
     RectI rect;  // 要蓋住的範圍（畫面座標，已經往外多留一點邊、不超出畫面）
     std::string text;
+    std::vector<OverlayRuby> ruby;
     bool vertical = false;
     Rgba background;
     Rgba foreground;

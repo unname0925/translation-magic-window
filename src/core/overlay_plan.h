@@ -32,8 +32,16 @@ bool worthCovering(const ImageBgra& frame, const RectI& rect, Rgba background, f
 // 在 background 上讀得清楚的文字顏色：亮的背景用黑字，暗的用白字
 Rgba readableTextColor(Rgba background);
 
-// 譯文裡的 `{本文|讀音}`（另有含義的ルビ）先畫成「本文（讀音）」
-std::string overlayText(std::string_view translation);
+struct OverlayText {
+    std::string text;
+    std::vector<OverlayRuby> ruby;  // 依位置排好
+};
+
+// 譯文拆成正文和ルビ：LLM 留下的 `{認真|玩真的}` 標記，以及一般翻譯引擎接在後面的註解
+// 「　［本気（マジ）→ 認真（玩真的）］」，都變成「認真」旁邊標小字「玩真的」。
+// 註解裡的詞在正文找不到時就不標（結果視窗裡還看得到），註解本身不畫：
+// 一長串註解會把對話框裡的字擠得很小。
+OverlayText overlayText(std::string_view translation);
 
 // 把預乘 alpha 的 above（OverlayRenderer 畫出來的）疊到 below 上，
 // 結果就是使用者在螢幕上看到的樣子。tmw_overlay_preview 用它：

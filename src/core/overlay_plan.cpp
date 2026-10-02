@@ -4,8 +4,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <utility>
 
 #include "core/ruby.h"
+#include "core/utf8.h"
 
 namespace tmw::core {
 namespace {
@@ -24,6 +26,48 @@ constexpr double kMinLooseUniformity = 0.9;
 constexpr float kMinScoreForLoose = 0.9f;
 // - OCR 分數這麼低的多半是把圖示、花紋讀成了字（遊戲的按鈕讀成「迴」），不蓋
 constexpr float kMinScore = 0.5f;
+
+// net/ruby_notes 接在譯文後面的註解：「　［本気（マジ）→ 認真（玩真的）、…］」
+constexpr std::string_view kNotesOpen = "　［";
+constexpr std::string_view kNotesClose = "］";
+
+// 註解裡每一條「→」右邊的（譯文的詞, 讀音的譯文）。看不懂的部分略過。
+std::vector<std::pair<std::string, std::string>> parseRubyNotes(std::string_view notes) {
+    constexpr std::string_view kArrow = "）→ ";
+    constexpr std::string_view kOpen = "（";
+    constexpr std::string_view kEnd = "）、";
+    constexpr std::string_view kClose = "）";
+    std::vector<std::pair<std::string, std::string>> out;
+    std::size_t at = 0;
+    while (true) {
+        const std::size_t arrow = notes.find(kArrow, at);
+        if (arrow == std::string_view::npos) {
+            break;
+        }
+        const std::size_t word = arrow + kArrow.size();
+        const std::size_t open = notes.find(kOpen, word);
+        if (open == std::string_view::npos) {
+            break;
+        }
+        // 讀音的譯文到「）、」（下一條）或最後一個「）」為止
+        std::size_t close = notes.find(kEnd, open);
+        const bool last = close == std::string_view::npos;
+        if (last) {
+            close = notes.ends_with(kClose) ? notes.size() - kClose.size() : notes.size();
+        }
+        const std::string_view base = notes.substr(word, open - word);
+        const std::string_view reading =
+            notes.substr(open + kOpen.size(), close - open - kOpen.size());
+        if (!base.empty() && !reading.empty()) {
+            out.emplace_back(base, reading);
+        }
+        if (last) {
+            break;
+        }
+        at = close + kEnd.size();
+    }
+    return out;
+}
 
 std::uint8_t median(std::vector<std::uint8_t>& values) {
     const auto middle = values.begin() + static_cast<std::ptrdiff_t>(values.size() / 2);
@@ -119,24 +163,51 @@ Rgba readableTextColor(Rgba background) {
     return luminance >= 128 ? Rgba{0, 0, 0, 255} : Rgba{255, 255, 255, 255};
 }
 
-std::string overlayText(std::string_view translation) {
-    std::string out(stripRubyMarkup(translation));
-    if (out.size() == translation.size()) {
-        return out;  // 沒有標記
+OverlayText overlayText(std::string_view translation) {
+    OverlayText out;
+    std::string_view body = translation;
+    // 一般翻譯引擎的ルビ註解（net/ruby_notes）：「譯文　［本気（マジ）→ 認真（玩真的）］」
+    std::vector<std::pair<std::string, std::string>> notes;
+    if (const std::size_t open = body.rfind(kNotesOpen);
+        open != std::string_view::npos && body.ends_with(kNotesClose)) {
+        notes = parseRubyNotes(body.substr(
+            open + kNotesOpen.size(), body.size() - open - kNotesOpen.size() - kNotesClose.size()));
+        body = body.substr(0, open);
     }
-    out.clear();
+
+    // LLM 留下的標記 `{認真|玩真的}`：本文留在正文，讀音變成ルビ
     std::size_t at = 0;
-    for (const auto& [base, reading] : rubyMarkupPairs(translation)) {
+    for (const auto& [base, reading] : rubyMarkupPairs(body)) {
         const std::string marked = "{" + base + "|" + reading + "}";
-        const std::size_t found = translation.find(marked, at);
+        const std::size_t found = body.find(marked, at);
         if (found == std::string_view::npos) {
             break;
         }
-        out.append(translation.substr(at, found - at));
-        out += base + "（" + reading + "）";
+        out.text.append(body.substr(at, found - at));
+        out.ruby.push_back({characterCount(out.text), characterCount(base), reading});
+        out.text += base;
         at = found + marked.size();
     }
-    out.append(translation.substr(at));
+    out.text.append(body.substr(at));
+
+    // 註解：在正文裡找得到那個詞才標上去，找不到的只留在結果視窗
+    for (const auto& [base, reading] : notes) {
+        std::size_t from = 0;
+        while ((from = out.text.find(base, from)) != std::string::npos) {
+            const int start = characterCount(std::string_view(out.text).substr(0, from));
+            const int length = characterCount(base);
+            const bool overlaps = std::any_of(out.ruby.begin(), out.ruby.end(), [&](const auto& r) {
+                return start < r.start + r.length && r.start < start + length;
+            });
+            if (!overlaps) {
+                out.ruby.push_back({start, length, reading});
+                break;
+            }
+            from += base.size();
+        }
+    }
+    std::sort(out.ruby.begin(), out.ruby.end(),
+              [](const OverlayRuby& a, const OverlayRuby& b) { return a.start < b.start; });
     return out;
 }
 
@@ -179,7 +250,9 @@ std::vector<OverlayItem> planOverlay(const ImageBgra& frame,
         item.rect = RectI{std::max(0, source.left - kPadding), std::max(0, source.top - kPadding),
                           std::min(frame.width, source.right + kPadding),
                           std::min(frame.height, source.bottom + kPadding)};
-        item.text = overlayText(group.translation);
+        OverlayText text = overlayText(group.translation);
+        item.text = std::move(text.text);
+        item.ruby = std::move(text.ruby);
         item.vertical = group.block.orientation == Orientation::Vertical;
         item.background = sampleBackground(frame, item.rect);
         if (!worthCovering(frame, item.rect, item.background, group.block.score)) {

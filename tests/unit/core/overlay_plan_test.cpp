@@ -66,8 +66,27 @@ TEST(OverlayPlanTest, TextIsBlackOnLightAndWhiteOnDark) {
 }
 
 TEST(OverlayPlanTest, TheAuthorsReadingIsShownInParentheses) {
-    EXPECT_EQ(overlayText("我要{認真|來真的}打了"), "我要認真（來真的）打了");
-    EXPECT_EQ(overlayText("沒有標記"), "沒有標記");
+    const OverlayText marked = overlayText("我要{認真|來真的}打了");
+    EXPECT_EQ(marked.text, "我要認真打了");
+    EXPECT_EQ(marked.ruby, (std::vector<OverlayRuby>{{2, 2, "來真的"}})) << "第 3、4 個字旁邊";
+
+    const OverlayText plain = overlayText("沒有標記");
+    EXPECT_EQ(plain.text, "沒有標記");
+    EXPECT_TRUE(plain.ruby.empty());
+}
+
+TEST(OverlayPlanTest, NotesFromOrdinaryEnginesBecomeRubyToo) {
+    // net/ruby_notes 的格式：譯文後面接「　［原文（讀音）→ 譯文（讀音的譯文）、…］」
+    const OverlayText text = overlayText(
+        "我要認真打一場，宿敵。　［本気（マジ）→ 認真（玩真的）、強敵（とも）→ 宿敵（朋友）］");
+    EXPECT_EQ(text.text, "我要認真打一場，宿敵。") << "註解本身不畫，會把字擠小";
+    EXPECT_EQ(text.ruby, (std::vector<OverlayRuby>{{2, 2, "玩真的"}, {8, 2, "朋友"}}));
+}
+
+TEST(OverlayPlanTest, NotesThatCannotBePlacedAreDropped) {
+    const OverlayText text = overlayText("我們走吧。　［本気（マジ）→ 認真（玩真的）］");
+    EXPECT_EQ(text.text, "我們走吧。");
+    EXPECT_TRUE(text.ruby.empty()) << "正文裡沒有「認真」：只留在結果視窗";
 }
 
 TEST(OverlayPlanTest, TextDrawnOnTheArtworkIsLeftAlone) {

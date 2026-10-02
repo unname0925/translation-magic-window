@@ -37,6 +37,36 @@ D2D1_COLOR_F toColor(core::Rgba color) {
     return D2D1::ColorF(color.r / 255.0f, color.g / 255.0f, color.b / 255.0f, color.a / 255.0f);
 }
 
+// ルビ的字是正文的一半（和日文的振り仮名一樣）
+constexpr float kRubyScale = 0.5f;
+
+struct RubyLines {
+    float spacing = 0.0f;   // 一行（一欄）的寬度
+    float baseline = 0.0f;  // 從行的起點到基線
+};
+
+RubyLines rubyLines(float fontSize, bool vertical) {
+    const float ruby = fontSize * kRubyScale;
+    const float spacing = fontSize * 1.3f + ruby;
+    // 橫排：上方先留ルビ的高度，再放正文（基線大約在字的頂端往下 1 個字高）。
+    // 直排：DirectWrite 的直排基線在欄的中央，欄的起點在右邊；正文往左偏，右側留給ルビ
+    return vertical ? RubyLines{spacing, ruby + fontSize * 0.65f}
+                    : RubyLines{spacing, ruby + fontSize * 1.05f};
+}
+
+// UTF-8 的第 characters 個字，在 UTF-16 裡的位置（DirectWrite 用 UTF-16）
+UINT32 utf16Index(std::string_view utf8, int characters) {
+    UINT32 out = 0;
+    std::size_t at = 0;
+    for (int i = 0; i < characters && at < utf8.size(); ++i) {
+        const auto lead = static_cast<unsigned char>(utf8[at]);
+        const std::size_t length = lead < 0x80 ? 1 : lead < 0xE0 ? 2 : lead < 0xF0 ? 3 : 4;
+        out += length == 4 ? 2 : 1;  // 4 個位元組的字在 UTF-16 是一對代理字元
+        at += length;
+    }
+    return out;
+}
+
 struct Box {
     float width = 0.0f;
     float height = 0.0f;
@@ -117,6 +147,13 @@ struct OverlayRenderer::Impl {
         // 整段置中在框裡（橫排是上下置中，直排是左右置中）
         format->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
         format->SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP);
+        if (!item.ruby.empty()) {
+            // 每一行（直排是每一欄）多留ルビ的位置：橫排在字的上方，直排在字的右側
+            const RubyLines lines = rubyLines(fontSize, item.vertical);
+            check(format->SetLineSpacing(DWRITE_LINE_SPACING_METHOD_UNIFORM, lines.spacing,
+                                         lines.baseline),
+                  "SetLineSpacing");
+        }
 
         const std::wstring text = utf8ToWide(item.text);
         const Box box = textBox(item);
@@ -125,6 +162,53 @@ struct OverlayRenderer::Impl {
                                        box.width, box.height, out.put()),
               "IDWriteFactory::CreateTextLayout");
         return out;
+    }
+
+    // ルビ：橫排畫在詞的上方、直排畫在詞的右側，置中對齊那個詞。詞被拆到兩行時畫在第一段旁邊。
+    void drawRuby(const core::OverlayItem& item, IDWriteTextLayout* text, D2D1_POINT_2F origin,
+                  float fontSize, ID2D1Brush* brush) {
+        const float size = fontSize * kRubyScale;
+        winrt::com_ptr<IDWriteTextFormat> format;
+        check(dwrite->CreateTextFormat(item.vertical ? kVerticalFont : kHorizontalFont, nullptr,
+                                       DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL,
+                                       DWRITE_FONT_STRETCH_NORMAL, size, kLocale, format.put()),
+              "IDWriteFactory::CreateTextFormat");
+        if (item.vertical) {
+            check(format->SetReadingDirection(DWRITE_READING_DIRECTION_TOP_TO_BOTTOM),
+                  "SetReadingDirection");
+            check(format->SetFlowDirection(DWRITE_FLOW_DIRECTION_RIGHT_TO_LEFT),
+                  "SetFlowDirection");
+        }
+        format->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+        format->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR);
+        format->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
+
+        for (const core::OverlayRuby& ruby : item.ruby) {
+            const UINT32 start = utf16Index(item.text, ruby.start);
+            const UINT32 length = utf16Index(item.text, ruby.start + ruby.length) - start;
+            DWRITE_HIT_TEST_METRICS where[4]{};
+            UINT32 count = 0;
+            if (FAILED(
+                    text->HitTestTextRange(start, length, origin.x, origin.y, where, 4, &count)) ||
+                count == 0) {
+                continue;
+            }
+            const DWRITE_HIT_TEST_METRICS& m = where[0];
+            const std::wstring reading = utf8ToWide(ruby.text);
+            // 讀音比詞長時往兩邊伸出去（和日文的ルビ一樣）
+            const float reach = (m.width + m.height) + size * static_cast<float>(reading.size());
+            D2D1_RECT_F box{};
+            if (item.vertical) {
+                const float centerY = m.top + m.height / 2;
+                const float right = m.left + m.width;
+                box = D2D1::RectF(right - size * 1.2f, centerY - reach, right, centerY + reach);
+            } else {
+                const float centerX = m.left + m.width / 2;
+                box = D2D1::RectF(centerX - reach, m.top, centerX + reach, m.top + size * 1.3f);
+            }
+            target->DrawText(reading.c_str(), static_cast<UINT32>(reading.size()), format.get(),
+                             box, brush);
+        }
     }
 
     bool fits(const core::OverlayItem& item, float fontSize) {
@@ -210,13 +294,15 @@ core::ImageBgra OverlayRenderer::render(core::SizeI size,
         brush->SetColor(toColor(item.background));
         impl_->target->FillRectangle(rect, brush.get());
 
-        const winrt::com_ptr<IDWriteTextLayout> text = impl_->layout(item, fitFontSize(item));
+        const float fontSize = fitFontSize(item);
+        const winrt::com_ptr<IDWriteTextLayout> text = impl_->layout(item, fontSize);
         const Box box = textBox(item);
-        const float paddingX = (item.rect.width() - box.width) / 2;
-        const float paddingY = (item.rect.height() - box.height) / 2;
+        const D2D1_POINT_2F origin =
+            D2D1::Point2F(rect.left + (item.rect.width() - box.width) / 2,
+                          rect.top + (item.rect.height() - box.height) / 2);
         brush->SetColor(toColor(item.foreground));
-        impl_->target->DrawTextLayout(D2D1::Point2F(rect.left + paddingX, rect.top + paddingY),
-                                      text.get(), brush.get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
+        impl_->target->DrawTextLayout(origin, text.get(), brush.get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
+        impl_->drawRuby(item, text.get(), origin, fontSize, brush.get());
         impl_->target->PopAxisAlignedClip();
     }
     check(impl_->target->EndDraw(), "ID2D1RenderTarget::EndDraw");

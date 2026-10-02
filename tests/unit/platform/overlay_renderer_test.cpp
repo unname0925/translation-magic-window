@@ -116,6 +116,49 @@ TEST_F(OverlayRendererTest, TinyBoxesFallBackToTheSmallestSize) {
               OverlayRenderer::kMinFontSize);
 }
 
+// 沿著一個方向，有墨水的那幾段（連續的列或欄）：[起點, 終點)
+std::vector<std::pair<int, int>> inkBands(const ImageBgra& image, bool columns) {
+    const int length = columns ? image.width : image.height;
+    const int across = columns ? image.height : image.width;
+    std::vector<std::pair<int, int>> bands;
+    for (int i = 0; i < length; ++i) {
+        bool inked = false;
+        for (int j = 0; j < across && !inked; ++j) {
+            const std::uint8_t* p = columns ? image.pixel(i, j) : image.pixel(j, i);
+            inked = p[3] == 255 && p[1] < 128;
+        }
+        if (inked && (bands.empty() || bands.back().second != i)) {
+            bands.emplace_back(i, i + 1);
+        } else if (inked) {
+            bands.back().second = i + 1;
+        }
+    }
+    return bands;
+}
+
+// M3-03：另有含義的ルビ，譯文也用小字畫在詞旁邊
+TEST_F(OverlayRendererTest, RubyIsDrawnSmallAboveHorizontalText) {
+    OverlayItem line = item(RectI{0, 0, 300, 80}, "我要認真打一場");
+    line.ruby = {{2, 2, "玩真的"}};
+    line.lineThickness = 30;
+    const std::vector<OverlayItem> items{line};
+    const auto bands = inkBands(renderer_.render(core::SizeI{300, 80}, items), false);
+    ASSERT_EQ(bands.size(), 2u) << "上面一帶是ルビ，下面一帶是正文";
+    EXPECT_LT(bands[0].second - bands[0].first, bands[1].second - bands[1].first)
+        << "ルビ的字比較小";
+}
+
+TEST_F(OverlayRendererTest, RubyIsDrawnSmallRightOfVerticalText) {
+    OverlayItem column = item(RectI{0, 0, 80, 300}, "我要認真打一場", true);
+    column.ruby = {{2, 2, "玩真的"}};
+    column.lineThickness = 30;
+    const std::vector<OverlayItem> items{column};
+    const auto bands = inkBands(renderer_.render(core::SizeI{80, 300}, items), true);
+    ASSERT_EQ(bands.size(), 2u) << "左邊一帶是正文，右邊一帶是ルビ";
+    EXPECT_GT(bands[0].second - bands[0].first, bands[1].second - bands[1].first)
+        << "ルビ在右邊，字比較小";
+}
+
 TEST_F(OverlayRendererTest, LightTextOnDarkBackgrounds) {
     OverlayItem dark = item(RectI{0, 0, 100, 40}, "危險");
     dark.background = Rgba{20, 20, 20, 255};
