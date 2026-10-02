@@ -198,6 +198,15 @@ TEST(StripRubyMarkupTest, UndoesMarkRuby) {
     EXPECT_EQ(stripRubyMarkup(markRuby(text, ruby)), text);
 }
 
+TEST(RubyMarkupPairsTest, ListsEveryMarkupInOrder) {
+    using Pairs = std::vector<std::pair<std::string, std::string>>;
+    EXPECT_EQ(rubyMarkupPairs("{本気|マジ}で{強敵|とも}と戦う"),
+              (Pairs{{"本気", "マジ"}, {"強敵", "とも"}}));
+    EXPECT_EQ(rubyMarkupPairs("標記がない"), Pairs{});
+    // 沒有配對的大括號不是標記（和 stripRubyMarkup 的判斷相同）
+    EXPECT_EQ(rubyMarkupPairs("{壊れた {本気|マジ}"), (Pairs{{"本気", "マジ"}}));
+}
+
 // 實測（193101.png）：「楓林女子校は」旁邊的 ルビ 被 PP-OCR 讀成「11.5」，
 // 沒附上也沒丟掉，漫畫模式就把它接進整句：「楓林女子校は学園併合に伴いこの11.52104」
 TEST(AttachRubyTest, DropsMisreadRubyInsteadOfKeepingItAsText) {

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <optional>
 #include <utility>
 
 #include "core/language.h"
@@ -209,30 +210,57 @@ std::string markRuby(std::string_view text, std::span<const RubyAnnotation> ruby
     return out;
 }
 
-std::string stripRubyMarkup(std::string_view text) {
-    std::string out;
-    out.reserve(text.size());
-    std::size_t at = 0;
+namespace {
+
+// 從 at 開始找下一個 `{本文|讀音}`。沒有配對的大括號（`{` 後面沒有 `|` 和 `}`）不算。
+struct Markup {
+    std::size_t open = 0;
+    std::size_t bar = 0;
+    std::size_t close = 0;
+};
+std::optional<Markup> findMarkup(std::string_view text, std::size_t at) {
     while (at < text.size()) {
         const std::size_t open = text.find('{', at);
         if (open == std::string_view::npos) {
-            break;
+            return std::nullopt;
         }
         const std::size_t bar = text.find('|', open + 1);
         const std::size_t close = text.find('}', open + 1);
         const std::size_t nextOpen = text.find('{', open + 1);
         if (bar == std::string_view::npos || close == std::string_view::npos || bar > close ||
             (nextOpen != std::string_view::npos && nextOpen < bar)) {
-            out.append(text.substr(at, open - at + 1));  // 沒有配對的大括號照原樣留著
-            at = open + 1;
+            at = open + 1;  // 這個大括號不是標記，從下一個字繼續找
             continue;
         }
-        out.append(text.substr(at, open - at));
-        out.append(text.substr(open + 1, bar - open - 1));  // 只留本文
-        at = close + 1;
+        return Markup{open, bar, close};
+    }
+    return std::nullopt;
+}
+
+}  // namespace
+
+std::string stripRubyMarkup(std::string_view text) {
+    std::string out;
+    out.reserve(text.size());
+    std::size_t at = 0;
+    while (const std::optional<Markup> found = findMarkup(text, at)) {
+        out.append(text.substr(at, found->open - at));  // 沒有配對的大括號照原樣留著
+        out.append(text.substr(found->open + 1, found->bar - found->open - 1));  // 只留本文
+        at = found->close + 1;
     }
     out.append(text.substr(at));
     return out;
+}
+
+std::vector<std::pair<std::string, std::string>> rubyMarkupPairs(std::string_view text) {
+    std::vector<std::pair<std::string, std::string>> pairs;
+    std::size_t at = 0;
+    while (const std::optional<Markup> found = findMarkup(text, at)) {
+        pairs.emplace_back(text.substr(found->open + 1, found->bar - found->open - 1),
+                           text.substr(found->bar + 1, found->close - found->bar - 1));
+        at = found->close + 1;
+    }
+    return pairs;
 }
 
 std::vector<RubyAnnotation> remapRuby(std::string_view oldText,

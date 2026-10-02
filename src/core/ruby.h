@@ -9,6 +9,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "core/text_layout.h"
@@ -73,5 +74,8 @@ std::vector<RubyAnnotation> remapRuby(std::string_view oldText,
 // 把 `{本文|讀音}` 還原成只有本文。看不懂標記的翻譯引擎（Google、DeepL）要先用它，
 // 否則譯文裡的標記數量會對不上，對齊檢查會一直判定格式錯誤（design.md 4.5）。
 std::string stripRubyMarkup(std::string_view text);
+
+// 文字裡每個 `{本文|讀音}` 的（本文, 讀音），依出現順序。沒有配對的大括號不算。
+std::vector<std::pair<std::string, std::string>> rubyMarkupPairs(std::string_view text);
 
 }  // namespace tmw::core

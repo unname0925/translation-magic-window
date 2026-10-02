@@ -131,14 +131,26 @@ TEST_F(GoogleTranslatorTest, KeepsAtMostOneRequestPerSecond) {
 TEST_F(GoogleTranslatorTest, StripsRubyMarkupBeforeSending) {
     // 這個端點看不懂 {本文|讀音}：標記會被翻掉，對齊檢查就會一直判定格式錯誤。
     // 所以先還原成只有本文（design.md 4.5）。
-    http_->reply(R"([[["我會認真戰鬥","x",null,null,3]],null,"ja"])");
+    http_->reply(R"([[["我會認真戰鬥\n","x",null,null,3],["認真\n","x"],["真的","x"]],null,"ja"])");
     GoogleTranslator translator = makeTranslator();
     const Strings out = translate(translator, {"{本気|マジ}で戦うぞ"});
 
     ASSERT_EQ(out.size(), 1u);
-    EXPECT_EQ(out[0], "我會認真戰鬥") << "譯文沒有標記也不算失敗";
     ASSERT_EQ(http_->requests.size(), 1u) << "不該因為標記對不上而重送";
     EXPECT_EQ(http_->requests[0].url.find("%7B"), std::string::npos) << "送出去的原文不含大括號";
+}
+
+TEST_F(GoogleTranslatorTest, AppendsTheAuthorsReadingAfterTheTranslation) {
+    // M2-14：特殊讀音拿掉就失去作者的意思。本文和讀音跟著同一批翻，附在譯文後面
+    http_->reply(
+        R"([[["我會認真戰鬥\n","x"],["你好\n","x"],["認真\n","x"],["真的","x"]],null,"ja"])");
+    GoogleTranslator translator = makeTranslator();
+    const Strings out = translate(translator, {"{本気|マジ}で戦うぞ", "こんにちは"});
+
+    ASSERT_EQ(out.size(), 2u);
+    EXPECT_EQ(out[0], "我會認真戰鬥　［本気（マジ）→ 認真（真的）］");
+    EXPECT_EQ(out[1], "你好") << "沒有標記的段落不受影響";
+    ASSERT_EQ(http_->requests.size(), 1u) << "ルビ 詞跟著同一個請求送出，不多等一秒";
 }
 
 TEST_F(GoogleTranslatorTest, ReportsRateLimiting) {
