@@ -15,14 +15,14 @@
 
 namespace tmw::core {
 
-struct TextColors {
+struct TextStyle {
     Rgba fill;
     std::optional<Rgba> outline;
 
-    friend bool operator==(const TextColors&, const TextColors&) = default;
+    friend bool operator==(const TextStyle&, const TextStyle&) = default;
 };
 
-std::optional<TextColors> estimateTextColors(const ImageBgra& frame, const RectI& rect,
-                                             Rgba background);
+std::optional<TextStyle> estimateTextStyle(const ImageBgra& frame, const RectI& rect,
+                                           Rgba background);
 
 }  // namespace tmw::core

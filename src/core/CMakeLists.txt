@@ -48,8 +48,8 @@ add_library(tmw_core STATIC
     pipeline_worker.h
     settings.cpp
     settings.h
-    text_color.cpp
-    text_color.h
+    text_style.cpp
+    text_style.h
     text_converter.h
     text_layout.cpp
     text_layout.h

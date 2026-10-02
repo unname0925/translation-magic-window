@@ -1,4 +1,4 @@
-#include "core/text_color.h"
+#include "core/text_style.h"
 
 #include <algorithm>
 #include <cmath>
@@ -19,6 +19,9 @@ constexpr double kOutlineDistance = 60.0;
 constexpr double kMinOutlineFraction = 0.3;
 // 有描邊時，填色像素直接碰到背景的比例上限
 constexpr double kMaxFillTouchingOutline = 0.15;
+// 3-4 倒角距離：直走一步 3、斜走一步 4（≈ 3√2）
+constexpr int kStep = 3;
+constexpr int kDiagonal = 4;
 // 填色和背景的亮度對比至少要這麼多才讀得清楚（WCAG 對大字的要求是 3:1）
 constexpr double kMinContrast = 3.0;
 
@@ -87,8 +90,8 @@ Rgba median(const std::vector<Color>& colors) {
 
 }  // namespace
 
-std::optional<TextColors> estimateTextColors(const ImageBgra& frame, const RectI& rect,
-                                             Rgba background) {
+std::optional<TextStyle> estimateTextStyle(const ImageBgra& frame, const RectI& rect,
+                                           Rgba background) {
     const RectI area{std::max(0, rect.left), std::max(0, rect.top),
                      std::min(frame.width, rect.right), std::min(frame.height, rect.bottom)};
     if (area.empty()) {
@@ -130,9 +133,10 @@ std::optional<TextColors> estimateTextColors(const ImageBgra& frame, const RectI
         return false;
     };
 
-    // 每個墨水像素離背景有多深（8 方向的距離轉換，兩趟掃描）。最深的是筆畫正中央：
+    // 每個墨水像素離背景有多深（3-4 倒角距離轉換，兩趟掃描：直走一步算 3、斜走算 4，
+    // 比只數步數更接近真正的距離，粗細才量得出差別）。最深的是筆畫正中央：
     // 反鋸齒的淡邊、描邊都在外圍，所以中央的顏色就是填色
-    const int far = width + height;
+    const int far = kStep * (width + height);
     std::vector<int> depth(ink.size(), 0);
     const auto depthAt = [&](int x, int y) {
         return x < 0 || y < 0 || x >= width || y >= height ? far : depth[index(x, y)];
@@ -140,8 +144,9 @@ std::optional<TextColors> estimateTextColors(const ImageBgra& frame, const RectI
     for (int y = 0; y < height; ++y) {
         for (int x = 0; x < width; ++x) {
             if (ink[index(x, y)]) {
-                depth[index(x, y)] = 1 + std::min({depthAt(x - 1, y), depthAt(x - 1, y - 1),
-                                                   depthAt(x, y - 1), depthAt(x + 1, y - 1)});
+                depth[index(x, y)] = std::min({depthAt(x - 1, y) + kStep, depthAt(x, y - 1) + kStep,
+                                               depthAt(x - 1, y - 1) + kDiagonal,
+                                               depthAt(x + 1, y - 1) + kDiagonal});
             }
         }
     }
@@ -149,8 +154,8 @@ std::optional<TextColors> estimateTextColors(const ImageBgra& frame, const RectI
         for (int x = width - 1; x >= 0; --x) {
             if (ink[index(x, y)]) {
                 depth[index(x, y)] = std::min(
-                    depth[index(x, y)], 1 + std::min({depthAt(x + 1, y), depthAt(x + 1, y + 1),
-                                                      depthAt(x, y + 1), depthAt(x - 1, y + 1)}));
+                    {depth[index(x, y)], depthAt(x + 1, y) + kStep, depthAt(x, y + 1) + kStep,
+                     depthAt(x + 1, y + 1) + kDiagonal, depthAt(x - 1, y + 1) + kDiagonal});
             }
         }
     }
@@ -185,7 +190,7 @@ std::optional<TextColors> estimateTextColors(const ImageBgra& frame, const RectI
     for (std::size_t i = 0; i < std::max<std::size_t>(1, deepest.size() / 2); ++i) {
         core.push_back(deepest[i].second);
     }
-    TextColors out;
+    TextStyle out;
     out.fill = median(core);
     const Color fill = toColor(out.fill);
 

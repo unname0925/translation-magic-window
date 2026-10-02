@@ -20,7 +20,7 @@ add_executable(tmw_unit_tests
     core/pipeline_worker_test.cpp
     core/ruby_test.cpp
     core/settings_test.cpp
-    core/text_color_test.cpp
+    core/text_style_test.cpp
     core/text_layout_test.cpp
     core/translation_alignment_test.cpp
     core/translation_cache_test.cpp
