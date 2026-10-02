@@ -3,6 +3,7 @@
 #include <windowsx.h>
 
 #include <QApplication>
+#include <QMessageBox>
 #include <array>
 #include <chrono>
 #include <exception>
@@ -18,6 +19,7 @@
 #include "app/translation_setup.h"
 #include "core/debug_overlay.h"
 #include "core/debug_report.h"
+#include "core/hotkey.h"
 #include "core/language.h"
 #include "core/opencc_converter.h"
 #include "platform/app_paths.h"
@@ -111,6 +113,35 @@ std::wstring timestampedDumpFolderName() {
     return name;
 }
 
+// 設定檔的快捷鍵寫法轉成 RegisterHotKey 的參數（M2-10）。看不懂時回傳 false。
+bool toWin32Hotkey(const std::string& text, UINT& modifiers, UINT& virtualKey) {
+    const std::optional<core::Hotkey> hotkey = core::parseHotkey(text);
+    if (!hotkey) {
+        return false;
+    }
+    modifiers = MOD_NOREPEAT;
+    modifiers |= hotkey->ctrl ? MOD_CONTROL : 0;
+    modifiers |= hotkey->alt ? MOD_ALT : 0;
+    modifiers |= hotkey->shift ? MOD_SHIFT : 0;
+    modifiers |= hotkey->win ? MOD_WIN : 0;
+    if (hotkey->key.size() == 1) {
+        virtualKey = static_cast<UINT>(hotkey->key[0]);  // A～Z、0～9 的虛擬鍵碼就是 ASCII
+    } else {
+        virtualKey = VK_F1 + static_cast<UINT>(std::stoi(hotkey->key.substr(1)) - 1);
+    }
+    return true;
+}
+
+// 系統匣選單的項目：快捷鍵有註冊成功才在右邊顯示按鍵
+std::wstring menuLabel(const wchar_t* label, bool registered, const std::string& hotkey) {
+    std::wstring out = label;
+    if (registered) {
+        const std::optional<core::Hotkey> parsed = core::parseHotkey(hotkey);
+        out += L"\t" + platform::utf8ToWide(parsed ? core::formatHotkey(*parsed) : hotkey);
+    }
+    return out;
+}
+
 // 系統匣「辨識語言」子選單的每一項，和它在設定檔裡的值
 struct LanguageMenuItem {
     UINT command;
@@ -191,15 +222,9 @@ AppController::AppController(HINSTANCE instance, std::filesystem::path dataDirec
                                                      L"Translation Magic Window");
 
         // 快捷鍵被其他程式佔用時不算錯誤，系統匣選單一樣可以操作
-        captureHotkeyRegistered_ =
-            RegisterHotKey(hwnd_, kHotkeyCapture, MOD_CONTROL | MOD_ALT | MOD_SHIFT | MOD_NOREPEAT,
-                           'S') != FALSE;
-        translateHotkeyRegistered_ =
-            RegisterHotKey(hwnd_, kHotkeyTranslate,
-                           MOD_CONTROL | MOD_ALT | MOD_SHIFT | MOD_NOREPEAT, 'T') != FALSE;
-        debugDumpHotkeyRegistered_ =
-            RegisterHotKey(hwnd_, kHotkeyDebugDump,
-                           MOD_CONTROL | MOD_ALT | MOD_SHIFT | MOD_NOREPEAT, 'D') != FALSE;
+        for (const std::string& failed : registerHotkeys()) {
+            platform::logWarn("快捷鍵 " + failed + " 已經被其他程式佔用，請到設定裡換一組");
+        }
 
         setUpPipeline();
 
@@ -382,15 +407,7 @@ LRESULT AppController::handleMessage(UINT message, WPARAM wParam, LPARAM lParam)
         case WM_DESTROY:
             KillTimer(hwnd_, kTimerTick);
             KillTimer(hwnd_, kTimerRestoreAccent);
-            if (captureHotkeyRegistered_) {
-                UnregisterHotKey(hwnd_, kHotkeyCapture);
-            }
-            if (translateHotkeyRegistered_) {
-                UnregisterHotKey(hwnd_, kHotkeyTranslate);
-            }
-            if (debugDumpHotkeyRegistered_) {
-                UnregisterHotKey(hwnd_, kHotkeyDebugDump);
-            }
+            unregisterHotkeys();
             // 依相依關係的反向順序釋放：透鏡的回呼會用到 trigger_，trigger_ 會用到 frameSource_
             lens_.reset();
             tray_.reset();
@@ -413,8 +430,9 @@ void AppController::showTrayMenu(POINT anchor) {
     AppendMenuW(menu, MF_STRING | (lens_->isVisible() ? MF_CHECKED : MF_UNCHECKED),
                 kCommandToggleLens, L"顯示透鏡");
     AppendMenuW(menu, MF_STRING, kCommandOpenResults, L"開啟結果視窗");
-    AppendMenuW(menu, MF_STRING, kCommandTranslateNow,
-                translateHotkeyRegistered_ ? L"立即翻譯	Ctrl+Alt+Shift+T" : L"立即翻譯");
+    AppendMenuW(
+        menu, MF_STRING, kCommandTranslateNow,
+        menuLabel(L"立即翻譯", translateHotkeyRegistered_, settings_.hotkeys.translate).c_str());
     AppendMenuW(menu, MF_STRING | (paused_ ? MF_CHECKED : MF_UNCHECKED), kCommandTogglePause,
                 L"暫停");
     AppendMenuW(menu, MF_STRING | (settings_.mangaMode ? MF_CHECKED : MF_UNCHECKED),
@@ -434,15 +452,17 @@ void AppController::showTrayMenu(POINT anchor) {
     }
     AppendMenuW(menu, MF_STRING, kCommandEditGlossary, L"編輯專有名詞表…");
     AppendMenuW(menu, MF_STRING, kCommandSettings, L"設定…");
-    AppendMenuW(menu, MF_STRING, kCommandDebugDump,
-                debugDumpHotkeyRegistered_ ? L"除錯傾印	Ctrl+Alt+Shift+D" : L"除錯傾印");
+    AppendMenuW(
+        menu, MF_STRING, kCommandDebugDump,
+        menuLabel(L"除錯傾印", debugDumpHotkeyRegistered_, settings_.hotkeys.debugDump).c_str());
     AppendMenuW(menu, MF_STRING | (debugOverlay_ != nullptr ? MF_CHECKED : MF_UNCHECKED),
                 kCommandToggleDebugOverlay, L"除錯覆蓋框（顯示 OCR 框和耗時）");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu, MF_STRING | (autoSave_ ? MF_CHECKED : MF_UNCHECKED), kCommandToggleAutoSave,
                 L"畫面穩定後自動存成 PNG（測試用）");
-    AppendMenuW(menu, MF_STRING, kCommandCapture,
-                captureHotkeyRegistered_ ? L"擷取透鏡範圍\tCtrl+Alt+Shift+S" : L"擷取透鏡範圍");
+    AppendMenuW(
+        menu, MF_STRING, kCommandCapture,
+        menuLabel(L"擷取透鏡範圍", captureHotkeyRegistered_, settings_.hotkeys.capture).c_str());
     AppendMenuW(menu, MF_STRING, kCommandOpenCaptures, L"開啟擷取資料夾");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu, MF_STRING, kCommandExit, L"結束");
@@ -559,6 +579,49 @@ void AppController::openGlossary() {
     ShellExecuteW(nullptr, L"open", path.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
 }
 
+std::vector<std::string> AppController::registerHotkeys() {
+    struct Entry {
+        int id;
+        const std::string* text;
+        bool* registered;
+        const char* name;
+    };
+    const std::array<Entry, 3> entries{{
+        {kHotkeyTranslate, &settings_.hotkeys.translate, &translateHotkeyRegistered_, "立即翻譯"},
+        {kHotkeyDebugDump, &settings_.hotkeys.debugDump, &debugDumpHotkeyRegistered_, "除錯傾印"},
+        {kHotkeyCapture, &settings_.hotkeys.capture, &captureHotkeyRegistered_, "擷取透鏡範圍"},
+    }};
+    std::vector<std::string> failed;
+    for (const Entry& entry : entries) {
+        *entry.registered = false;
+        if (entry.text->empty()) {
+            continue;  // 不使用這個快捷鍵
+        }
+        UINT modifiers = 0;
+        UINT key = 0;
+        if (toWin32Hotkey(*entry.text, modifiers, key) &&
+            RegisterHotKey(hwnd_, entry.id, modifiers, key) != FALSE) {
+            *entry.registered = true;
+        } else {
+            failed.push_back(*entry.text + "（" + entry.name + "）");
+        }
+    }
+    return failed;
+}
+
+void AppController::unregisterHotkeys() {
+    if (captureHotkeyRegistered_) {
+        UnregisterHotKey(hwnd_, kHotkeyCapture);
+    }
+    if (translateHotkeyRegistered_) {
+        UnregisterHotKey(hwnd_, kHotkeyTranslate);
+    }
+    if (debugDumpHotkeyRegistered_) {
+        UnregisterHotKey(hwnd_, kHotkeyDebugDump);
+    }
+    captureHotkeyRegistered_ = translateHotkeyRegistered_ = debugDumpHotkeyRegistered_ = false;
+}
+
 void AppController::setGameMode(bool enabled) {
     settings_.gameMode = enabled;
     trigger_->setFocusOnText(enabled);
@@ -660,6 +723,22 @@ void AppController::applySettings(const core::Settings& settings) {
     platform::setVerboseDiagnostics(settings_.verboseDiagnostics);
     if (settings.mangaMode != settings_.mangaMode) {
         setMangaMode(settings.mangaMode);  // 載入失敗時它會把 settings_.mangaMode 留在 false
+    }
+    if (!(settings.hotkeys == settings_.hotkeys)) {
+        unregisterHotkeys();
+        settings_.hotkeys = settings.hotkeys;
+        const std::vector<std::string> failed = registerHotkeys();
+        if (!failed.empty()) {
+            // 剛按下存檔，馬上告訴使用者哪一組不能用（被其他程式佔用）
+            std::string list;
+            for (const std::string& one : failed) {
+                list += (list.empty() ? "" : "、") + one;
+                platform::logWarn("快捷鍵 " + one + " 已經被其他程式佔用");
+            }
+            QMessageBox::warning(nullptr, QStringLiteral("快捷鍵"),
+                                 QString::fromStdString("這些快捷鍵已經被其他程式佔用，沒有生效：" +
+                                                        list + "。請換一組。"));
+        }
     }
     if (settings.gameMode != settings_.gameMode) {
         setGameMode(settings.gameMode);

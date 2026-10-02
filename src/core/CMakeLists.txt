@@ -19,6 +19,8 @@ add_library(tmw_core STATIC
     glossary.cpp
     glossary.h
     history.cpp
+    hotkey.cpp
+    hotkey.h
     history.h
     image.h
     language.cpp

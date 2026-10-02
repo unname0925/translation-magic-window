@@ -5,6 +5,7 @@
 #include <QDialogButtonBox>
 #include <QFormLayout>
 #include <QGroupBox>
+#include <QKeySequenceEdit>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
@@ -13,6 +14,7 @@
 #include <algorithm>
 #include <utility>
 
+#include "core/hotkey.h"
 #include "ui/engine_choice.h"
 
 namespace tmw::ui {
@@ -84,6 +86,29 @@ SettingsWindow::SettingsWindow(core::Settings settings, Encrypt encrypt, QWidget
     auto* languageForm = new QFormLayout;
     languageForm->addRow(QStringLiteral("辨識語言"), ocrLanguage_);
 
+    // 快捷鍵（M2-10）：點一下欄位直接按想要的組合；清掉代表不使用那個快捷鍵
+    const auto hotkeyEdit = [this](const char* name) {
+        auto* edit = new QKeySequenceEdit(this);
+        edit->setObjectName(QString::fromLatin1(name));
+        edit->setMaximumSequenceLength(1);
+        edit->setClearButtonEnabled(true);
+        return edit;
+    };
+    hotkeyTranslate_ = hotkeyEdit("hotkeyTranslate");
+    hotkeyDebugDump_ = hotkeyEdit("hotkeyDebugDump");
+    hotkeyCapture_ = hotkeyEdit("hotkeyCapture");
+    auto* hotkeys = new QGroupBox(QStringLiteral("快捷鍵"), this);
+    auto* hotkeyForm = new QFormLayout(hotkeys);
+    hotkeyForm->addRow(QStringLiteral("立即翻譯"), hotkeyTranslate_);
+    hotkeyForm->addRow(QStringLiteral("除錯傾印"), hotkeyDebugDump_);
+    hotkeyForm->addRow(QStringLiteral("擷取透鏡範圍"), hotkeyCapture_);
+    hotkeyProblem_ = new QLabel(this);
+    hotkeyProblem_->setObjectName(QStringLiteral("hotkeyProblem"));
+    hotkeyProblem_->setWordWrap(true);
+    hotkeyProblem_->setStyleSheet(QStringLiteral("color: #c62828;"));
+    hotkeyProblem_->hide();
+    hotkeyForm->addRow(hotkeyProblem_);
+
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel, this);
     buttons->setObjectName(QStringLiteral("buttons"));
     buttons->button(QDialogButtonBox::Save)->setText(QStringLiteral("儲存"));
@@ -95,11 +120,22 @@ SettingsWindow::SettingsWindow(core::Settings settings, Encrypt encrypt, QWidget
     layout->addWidget(mangaMode_);
     layout->addWidget(gameMode_);
     layout->addWidget(verbose_);
+    layout->addWidget(hotkeys);
     layout->addWidget(buttons);
 
     connect(googleOnly_, &QRadioButton::toggled, this, [this] { updateEnabled(); });
     connect(llmKind_, &QComboBox::currentIndexChanged, this, [this] { updateLlmHints(); });
     connect(buttons, &QDialogButtonBox::accepted, this, [this] {
+        // 快捷鍵有問題（看不懂、兩組一樣）就不存，說明原因後讓使用者改
+        const std::vector<std::string> names{"立即翻譯", "除錯傾印", "擷取透鏡範圍"};
+        const std::vector<std::string> texts{
+            hotkeyText(hotkeyTranslate_), hotkeyText(hotkeyDebugDump_), hotkeyText(hotkeyCapture_)};
+        if (const std::string problem = core::hotkeyProblem(names, texts); !problem.empty()) {
+            hotkeyProblem_->setText(QString::fromStdString(problem));
+            hotkeyProblem_->show();
+            return;
+        }
+        hotkeyProblem_->hide();
         collectFromWidgets();
         emit saved(settings_);
         accept();
@@ -124,8 +160,32 @@ void SettingsWindow::applyToWidgets() {
     const int language = ocrLanguage_->findData(QString::fromStdString(settings_.ocrLanguage));
     ocrLanguage_->setCurrentIndex(language < 0 ? 0 : language);
     key_->clear();
+    showHotkey(hotkeyTranslate_, settings_.hotkeys.translate);
+    showHotkey(hotkeyDebugDump_, settings_.hotkeys.debugDump);
+    showHotkey(hotkeyCapture_, settings_.hotkeys.capture);
     updateLlmHints();
     updateEnabled();
+}
+
+std::string SettingsWindow::hotkeyText(const QKeySequenceEdit* edit) {
+    const QKeySequence sequence = edit->keySequence();
+    if (sequence.isEmpty()) {
+        return {};
+    }
+    // Qt 的寫法（「Ctrl+Alt+Meta+T」）轉成設定檔的寫法；看不懂的原樣留著，存檔前的檢查會擋下來
+    const std::string text = sequence.toString(QKeySequence::PortableText).toStdString();
+    const std::optional<core::Hotkey> hotkey = core::parseHotkey(text);
+    return hotkey ? core::formatHotkey(*hotkey) : text;
+}
+
+void SettingsWindow::showHotkey(QKeySequenceEdit* edit, const std::string& text) {
+    // 設定檔的 Win 在 Qt 叫 Meta
+    std::string qt = text;
+    if (const std::size_t at = qt.find("Win"); at != std::string::npos) {
+        qt.replace(at, 3, "Meta");
+    }
+    edit->setKeySequence(
+        QKeySequence::fromString(QString::fromStdString(qt), QKeySequence::PortableText));
 }
 
 void SettingsWindow::updateLlmHints() {
@@ -171,6 +231,9 @@ void SettingsWindow::collectFromWidgets() {
     settings_.mangaMode = mangaMode_->isChecked();
     settings_.gameMode = gameMode_->isChecked();
     settings_.ocrLanguage = ocrLanguage_->currentData().toString().toStdString();
+    settings_.hotkeys.translate = hotkeyText(hotkeyTranslate_);
+    settings_.hotkeys.debugDump = hotkeyText(hotkeyDebugDump_);
+    settings_.hotkeys.capture = hotkeyText(hotkeyCapture_);
     key_->clear();
 }
 

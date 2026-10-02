@@ -13,6 +13,7 @@
 
 class QCheckBox;
 class QComboBox;
+class QKeySequenceEdit;
 class QLabel;
 class QLineEdit;
 class QRadioButton;
@@ -40,6 +41,9 @@ private:
     void updateEnabled();
     // LLM 的格式換了：網址和模型的提示、金鑰說明跟著換
     void updateLlmHints();
+    // 快捷鍵欄位和設定檔寫法（core/hotkey.h）之間的轉換。空欄位是空字串（不使用）。
+    static std::string hotkeyText(const QKeySequenceEdit* edit);
+    static void showHotkey(QKeySequenceEdit* edit, const std::string& text);
 
     core::Settings settings_;
     Encrypt encrypt_;
@@ -55,6 +59,10 @@ private:
     QCheckBox* verbose_ = nullptr;
     QCheckBox* mangaMode_ = nullptr;
     QCheckBox* gameMode_ = nullptr;
+    QKeySequenceEdit* hotkeyTranslate_ = nullptr;
+    QKeySequenceEdit* hotkeyDebugDump_ = nullptr;
+    QKeySequenceEdit* hotkeyCapture_ = nullptr;
+    QLabel* hotkeyProblem_ = nullptr;   // 快捷鍵有問題時的說明（紅字），存檔時才檢查
     QComboBox* ocrLanguage_ = nullptr;  // 每一項的 data 是設定檔裡的值（"auto"、"ja"…）
 };
 

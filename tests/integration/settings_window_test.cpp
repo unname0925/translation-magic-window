@@ -9,6 +9,8 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDialogButtonBox>
+#include <QKeySequenceEdit>
+#include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
 #include <QRadioButton>
@@ -19,6 +21,7 @@
 #include <string>
 #include <system_error>
 
+#include "core/hotkey.h"
 #include "core/settings.h"
 #include "platform/secret.h"
 #include "platform/settings_file.h"
@@ -192,6 +195,39 @@ TEST_F(SettingsWindowTest, ClaudeCanBeChosenAsTheLlm) {
     SettingsWindow second(saved, platform::encryptSecret);
     EXPECT_EQ(second.findChild<QComboBox*>(QStringLiteral("llmKind"))->currentData().toString(),
               QStringLiteral("anthropic"));
+}
+
+// M2-10：快捷鍵可以在設定視窗改
+TEST_F(SettingsWindowTest, HotkeysShowTheSavedKeysAndSurviveARestart) {
+    core::Settings start;
+    start.hotkeys.translate = "Ctrl+Alt+Win+F9";
+    SettingsWindow first(start, platform::encryptSecret);
+    auto* translate = first.findChild<QKeySequenceEdit*>(QStringLiteral("hotkeyTranslate"));
+    ASSERT_NE(translate, nullptr);
+    // 設定檔的 Win 在 Qt 叫 Meta；Qt 的修飾鍵順序和我們的不同（Meta+Ctrl+Alt+F9），所以比按鍵本身
+    EXPECT_EQ(core::parseHotkey(
+                  translate->keySequence().toString(QKeySequence::PortableText).toStdString()),
+              core::parseHotkey("Ctrl+Alt+Win+F9"));
+
+    first.findChild<QKeySequenceEdit*>(QStringLiteral("hotkeyCapture"))->clear();  // 不使用
+    const core::Settings saved = save(first);
+    EXPECT_EQ(saved.hotkeys.translate, "Ctrl+Alt+Win+F9");
+    EXPECT_EQ(saved.hotkeys.debugDump, "Ctrl+Alt+Shift+D");
+    EXPECT_EQ(saved.hotkeys.capture, "");
+}
+
+TEST_F(SettingsWindowTest, TheSameHotkeyTwiceIsNotSaved) {
+    SettingsWindow window(core::Settings{}, platform::encryptSecret);
+    window.findChild<QKeySequenceEdit*>(QStringLiteral("hotkeyCapture"))
+        ->setKeySequence(QKeySequence::fromString(QStringLiteral("Ctrl+Alt+Shift+T")));
+    bool savedSomething = false;
+    QObject::connect(&window, &SettingsWindow::saved, [&] { savedSomething = true; });
+    window.findChild<QDialogButtonBox*>()->button(QDialogButtonBox::Save)->click();
+    EXPECT_FALSE(savedSomething) << "和「立即翻譯」重複，不能存";
+    auto* problem = window.findChild<QLabel*>(QStringLiteral("hotkeyProblem"));
+    ASSERT_NE(problem, nullptr);
+    EXPECT_TRUE(problem->text().contains(QStringLiteral("Ctrl+Alt+Shift+T")))
+        << problem->text().toStdString();
 }
 
 TEST_F(SettingsWindowTest, OcrLanguageSurvivesARestart) {

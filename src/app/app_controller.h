@@ -74,6 +74,10 @@ private:
     void setOcrLanguage(const std::string& code);
     // 遊戲模式：第一次辨識之後只看文字區域（M2-06）
     void setGameMode(bool enabled);
+    // 依 settings_.hotkeys 註冊全域快捷鍵（M2-10）。回傳註冊不了的（被其他程式佔用或看不懂），
+    // 例如「Ctrl+Alt+T（立即翻譯）」
+    std::vector<std::string> registerHotkeys();
+    void unregisterHotkeys();
     void refreshDebugOverlay();
     // glossary.txt 改過（或第一次）就重新讀取，回傳目前的詞表；沒有檔案時是 nullptr
     std::shared_ptr<const core::Glossary> currentGlossary();

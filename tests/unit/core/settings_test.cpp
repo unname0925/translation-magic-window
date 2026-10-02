@@ -137,6 +137,19 @@ TEST(SettingsTest, MangaModeSurvivesARoundTrip) {
     EXPECT_TRUE(parseSettings(serializeSettings(settings)).settings.mangaMode);
 }
 
+TEST(SettingsTest, HotkeysDefaultToTheOriginalKeysAndSurviveARoundTrip) {
+    // M2-10：舊的設定檔沒有 hotkeys，維持原本寫死的 Ctrl+Alt+Shift+T／D／S
+    const Settings defaults = parseSettings(R"({"schemaVersion": 1})").settings;
+    EXPECT_EQ(defaults.hotkeys.translate, "Ctrl+Alt+Shift+T");
+    EXPECT_EQ(defaults.hotkeys.debugDump, "Ctrl+Alt+Shift+D");
+    EXPECT_EQ(defaults.hotkeys.capture, "Ctrl+Alt+Shift+S");
+
+    Settings settings;
+    settings.hotkeys.translate = "Ctrl+Alt+F9";
+    settings.hotkeys.capture = "";  // 不使用
+    EXPECT_EQ(parseSettings(serializeSettings(settings)).settings.hotkeys, settings.hotkeys);
+}
+
 TEST(SettingsTest, GameModeIsOffUnlessTurnedOn) {
     EXPECT_FALSE(parseSettings(R"({"schemaVersion": 1})").settings.gameMode);
     Settings settings;

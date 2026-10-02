@@ -27,6 +27,15 @@ struct EngineSettings {
     friend bool operator==(const EngineSettings&, const EngineSettings&) = default;
 };
 
+// 全域快捷鍵（M2-10，寫法見 core/hotkey.h）。空字串代表不使用那個功能的快捷鍵。
+struct HotkeySettings {
+    std::string translate = "Ctrl+Alt+Shift+T";  // 立即翻譯
+    std::string debugDump = "Ctrl+Alt+Shift+D";  // 除錯傾印
+    std::string capture = "Ctrl+Alt+Shift+S";    // 把透鏡範圍存成 PNG（開發用）
+
+    friend bool operator==(const HotkeySettings&, const HotkeySettings&) = default;
+};
+
 struct ResultWindowSettings {
     double fontScale = 1.0;  // 0.5～3.0
     bool alwaysOnTop = false;
@@ -53,6 +62,7 @@ struct Settings {
     // 翻譯引擎的順序就是引擎鏈的順序（design.md 4.5）
     std::vector<EngineSettings> engines;
     ResultWindowSettings resultWindow;
+    HotkeySettings hotkeys;
 
     friend bool operator==(const Settings&, const Settings&) = default;
 };

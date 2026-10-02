@@ -9,6 +9,7 @@ add_executable(tmw_unit_tests
     core/geometry_test.cpp
     core/glossary_test.cpp
     core/history_test.cpp
+    core/hotkey_test.cpp
     core/language_test.cpp
     core/lens_layout_test.cpp
     core/opencc_converter_test.cpp

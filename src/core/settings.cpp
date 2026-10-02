@@ -117,6 +117,11 @@ SettingsLoad parseSettings(std::string_view json_text,
     if (const auto it = document.find("resultWindow"); it != document.end() && it->is_object()) {
         settings.resultWindow = readResultWindow(*it);
     }
+    if (const auto it = document.find("hotkeys"); it != document.end() && it->is_object()) {
+        read(*it, "translate", settings.hotkeys.translate);
+        read(*it, "debugDump", settings.hotkeys.debugDump);
+        read(*it, "capture", settings.hotkeys.capture);
+    }
     result.settings = std::move(settings);
     return result;
 }
@@ -146,6 +151,10 @@ std::string serializeSettings(const Settings& settings, int schemaVersion) {
             {"top", settings.resultWindow.geometry.top},
             {"right", settings.resultWindow.geometry.right},
             {"bottom", settings.resultWindow.geometry.bottom}}}}},
+        {"hotkeys",
+         {{"translate", settings.hotkeys.translate},
+          {"debugDump", settings.hotkeys.debugDump},
+          {"capture", settings.hotkeys.capture}}},
     };
     return document.dump(2) + "\n";
 }
