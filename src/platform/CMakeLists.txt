@@ -32,11 +32,13 @@ add_library(tmw_platform STATIC
     translation_overlay_window.h
     tray_icon.cpp
     tray_icon.h
+    web_pipe.cpp
+    web_pipe.h
     win_error.cpp
     win_error.h)
 target_include_directories(tmw_platform PUBLIC "${PROJECT_SOURCE_DIR}/src")
 target_compile_features(tmw_platform PUBLIC cxx_std_20)
 find_package(spdlog CONFIG REQUIRED)
 target_link_libraries(tmw_platform
-    PUBLIC tmw_core user32 gdi32 shell32 ole32 d2d1 dwrite d3d11 dxgi windowscodecs windowsapp crypt32 dbghelp
+    PUBLIC tmw_core user32 gdi32 shell32 ole32 d2d1 dwrite d3d11 dxgi windowscodecs windowsapp crypt32 dbghelp advapi32
     PRIVATE spdlog::spdlog tmw_options)
