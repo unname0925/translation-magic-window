@@ -20,8 +20,10 @@ void PipelineWorker::submit(PipelineJob job) {
         if (stopping_) {
             return;
         }
-        // 同一個透鏡進行中的工作已經過時了
-        if (runningLens_ == job.lens) {
+        // 同一個透鏡進行中的工作已經過時了。例外：進行中的是預先做的 OCR、送來的是正式處理——
+        // 那是同一個畫面（畫面變了的話送來的會是新的預先工作），讓它做完，正式處理排在後面直接沿用
+        const bool preparingForThis = runningPrepare_ && job.prepareTicket == 0;
+        if (runningLens_ == job.lens && !preparingForThis) {
             runningCancel_.request_stop();
         }
         const auto same = std::find_if(queue_.begin(), queue_.end(),
@@ -77,6 +79,7 @@ void PipelineWorker::loop() {
             job = std::move(queue_.front());
             queue_.erase(queue_.begin());
             runningLens_ = job.lens;
+            runningPrepare_ = job.prepareTicket != 0;
             runningCancel_ = std::stop_source();
             cancel = runningCancel_.get_token();
         }
@@ -86,12 +89,14 @@ void PipelineWorker::loop() {
         {
             const std::lock_guard lock(mutex_);
             runningLens_.reset();
+            runningPrepare_ = false;
             if (stopping_) {
                 return;
             }
         }
-        // 被取消的結果一定過時了（畫面或透鏡位置已經變了），不要送回去
-        if (!cancel.stop_requested() && onResult_) {
+        // 被取消的結果一定過時了（畫面或透鏡位置已經變了），不要送回去。
+        // 預先做的 OCR 記在 Pipeline 裡，沒有結果要送
+        if (!cancel.stop_requested() && job.prepareTicket == 0 && onResult_) {
             onResult_(std::move(result));
         }
     }

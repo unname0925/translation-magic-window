@@ -148,12 +148,27 @@ PipelineResult Pipeline::run(const PipelineJob& job, std::stop_token cancel) {
     // 使用者指定了語言：只用那個模型，不判斷也不記。
     // 否則沿用這個透鏡上一次判斷出來的語言：只有它是 Unknown 時才要判斷。
     const Language forced = languageFromCode(job.language);
-    OcrResult recognized = ocr_.recognize(
-        job.frame, forced != Language::Unknown ? forced : memory(job.lens).script, cancel);
-    std::vector<OcrLine> lines = std::move(recognized.lines);
-    if (forced == Language::Unknown) {
-        rememberScript(job.lens, recognized.script, lines);
+    OcrResult recognized;
+    // 畫面等穩定時已經先做好了，之後畫面也沒變：直接沿用（速度優化 4）
+    std::optional<LensMemory::Prepared> prepared = std::move(memory(job.lens).prepared);
+    memory(job.lens).prepared.reset();
+    const SizeI frameSize{job.frame.width, job.frame.height};
+    if (job.usePrepared != 0 && prepared && prepared->ticket == job.usePrepared &&
+        prepared->language == job.language && prepared->frameSize == frameSize) {
+        recognized = std::move(prepared->ocr);
+        result.timings.ocrPrepared = true;
+    } else {
+        recognized = ocr_.recognize(
+            job.frame, forced != Language::Unknown ? forced : memory(job.lens).script, cancel);
+        if (forced == Language::Unknown) {
+            rememberScript(job.lens, recognized.script, recognized.lines);
+        }
+        if (job.prepareTicket != 0 && !cancel.stop_requested()) {
+            memory(job.lens).prepared =
+                LensMemory::Prepared{job.prepareTicket, job.language, frameSize, recognized};
+        }
     }
+    std::vector<OcrLine> lines = std::move(recognized.lines);
     result.timings.ocrMs = millisecondsSince(ocrStart);
     result.lines = lines;
     if (cancel.stop_requested()) {
@@ -175,6 +190,9 @@ PipelineResult Pipeline::run(const PipelineJob& job, std::stop_token cancel) {
             dropEdgeBlocks(blocks, SizeI{job.frame.width, job.frame.height}, options_.edgeMargin);
     }
     result.timings.layoutMs = millisecondsSince(layoutStart);
+    if (job.prepareTicket != 0 && blocks.empty()) {
+        return result;  // 預先做：不記「沒有文字」，正式處理時才記
+    }
     if (blocks.empty()) {
         // 透鏡底下沒有文字。記住這件事，畫面沒變時就不會一直重跑。
         LensMemory& state = memory(job.lens);
@@ -190,6 +208,15 @@ PipelineResult Pipeline::run(const PipelineJob& job, std::stop_token cancel) {
     }
     for (TextBlock& block : blocks) {
         block.language = result.language;
+    }
+
+    if (job.prepareTicket != 0) {
+        // 預先做：manga-ocr 也先重讀（結果記在 LensMemory::reread，正式處理時直接沿用），
+        // 不記原文、不翻譯
+        if (result.language == Language::Japanese && !recognized.bubbles.empty()) {
+            rereadMangaBlocks(job, blocks, cancel);
+        }
+        return result;
     }
 
     LensMemory& state = memory(job.lens);

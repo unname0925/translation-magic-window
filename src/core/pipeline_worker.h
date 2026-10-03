@@ -30,6 +30,7 @@ public:
     PipelineWorker& operator=(const PipelineWorker&) = delete;
 
     // 取代同一個透鏡還在排隊的工作，並取消它進行中的工作
+    // （進行中的是預先做的 OCR、送來的是正式處理時不取消，見 PipelineJob::prepareTicket）
     void submit(PipelineJob job);
 
     // 取消某個透鏡的工作（排隊中的丟掉，進行中的請它停下來）
@@ -51,6 +52,7 @@ private:
     std::condition_variable wake_;
     std::vector<PipelineJob> queue_;  // 每個透鏡最多一件
     std::optional<int> runningLens_;
+    bool runningPrepare_ = false;  // 進行中的是預先做的 OCR（PipelineJob::prepareTicket）
     std::stop_source runningCancel_;
     bool stopping_ = false;
     std::thread thread_;

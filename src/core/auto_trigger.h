@@ -24,6 +24,10 @@ struct AutoTriggerConfig {
     // 都不會再讓畫面永遠「不穩定」。整個畫面都在動的背景（捲動的風景）兩層都擋不住。
     bool focusOnText = false;
     double largeChangeFraction = 0.5;
+    // 畫面停下這麼久就先開始 OCR（onPrepare），不必等滿 settleTime（速度優化 4，
+    // docs/proposal-speed-and-web-manga.md）。之後畫面又變了，那次的結果就不用；
+    // 翻譯一定等真的穩定了才送（付費引擎不會多花錢）。0 或不小於 settleTime 時不預先做
+    Duration prepareAfter = std::chrono::milliseconds{100};
 };
 
 // 自動觸發：定期取樣透鏡範圍的縮圖，偵測變化，畫面穩定後發出處理請求（見 docs/design.md 4.3）。
@@ -36,6 +40,9 @@ public:
     struct Callbacks {
         std::function<void(LensState)> onStateChanged;
         std::function<void(const ProcessRequest&)> onProcess;
+        // 畫面停下 prepareAfter：可以先做 OCR，記在這個票號下。之後畫面沒變的話，
+        // onProcess 的 ProcessRequest::prepared 會是同一個票號。沒有設定就不預先做
+        std::function<void(std::uint64_t ticket)> onPrepare;
     };
 
     AutoTrigger(const IClock& clock, IFrameSource& frames, AutoTriggerConfig config,
@@ -77,6 +84,10 @@ private:
     const std::vector<std::uint8_t>& focusMask(int width, int height);
 
     void sample();
+    // 畫面停下夠久、這一輪還沒預先做過：發出 onPrepare
+    void maybePrepare();
+    // 畫面變了或透鏡移動：預先做的 OCR 不能用了，下一輪重新預先做
+    void forgetPrepared();
     void dispatch(const ProcessRequest& request);
     void notifyIfStateChanged();
 
@@ -93,6 +104,10 @@ private:
     // 這樣緩慢的漸變累積到一定程度也會被偵測到。
     std::optional<GrayImage> reference_;
     std::optional<GrayImage> lastProcessed_;
+
+    std::uint64_t prepareSerial_ = 0;
+    std::uint64_t preparedTicket_ = 0;  // 還有效的預先 OCR；0 表示沒有
+    bool preparedThisRound_ = false;    // 這一輪等待穩定已經發過 onPrepare
 
     std::vector<RectI> focus_;
     std::vector<std::uint8_t> mask_;  // focusMask 的快取

@@ -435,6 +435,76 @@ TEST_F(PipelineTest, GroupsByTheBubblesTheOcrReports) {
     EXPECT_EQ(result.groups[0].block.text, "Hello there friend");
 }
 
+// 速度優化 4：畫面還在等穩定時先做 OCR，穩定之後直接沿用
+class PreparedOcrTest : public PipelineTest {
+protected:
+    void SetUp() override { ocr_.lines = {line(20, 20, 200, 44, "Hello there")}; }
+
+    PipelineJob preparing(std::uint64_t ticket) {
+        PipelineJob out = job();
+        out.prepareTicket = ticket;
+        return out;
+    }
+
+    PipelineJob using_(std::uint64_t ticket) {
+        PipelineJob out = job();
+        out.usePrepared = ticket;
+        return out;
+    }
+};
+
+TEST_F(PreparedOcrTest, PreparingOnlyRunsTheOcr) {
+    const PipelineResult result = run(preparing(3));
+    EXPECT_EQ(ocr_.calls, 1);
+    EXPECT_TRUE(result.groups.empty());
+    EXPECT_TRUE(engine_->batches.empty()) << "畫面還沒穩定，不能送去翻譯（付費引擎會多花錢）";
+}
+
+TEST_F(PreparedOcrTest, TheRealRunReusesItWhenTheTicketMatches) {
+    run(preparing(3));
+    const PipelineResult result = run(using_(3));
+    EXPECT_EQ(ocr_.calls, 1) << "OCR 只做一次";
+    EXPECT_TRUE(result.timings.ocrPrepared);
+    ASSERT_EQ(result.groups.size(), 1u);
+    EXPECT_EQ(result.groups[0].translation, "譯:Hello there");
+    EXPECT_FALSE(result.unchanged) << "預先做的那次不能記原文，否則第一次就被當成「沒變」";
+}
+
+TEST_F(PreparedOcrTest, AnotherTicketMeansTheScreenChanged) {
+    run(preparing(3));
+    const PipelineResult result = run(using_(4));
+    EXPECT_EQ(ocr_.calls, 2);
+    EXPECT_FALSE(result.timings.ocrPrepared);
+}
+
+TEST_F(PreparedOcrTest, ItIsUsedOnlyOnce) {
+    run(preparing(3));
+    run(using_(3));
+    const PipelineResult again = run(using_(3));
+    EXPECT_EQ(ocr_.calls, 2);
+    EXPECT_FALSE(again.timings.ocrPrepared);
+}
+
+TEST_F(PreparedOcrTest, NotReusedAfterTheLanguageSettingChanged) {
+    run(preparing(3));
+    PipelineJob real = using_(3);
+    real.language = "en";
+    run(real);
+    EXPECT_EQ(ocr_.calls, 2);
+}
+
+TEST_F(PreparedOcrTest, MangaOcrIsAlsoDoneWhilePreparing) {
+    ocr_.lines = {column(300, 100, 330, 250, "楓林女子校は")};
+    ocr_.bubbles = {RectI{250, 90, 340, 260}};
+    ocr_.rereadText = "この楓林女子校は";
+    run(preparing(3));
+    EXPECT_EQ(ocr_.rereadCalls, 1);
+    const PipelineResult result = run(using_(3));
+    EXPECT_EQ(ocr_.rereadCalls, 1) << "正式處理時沿用預先重讀的結果";
+    ASSERT_EQ(result.groups.size(), 1u);
+    EXPECT_EQ(result.groups[0].block.text, "この楓林女子校は");
+}
+
 // M2-03：漫畫模式的直排對白換成 manga-ocr 重讀的文字
 class MangaRereadTest : public PipelineTest {
 protected:

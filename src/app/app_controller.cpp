@@ -580,6 +580,7 @@ void AppController::addLens(const core::RectI* placement) {
     triggerCallbacks.onProcess = [this, self](const core::ProcessRequest& request) {
         process(*self, request);
     };
+    triggerCallbacks.onPrepare = [this, self](std::uint64_t ticket) { prepare(*self, ticket); };
     core::AutoTriggerConfig triggerConfig;
     triggerConfig.focusOnText = settings_.gameMode;
     triggerConfig.settleTime = std::chrono::milliseconds(settings_.settleMs);
@@ -679,6 +680,7 @@ void AppController::process(Lens& lens, const core::ProcessRequest& request) {
     job.region = region;
     job.frame = std::move(*frame);
     job.manual = request.manual;
+    job.usePrepared = request.prepared;
     job.language = settings_.ocrLanguage;
     job.glossary = currentGlossary();
     if (lens.overlay != nullptr) {
@@ -686,6 +688,25 @@ void AppController::process(Lens& lens, const core::ProcessRequest& request) {
     }
     platform::log(platform::LogLevel::Info, context,
                   std::string(request.manual ? "手動" : "自動") + "觸發，開始處理");
+    worker_->submit(std::move(job));
+}
+
+void AppController::prepare(Lens& lens, std::uint64_t ticket) {
+    // 畫面停下一下就先做 OCR（速度優化 4）：失敗或沒有管線就算了，到時候正式處理照常做
+    if (worker_ == nullptr || !lens.window->isVisible()) {
+        return;
+    }
+    const core::RectI region = lens.window->contentScreenRect();
+    std::optional<core::ImageBgra> frame = capture_->readRegion(region);
+    if (!frame) {
+        return;
+    }
+    core::PipelineJob job;
+    job.lens = lens.id;
+    job.region = region;
+    job.frame = std::move(*frame);
+    job.language = settings_.ocrLanguage;
+    job.prepareTicket = ticket;
     worker_->submit(std::move(job));
 }
 
@@ -1209,7 +1230,8 @@ void AppController::onPipelineResult(const core::PipelineResult& result) {
     }
     platform::log(platform::LogLevel::Info, context,
                   "辨識到 " + std::to_string(result.groups.size()) + " 組，共 " +
-                      std::to_string(static_cast<int>(result.timings.totalMs())) + " ms");
+                      std::to_string(static_cast<int>(result.timings.totalMs())) + " ms" +
+                      (result.timings.ocrPrepared ? "（OCR 在等畫面穩定時就做好了）" : ""));
     if (result.groups.empty() || result.unchanged) {
         return;
     }

@@ -46,6 +46,11 @@ struct PipelineJob {
     // 背景修補（M4-01）。只有打開「在原位顯示譯文」、而且有顯示卡和模型時才有；
     // 沒有時背景不是純色的段落照舊（遊戲對話框用純色，其餘不蓋）
     std::shared_ptr<IInpainter> inpainter;
+    // 不是 0：畫面還在等穩定，先做 OCR（包括 manga-ocr 重讀），結果記在這個票號下就結束，
+    // 不翻譯、不記原文、也沒有結果要送回去（速度優化 4，AutoTrigger 的 onPrepare）
+    std::uint64_t prepareTicket = 0;
+    // 不是 0：預先做過 OCR 的票號，之後畫面沒有變。記下來的是同一個票號就直接沿用
+    std::uint64_t usePrepared = 0;
 };
 
 struct PipelineTimings {
@@ -56,6 +61,8 @@ struct PipelineTimings {
     double overlayMs = 0.0;
     // 漫畫模式用 manga-ocr 重讀直排對白的時間（已經算在 ocrMs 裡，另外記下來找慢在哪）
     double rereadMs = 0.0;
+    // OCR 是畫面還在等穩定時預先做好的（ocrMs 只剩沿用的時間，幾乎是 0）
+    bool ocrPrepared = false;
 
     double totalMs() const { return ocrMs + layoutMs + translationMs + overlayMs; }
 };
@@ -170,6 +177,14 @@ private:
         // 上一次 manga-ocr 重讀的結果，以 PP-OCR 讀到的文字為鍵。畫面沒變時沿用，
         // 不必每 100 毫秒重讀一次，翻譯也才會命中快取。
         std::map<std::string, std::string> reread;
+        // 預先做好的 OCR（PipelineJob::prepareTicket）。用過或不能用就清掉
+        struct Prepared {
+            std::uint64_t ticket = 0;
+            std::string language;  // PipelineJob::language：設定改了就不能沿用
+            SizeI frameSize;
+            OcrResult ocr;
+        };
+        std::optional<Prepared> prepared;
     };
 
     // 漫畫模式：直排的段落換成 manga-ocr 重讀的文字，ルビ 跟著搬過去（M2-03）

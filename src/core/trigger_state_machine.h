@@ -21,6 +21,9 @@ std::string_view lensStateName(LensState state);
 struct ProcessRequest {
     std::uint64_t generation = 0;  // 流水號；處理完成時要帶回來，用來判斷結果是否已經過時
     bool manual = false;           // 是否由快捷鍵手動觸發
+    // 等待穩定時預先做過 OCR 的票號（AutoTrigger 的 onPrepare），而且之後畫面沒有變：
+    // 處理時可以直接沿用那次的 OCR。0 表示沒有
+    std::uint64_t prepared = 0;
 };
 
 // 觸發狀態機：只負責狀態轉換和流水號，不碰畫面或時間以外的任何東西。
@@ -41,6 +44,12 @@ public:
 
     // 執行中換等待時間（切換情境模式時）。正在等的那一次也用新的時間判斷。
     void setSettleTime(Duration settleTime) { settleTime_ = settleTime; }
+    Duration settleTime() const { return settleTime_; }
+
+    // 等待穩定中：畫面已經多久沒變。其他狀態是 0
+    Duration settledFor() const {
+        return state_ == LensState::Settling ? clock_.now() - settlingSince_ : Duration::zero();
+    }
 
     LensState state() const { return state_; }
     std::uint64_t generation() const { return generation_; }

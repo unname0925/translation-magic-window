@@ -14,6 +14,7 @@ AutoTrigger::AutoTrigger(const IClock& clock, IFrameSource& frames, AutoTriggerC
       reportedState_(machine_.state()) {}
 
 void AutoTrigger::onMoveSizeStart() {
+    forgetPrepared();
     machine_.onMoveSizeStart();
     notifyIfStateChanged();
 }
@@ -25,6 +26,7 @@ void AutoTrigger::onMoveSizeEnd(const RectI& newRegion) {
     focus_.clear();
     mask_.clear();
     lastSerial_.reset();
+    forgetPrepared();
     machine_.onMoveSizeEnd();
     notifyIfStateChanged();
 }
@@ -44,11 +46,35 @@ void AutoTrigger::tick() {
         return;
     }
     sample();
-    const std::optional<ProcessRequest> request = machine_.poll();
+    maybePrepare();
+    std::optional<ProcessRequest> request = machine_.poll();
     notifyIfStateChanged();
     if (request) {
+        // 預先做的 OCR 之後畫面一直沒變（變了的話 sample 已經把票號清掉）
+        request->prepared = preparedTicket_;
+        forgetPrepared();
         dispatch(*request);
     }
+}
+
+void AutoTrigger::maybePrepare() {
+    if (!callbacks_.onPrepare || preparedThisRound_ || !reference_ ||
+        config_.prepareAfter <= Duration::zero() ||
+        config_.prepareAfter >= machine_.settleTime() ||
+        machine_.settledFor() < config_.prepareAfter) {
+        return;
+    }
+    preparedThisRound_ = true;
+    if (lastProcessed_ && !changed(*lastProcessed_, *reference_)) {
+        return;  // 和上一次處理過的一樣：到時候也不會處理，不用預先做
+    }
+    preparedTicket_ = ++prepareSerial_;
+    callbacks_.onPrepare(preparedTicket_);
+}
+
+void AutoTrigger::forgetPrepared() {
+    preparedTicket_ = 0;
+    preparedThisRound_ = false;
 }
 
 void AutoTrigger::manualTrigger() {
@@ -88,6 +114,7 @@ void AutoTrigger::sample() {
     }
     if (changed(*reference_, *thumbnail)) {
         reference_ = std::move(*thumbnail);
+        forgetPrepared();
         machine_.onContentChanged();
     }
 }

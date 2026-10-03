@@ -187,6 +187,54 @@ TEST_F(PipelineWorkerTest, OnlyTheNewestQueuedJobPerLensSurvives) {
     EXPECT_EQ(ocr_.started, 2) << "第 2 件從頭到尾沒有被做過";
 }
 
+// 速度優化 4：畫面還在等穩定時先做 OCR
+TEST_F(PipelineWorkerTest, APreparedOcrIsFinishedAndReusedByTheRealJob) {
+    Latch latch;
+    ocr_.latch = &latch;
+    PipelineWorker worker(pipeline_, collector());
+    PipelineJob prepare = job(0);
+    prepare.prepareTicket = 5;
+    worker.submit(std::move(prepare));
+    waitUntilRunning();
+
+    // 畫面穩定了：正式處理送來時，預先做的 OCR 還在跑。不能取消它
+    PipelineJob real = job(1);
+    real.usePrepared = 5;
+    worker.submit(std::move(real));
+    latch.open();
+
+    ASSERT_TRUE(waitForResults(1));
+    std::this_thread::sleep_for(50ms);
+    const std::vector<PipelineResult> out = results();
+    ASSERT_EQ(out.size(), 1u) << "預先做的那件沒有結果要送回去";
+    EXPECT_EQ(out[0].generation, 1u);
+    EXPECT_TRUE(out[0].timings.ocrPrepared);
+    ASSERT_EQ(out[0].groups.size(), 1u);
+    EXPECT_EQ(ocr_.started, 1) << "OCR 只做了預先的那一次";
+    EXPECT_EQ(ocr_.cancelled, 0);
+}
+
+TEST_F(PipelineWorkerTest, ANewPreparationCancelsTheOldOne) {
+    // 畫面又變了、又停下來：舊的預先工作已經過時
+    Latch latch;
+    ocr_.latch = &latch;
+    PipelineWorker worker(pipeline_, collector());
+    PipelineJob first = job(0);
+    first.prepareTicket = 1;
+    worker.submit(std::move(first));
+    waitUntilRunning();
+    ocr_.latch = nullptr;
+    PipelineJob second = job(0);
+    second.prepareTicket = 2;
+    worker.submit(std::move(second));
+    latch.open();
+    for (int i = 0; i < 5000 && (worker.busy() || ocr_.started < 2); ++i) {
+        std::this_thread::sleep_for(1ms);
+    }
+    EXPECT_EQ(ocr_.cancelled, 1);
+    EXPECT_TRUE(results().empty());
+}
+
 TEST_F(PipelineWorkerTest, JobsForDifferentLensesBothRun) {
     PipelineWorker worker(pipeline_, collector());
     worker.submit(job(1, 1));

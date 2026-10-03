@@ -89,6 +89,8 @@ private:
 
     // 畫面穩定後的「處理」：擷取透鏡底下的畫面，交給處理管線。
     void process(Lens& lens, const core::ProcessRequest& request);
+    // 畫面還在等穩定時先做 OCR（AutoTrigger 的 onPrepare，速度優化 4）
+    void prepare(Lens& lens, std::uint64_t ticket);
 
     // 處理管線的結果回到 UI 執行緒之後
     void onPipelineResult(const core::PipelineResult& result);

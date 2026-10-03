@@ -193,6 +193,95 @@ TEST_F(AutoTriggerTest, ReportsStateChanges) {
 // M2-06：遊戲模式只看文字區域（design.md 4.3）。
 // 透鏡範圍 400×300，縮圖 8×8：每個縮圖像素是 50×37.5 的一塊。
 // 文字在左上角（0,0)～(150,75)，涵蓋縮圖的左上 3×2 格（加上留邊）。
+// 速度優化 4：畫面停下 100ms 就先做 OCR，穩定了才處理（翻譯）
+class PrepareTest : public ::testing::Test {
+protected:
+    PrepareTest() {
+        AutoTrigger::Callbacks callbacks;
+        callbacks.onProcess = [this](const ProcessRequest& request) {
+            requests_.push_back(request);
+            trigger_->onProcessingFinished(request.generation);
+        };
+        callbacks.onPrepare = [this](std::uint64_t ticket) {
+            tickets_.push_back(ticket);
+            preparedAt_.push_back(requests_.size());
+        };
+        trigger_.emplace(clock_, frames_, AutoTriggerConfig{400ms, {}}, std::move(callbacks));
+        trigger_->onMoveSizeEnd(kRegion);
+    }
+
+    void runFor(std::chrono::milliseconds duration) {
+        for (auto elapsed = 0ms; elapsed < duration; elapsed += 100ms) {
+            clock_.advance(100ms);
+            trigger_->tick();
+        }
+    }
+
+    static constexpr RectI kRegion{100, 100, 500, 400};
+    test::FakeClock clock_;
+    test::FakeFrameSource frames_;
+    std::vector<ProcessRequest> requests_;
+    std::vector<std::uint64_t> tickets_;
+    std::vector<std::size_t> preparedAt_;  // 發出 onPrepare 時已經處理過幾次
+    std::optional<AutoTrigger> trigger_;
+};
+
+TEST_F(PrepareTest, PreparesBeforeTheScreenHasSettled) {
+    frames_.setContent(solid(100));
+    runFor(200ms);
+    ASSERT_EQ(tickets_.size(), 1u) << "停下 100ms 就先做";
+    EXPECT_TRUE(requests_.empty()) << "還沒等滿 400ms";
+    runFor(400ms);
+    ASSERT_EQ(requests_.size(), 1u);
+    EXPECT_EQ(requests_[0].prepared, tickets_[0]) << "畫面沒變：處理時沿用預先做的 OCR";
+    EXPECT_EQ(tickets_.size(), 1u) << "一輪只預先做一次";
+}
+
+TEST_F(PrepareTest, AChangeAfterPreparingVoidsTheTicket) {
+    frames_.setContent(solid(100));
+    runFor(200ms);
+    ASSERT_EQ(tickets_.size(), 1u);
+    frames_.setContent(solid(200));  // 預先做完之後畫面又變了
+    runFor(600ms);
+    ASSERT_EQ(tickets_.size(), 2u) << "停下來之後重新預先做";
+    ASSERT_EQ(requests_.size(), 1u);
+    EXPECT_EQ(requests_[0].prepared, tickets_[1]) << "用的是變了之後的那一次";
+    EXPECT_NE(tickets_[0], tickets_[1]);
+}
+
+TEST_F(PrepareTest, MovingTheLensVoidsTheTicket) {
+    frames_.setContent(solid(100));
+    runFor(200ms);
+    trigger_->onMoveSizeStart();
+    trigger_->onMoveSizeEnd(RectI{0, 0, 300, 200});
+    clock_.advance(100ms);
+    trigger_->tick();  // 新位置的第一張縮圖
+    runFor(500ms);
+    ASSERT_EQ(requests_.size(), 1u);
+    ASSERT_EQ(tickets_.size(), 2u);
+    EXPECT_EQ(requests_[0].prepared, tickets_[1]);
+}
+
+TEST_F(PrepareTest, NothingIsPreparedForContentAlreadyProcessed) {
+    frames_.setContent(solid(100));
+    runFor(1s);
+    frames_.setContent(solid(200));  // 閃了一下
+    runFor(100ms);
+    frames_.setContent(solid(100));  // 又回到處理過的樣子
+    runFor(1s);
+    EXPECT_EQ(tickets_.size(), 1u) << "到時候也不會處理，不用預先做";
+    EXPECT_EQ(requests_.size(), 1u);
+}
+
+TEST_F(PrepareTest, NotWhenTheSettleTimeIsAlreadyShort) {
+    trigger_->setSettleTime(100ms);
+    frames_.setContent(solid(100));
+    runFor(1s);
+    EXPECT_TRUE(tickets_.empty()) << "等待時間和預先做的時間一樣短，直接處理就好";
+    ASSERT_EQ(requests_.size(), 1u);
+    EXPECT_EQ(requests_[0].prepared, 0u);
+}
+
 class GameModeTest : public ::testing::Test {
 protected:
     GameModeTest() {
