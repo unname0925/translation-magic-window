@@ -29,6 +29,7 @@ add_executable(tmw_unit_tests
     core/translator_chain_test.cpp
     core/trigger_state_machine_test.cpp
     core/utf8_test.cpp
+    core/web_protocol_test.cpp
     net/cpr_http_client_test.cpp
     net/google_translator_test.cpp
     net/anthropic_translator_test.cpp
