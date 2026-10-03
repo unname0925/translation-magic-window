@@ -42,8 +42,9 @@ namespace {
 
 constexpr wchar_t kShowLensMessageName[] = L"TranslationMagicWindow.ShowLens";
 constexpr UINT kTrayCallbackMessage = WM_APP + 1;
-// 網頁漫畫同時翻譯幾頁。本機 Ollama 開平行處理（OLLAMA_NUM_PARALLEL=4）時 4 頁同時送快 2.3 倍；
-// 沒開時請求會在 Ollama 排隊，和一頁一頁送差不多，不會更慢
+// 網頁漫畫同時翻譯幾頁。量測（10 頁私人漫畫測試頁、本機 Ollama hy-mt2-tmw、OLLAMA_NUM_PARALLEL=2、
+// 主程式每次重開）：同時 4 頁 18.6～19.7 秒、第一頁 2.5 秒；一次 1 頁 22.8～27.6 秒、第一頁 8.3
+// 秒。 Ollama 沒開平行處理時請求會在那邊排隊，和一頁一頁送差不多，不會更慢
 constexpr int kWebTranslators = 4;
 
 constexpr int kHotkeyCapture = 1;
