@@ -48,6 +48,42 @@ TEST_F(OpenAiTranslatorTest, TranslatesAStreamedBatch) {
     EXPECT_EQ(http_->requests.size(), 1u) << "一個畫面的段落一次送出";
 }
 
+// Ollama 閒置 5 分鐘就卸載模型；翻譯完在背景請它留著，下一次不必等 10 秒重新載入
+TEST_F(OpenAiTranslatorTest, KeepsTheOllamaModelLoadedAfterTranslating) {
+    http_->replyFromFile("net/openai_ja_batch_stream.txt");
+    http_->reply(R"({"done": true, "done_reason": "load"})");
+    OpenAiTranslator::Options options;
+    options.ollamaKeepAlive = "30m";
+    OpenAiTranslator translator = makeTranslator(std::move(options));
+    translate(translator, {"こんにちは", "本気で戦うぞ", "セーブ"});
+    translator.waitForKeepAlive();
+    ASSERT_EQ(http_->requests.size(), 2u);
+    const net::HttpRequest& keepAlive = http_->requests[1];
+    EXPECT_EQ(keepAlive.url, "http://127.0.0.1:11434/api/generate")
+        << "OpenAI 相容介面不認 keep_alive，要用 Ollama 原生的";
+    const auto body = nlohmann::json::parse(keepAlive.body);
+    EXPECT_EQ(body.at("model"), "hy-mt2");
+    EXPECT_EQ(body.at("keep_alive"), "30m");
+    EXPECT_FALSE(body.contains("prompt")) << "不產生文字，只載入";
+}
+
+TEST_F(OpenAiTranslatorTest, OnlyOllamaGetsTheKeepAlive) {
+    http_->replyFromFile("net/openai_ja_batch_stream.txt");
+    OpenAiTranslator translator = makeTranslator();  // 沒設定 ollamaKeepAlive
+    translate(translator, {"こんにちは", "本気で戦うぞ", "セーブ"});
+    translator.waitForKeepAlive();
+    EXPECT_EQ(http_->requests.size(), 1u);
+}
+
+TEST_F(OpenAiTranslatorTest, FindsTheOllamaApiFromTheOpenAiUrl) {
+    EXPECT_EQ(OpenAiTranslator::ollamaGenerateUrl("http://127.0.0.1:11434/v1"),
+              "http://127.0.0.1:11434/api/generate");
+    EXPECT_EQ(OpenAiTranslator::ollamaGenerateUrl("http://127.0.0.1:11434/v1/"),
+              "http://127.0.0.1:11434/api/generate");
+    EXPECT_EQ(OpenAiTranslator::ollamaGenerateUrl("http://127.0.0.1:11434"),
+              "http://127.0.0.1:11434/api/generate");
+}
+
 TEST_F(OpenAiTranslatorTest, TranslatesWithoutStreaming) {
     http_->replyFromFile("net/openai_ja_batch.json");
     OpenAiTranslator::Options options;

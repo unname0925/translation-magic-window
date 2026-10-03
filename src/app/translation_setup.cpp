@@ -18,6 +18,12 @@
 namespace tmw::app {
 namespace {
 
+// 本機的 Ollama（預設的連接埠 11434）。網址可能寫 localhost 或 127.0.0.1
+bool isLocalOllama(std::string_view url) {
+    return (url.find("://127.0.0.1:11434") != std::string_view::npos ||
+            url.find("://localhost:11434") != std::string_view::npos);
+}
+
 std::shared_ptr<core::ITranslator> makeEngine(const core::EngineSettings& engine,
                                               const core::IClock& clock,
                                               std::vector<std::string>& problems) {
@@ -39,6 +45,9 @@ std::shared_ptr<core::ITranslator> makeEngine(const core::EngineSettings& engine
         }
         if (!engine.model.empty()) {
             options.model = engine.model;
+        }
+        if (isLocalOllama(options.baseUrl)) {
+            options.ollamaKeepAlive = "30m";  // 閒置後第一次要等約 10 秒重新載入模型
         }
         if (!engine.encryptedApiKey.empty()) {
             const std::optional<std::string> key = platform::decryptSecret(engine.encryptedApiKey);

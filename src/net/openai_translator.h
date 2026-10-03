@@ -8,6 +8,7 @@
 // 串流開著時邊收邊解析，收完一段就可以先顯示一段。
 #pragma once
 
+#include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <functional>
@@ -17,6 +18,7 @@
 #include <stop_token>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <vector>
 
 #include "core/translator.h"
@@ -40,6 +42,11 @@ public:
         int maxTokens = 8192;
         bool stream = true;
         std::chrono::milliseconds timeout{60000};
+        // 本機的 Ollama：每次翻譯完，在背景請它把模型留在記憶體裡這麼久（例如 "30m"）。
+        // Ollama 閒置 5 分鐘就卸載模型，下一次要等約 10 秒重新載入；它的 OpenAI 相容介面
+        // 不認 keep_alive，而且每個請求都會把期限重設回 5 分鐘，所以每次翻譯完都要再設一次
+        // （原生的 /api/generate，不帶 prompt 時只載入、不產生文字）。空字串表示不送。
+        std::string ollamaKeepAlive;
     };
 
     // 串流時每收完一段譯文就呼叫一次。index 是在這一批中的位置；整批重試時會從 0 再來一次，
@@ -71,9 +78,20 @@ private:
     std::string completionsUrl() const;
     std::string send(const std::string& body, std::stop_token cancel, bool reportSegments);
 
+    // 背景送 Ollama 的 keep_alive（不讓翻譯結果等它）
+    void keepOllamaLoaded();
+
     std::shared_ptr<IHttpClient> http_;
     Options options_;
     OnSegment onSegment_;
+    std::atomic<bool> keepAliveRunning_{false};
+    std::jthread keepAlive_;  // 解構時等它送完（最多幾秒）
+
+public:
+    // 測試用：等背景的 keep_alive 請求送完
+    void waitForKeepAlive();
+    // 「http://127.0.0.1:11434/v1」→「http://127.0.0.1:11434/api/generate」
+    static std::string ollamaGenerateUrl(std::string_view baseUrl);
 };
 
 // 從一則串流事件中取出這次新增的文字（choices[0].delta.content）。

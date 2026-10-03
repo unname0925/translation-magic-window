@@ -178,7 +178,47 @@ std::vector<std::string> OpenAiTranslator::translate(std::span<const std::string
         }
         return requestArray(part, request, cancel);
     };
-    return core::translateAligned(segments, batch);
+    std::vector<std::string> out = core::translateAligned(segments, batch);
+    keepOllamaLoaded();
+    return out;
+}
+
+std::string OpenAiTranslator::ollamaGenerateUrl(std::string_view baseUrl) {
+    std::string root(baseUrl);
+    while (!root.empty() && root.back() == '/') {
+        root.pop_back();
+    }
+    if (root.size() >= 3 && root.ends_with("/v1")) {
+        root.resize(root.size() - 3);
+    }
+    return root + "/api/generate";
+}
+
+void OpenAiTranslator::keepOllamaLoaded() {
+    if (options_.ollamaKeepAlive.empty() || keepAliveRunning_.exchange(true)) {
+        return;  // 上一個還沒送完就不重送：反正是同一件事
+    }
+    if (keepAlive_.joinable()) {
+        keepAlive_.join();  // 已經送完了（running 是 false），只是收回執行緒
+    }
+    HttpRequest request;
+    request.url = ollamaGenerateUrl(options_.baseUrl);
+    request.method = HttpMethod::Post;
+    request.headers = {{"Content-Type", "application/json"}};
+    request.body =
+        nlohmann::json{{"model", options_.model}, {"keep_alive", options_.ollamaKeepAlive}}.dump();
+    request.timeout = std::chrono::seconds(5);
+    keepAlive_ =
+        std::jthread([this, http = http_, request = std::move(request)](std::stop_token stop) {
+            http->send(request, stop);  // 失敗也沒關係：只是下一次可能要等它重新載入
+            keepAliveRunning_ = false;
+        });
+}
+
+void OpenAiTranslator::waitForKeepAlive() {
+    if (keepAlive_.joinable()) {
+        keepAlive_.join();
+    }
 }
 
 }  // namespace tmw::net
