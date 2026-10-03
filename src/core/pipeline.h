@@ -139,9 +139,9 @@ public:
     // 用更準的模型重讀好幾段（漫畫模式的直排對白用 manga-ocr，M2-03）。一起交出去，
     // 模型才能一批一起讀（每一步的固定開銷只付一次）。結果的順序和 requests 相同；
     // 不支援、模型沒載入或讀不出東西的那段是 nullopt，呼叫端沿用原本的文字。
-    virtual std::vector<std::optional<std::string>> reread(
-        const ImageBgra& /*frame*/, std::span<const RereadRequest> requests,
-        std::stop_token /*cancel*/) {
+    virtual std::vector<std::optional<std::string>> reread(const ImageBgra& /*frame*/,
+                                                           std::span<const RereadRequest> requests,
+                                                           std::stop_token /*cancel*/) {
         return std::vector<std::optional<std::string>>(requests.size());
     }
 };

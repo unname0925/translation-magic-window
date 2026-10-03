@@ -205,11 +205,11 @@ struct MangaOcr::Decoder {
     bool fixedBatch = false;
 
     static constexpr std::array<const char*, 4> kCrossNames{"cross_key_0", "cross_value_0",
-                                                           "cross_key_1", "cross_value_1"};
+                                                            "cross_key_1", "cross_value_1"};
     static constexpr std::array<const char*, 4> kPastNames{"past_key_0", "past_value_0",
-                                                          "past_key_1", "past_value_1"};
-    static constexpr std::array<const char*, 4> kPresentNames{
-        "present_key_0", "present_value_0", "present_key_1", "present_value_1"};
+                                                           "past_key_1", "past_value_1"};
+    static constexpr std::array<const char*, 4> kPresentNames{"present_key_0", "present_value_0",
+                                                              "present_key_1", "present_value_1"};
 
     // actual：編碼器實際用的裝置（DirectML 或 CPU），解碼器跟著用同一個
     Decoder(const std::filesystem::path& directory, Device actual) : device(actual) {
@@ -239,9 +239,9 @@ struct MangaOcr::Decoder {
         if (shape.size() == 4) {
             past.GetSymbolicDimensions(names.data(), names.size());
         }
-        const bool slots = shape.size() == 4 &&
-                           (shape[2] == kMangaOcrSlots ||
-                            (names[2] != nullptr && std::string_view(names[2]) == "slots"));
+        const bool slots =
+            shape.size() == 4 && (shape[2] == kMangaOcrSlots ||
+                                  (names[2] != nullptr && std::string_view(names[2]) == "slots"));
         if (!slots) {
             throw std::runtime_error(
                 "decoder_step.onnx is the old format; re-run tools/eval/export_manga_decoder.py");
@@ -268,7 +268,8 @@ struct MangaOcr::Decoder {
                                                   std::int64_t hiddenTokens,
                                                   std::int64_t hiddenSize, std::int64_t start,
                                                   std::int64_t eos, std::span<const int> limits) {
-        const Ort::MemoryInfo cpu = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
+        const Ort::MemoryInfo cpu =
+            Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
         const Ort::MemoryInfo onDevice = deviceMemory();
 
         // 圖像特徵的 K／V：一批算一次，留在裝置上

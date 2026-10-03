@@ -1,19 +1,22 @@
-// 網頁漫畫整頁翻譯：瀏覽器擴充功能和主程式之間的訊息（docs/proposal-speed-and-web-manga.md 第二部分）。
+// 網頁漫畫整頁翻譯：瀏覽器擴充功能和主程式之間的訊息（docs/proposal-speed-and-web-manga.md
+// 第二部分）。
 //
 // 擴充功能 ⇄ tmw_web_host.exe（Chrome／Edge 的 Native Messaging）⇄ 具名管道 ⇄ 主程式。
-// 兩段用同一種封包：4 位元組的長度（little-endian，Windows 上就是 Native Messaging 的「原生位元組順序」）
-// 加上 UTF-8 的 JSON。轉送程式不必看懂內容，原封不動搬過去。
+// 兩段用同一種封包：4 位元組的長度（little-endian，Windows 上就是 Native Messaging
+// 的「原生位元組順序」） 加上 UTF-8 的 JSON。轉送程式不必看懂內容，原封不動搬過去。
 //
 // 擴充功能 → 主程式：
 //   {"type":"hello","protocol":1}
 //   {"type":"translate","id":"…","width":W,"height":H,"pixels":"<base64 RGBA>","language":"auto"}
-//     pixels 是瀏覽器 getImageData 的 RGBA（每列緊密排列）。id 由擴充功能決定（圖片內容的雜湊），原樣帶回
+//     pixels 是瀏覽器 getImageData 的 RGBA（每列緊密排列）。id
+//     由擴充功能決定（圖片內容的雜湊），原樣帶回
 //   {"type":"cancel","id":"…"}
 // 主程式 → 擴充功能：
 //   {"type":"hello","protocol":1,"version":"0.1.0"}
 //   {"type":"result","id":"…","items":[…],"error":"","patchesDropped":0}
 //     items 的每一個：rect [left, top, right, bottom]（圖片的像素座標）、text、vertical、
-//     foreground／background／outline（"#rrggbb"，沒有描邊時沒有 outline）、size（"small"|"normal"|"large"）、
+//     foreground／background／outline（"#rrggbb"，沒有描邊時沒有
+//     outline）、size（"small"|"normal"|"large"）、
 //     lineThickness（原文一行的粗細，譯文的字不比它大；0 = 不知道）、ruby [{start, length, text}]、
 //     patch（背景修補的小圖，base64 PNG；沒有時是純色背景）
 //   {"type":"error","id":"…","message":"…"}
@@ -57,9 +60,9 @@ struct WebRequest {
     enum class Type { Hello, Translate, Cancel, Invalid };
     Type type = Type::Invalid;
     std::string id;
-    ImageBgra image;        // Translate：RGBA 已經轉成 BGRA
-    std::string language;   // Translate："auto"、"ja"…；沒給時是空字串
-    std::string error;      // Invalid：哪裡不對（回給擴充功能看）
+    ImageBgra image;       // Translate：RGBA 已經轉成 BGRA
+    std::string language;  // Translate："auto"、"ja"…；沒給時是空字串
+    std::string error;     // Invalid：哪裡不對（回給擴充功能看）
 };
 
 // 解析擴充功能送來的一則訊息（JSON 本體，不含長度）。格式不對時 type 是 Invalid

@@ -25,7 +25,8 @@ TEST(WebFrameTest, ReadsTheLengthBack) {
     const std::string framed = frameMessage(std::string(70000, 'x'));
     std::array<std::uint8_t, 4> header{};
     for (int i = 0; i < 4; ++i) {
-        header[static_cast<std::size_t>(i)] = static_cast<std::uint8_t>(framed[static_cast<std::size_t>(i)]);
+        header[static_cast<std::size_t>(i)] =
+            static_cast<std::uint8_t>(framed[static_cast<std::size_t>(i)]);
     }
     EXPECT_EQ(frameLength(header), 70000u);
 }
@@ -45,14 +46,15 @@ TEST(Base64Test, DecodesWhatItEncodes) {
         all[static_cast<std::size_t>(i)] = static_cast<std::uint8_t>(i);
     }
     for (std::size_t length : {0u, 1u, 2u, 3u, 255u, 256u}) {
-        const std::vector<std::uint8_t> part(all.begin(), all.begin() + static_cast<std::ptrdiff_t>(length));
+        const std::vector<std::uint8_t> part(all.begin(),
+                                             all.begin() + static_cast<std::ptrdiff_t>(length));
         EXPECT_EQ(base64Decode(base64Encode(part)), part) << length;
     }
 }
 
 TEST(Base64Test, RejectsBrokenText) {
-    EXPECT_FALSE(base64Decode("Zg="));    // 長度不是 4 的倍數
-    EXPECT_FALSE(base64Decode("Z!=="));   // 不是 base64 的字元
+    EXPECT_FALSE(base64Decode("Zg="));   // 長度不是 4 的倍數
+    EXPECT_FALSE(base64Decode("Z!=="));  // 不是 base64 的字元
     EXPECT_FALSE(base64Decode("Zg==Zg==")) << "「=」只能在最後";
     EXPECT_FALSE(base64Decode("Z=g="));
 }
@@ -64,13 +66,11 @@ TEST(ParseWebRequestTest, Hello) {
 TEST(ParseWebRequestTest, TranslateTurnsRgbaIntoBgra) {
     // 2×1：紅、藍
     const std::vector<std::uint8_t> rgba{255, 0, 0, 255, 0, 0, 255, 255};
-    const std::string json = nlohmann::json{{"type", "translate"},
-                                            {"id", "abc"},
-                                            {"width", 2},
-                                            {"height", 1},
-                                            {"pixels", base64Encode(rgba)},
-                                            {"language", "ja"}}
-                                 .dump();
+    const std::string json =
+        nlohmann::json{
+            {"type", "translate"},          {"id", "abc"},     {"width", 2}, {"height", 1},
+            {"pixels", base64Encode(rgba)}, {"language", "ja"}}
+            .dump();
     const WebRequest request = parseWebRequest(json);
     ASSERT_EQ(request.type, WebRequest::Type::Translate) << request.error;
     EXPECT_EQ(request.id, "abc");
@@ -81,20 +81,25 @@ TEST(ParseWebRequestTest, TranslateTurnsRgbaIntoBgra) {
 }
 
 TEST(ParseWebRequestTest, PixelsMustMatchTheSize) {
-    const std::string json =
-        nlohmann::json{{"type", "translate"}, {"id", "abc"}, {"width", 2}, {"height", 2},
-                       {"pixels", base64Encode(std::vector<std::uint8_t>(4, 0))}}
-            .dump();
+    const std::string json = nlohmann::json{
+        {"type", "translate"},
+        {"id", "abc"},
+        {"width", 2},
+        {"height", 2},
+        {"pixels", base64Encode(std::vector<std::uint8_t>(
+                       4, 0))}}.dump();
     const WebRequest request = parseWebRequest(json);
     EXPECT_EQ(request.type, WebRequest::Type::Invalid);
     EXPECT_EQ(request.id, "abc") << "錯誤要能對回是哪一張圖";
 }
 
 TEST(ParseWebRequestTest, RejectsHugeImages) {
-    const std::string json =
-        nlohmann::json{{"type", "translate"}, {"id", "x"}, {"width", 100000}, {"height", 100000},
-                       {"pixels", ""}}
-            .dump();
+    const std::string json = nlohmann::json{{"type", "translate"},
+                                            {"id", "x"},
+                                            {"width", 100000},
+                                            {"height", 100000},
+                                            {"pixels", ""}}
+                                 .dump();
     EXPECT_EQ(parseWebRequest(json).type, WebRequest::Type::Invalid);
 }
 

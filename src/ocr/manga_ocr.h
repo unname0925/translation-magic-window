@@ -56,8 +56,8 @@ std::vector<std::int64_t> mangaOcrGreedyDecode(const MangaOcrStep& step, std::in
 // 好幾串一起逐字解碼：每一步把每一串的上一個字（已經結束的那串照樣給它最後一個字，結果不看）
 // 和共同的位置交給 step，它回傳 maxLengths.size() 列 logits（每列一樣長）。
 // 每一串各自停在 eos 或自己的 maxLengths；全部停了才結束。回傳每一串（包含 start）。
-using MangaOcrBatchStep = std::function<std::span<const float>(
-    std::span<const std::int64_t> tokens, std::int64_t position)>;
+using MangaOcrBatchStep = std::function<std::span<const float>(std::span<const std::int64_t> tokens,
+                                                               std::int64_t position)>;
 std::vector<std::vector<std::int64_t>> mangaOcrGreedyDecodeBatch(const MangaOcrBatchStep& step,
                                                                  std::int64_t start,
                                                                  std::int64_t eos,

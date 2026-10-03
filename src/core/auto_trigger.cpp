@@ -59,8 +59,7 @@ void AutoTrigger::tick() {
 
 void AutoTrigger::maybePrepare() {
     if (!callbacks_.onPrepare || preparedThisRound_ || !reference_ ||
-        config_.prepareAfter <= Duration::zero() ||
-        config_.prepareAfter >= machine_.settleTime() ||
+        config_.prepareAfter <= Duration::zero() || config_.prepareAfter >= machine_.settleTime() ||
         machine_.settledFor() < config_.prepareAfter) {
         return;
     }

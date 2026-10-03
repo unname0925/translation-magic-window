@@ -193,9 +193,8 @@ WebRequest parseWebRequest(std::string_view json) {
 }
 
 std::string webHelloReply(std::string_view version) {
-    return nlohmann::json{{"type", "hello"},
-                          {"protocol", kWebProtocolVersion},
-                          {"version", std::string(version)}}
+    return nlohmann::json{
+        {"type", "hello"}, {"protocol", kWebProtocolVersion}, {"version", std::string(version)}}
         .dump();
 }
 
@@ -226,8 +225,9 @@ std::string webResultReply(std::string_view id, std::span<const OverlayItem> ite
         }
         nlohmann::json ruby = nlohmann::json::array();
         for (const OverlayRuby& annotation : item.ruby) {
-            ruby.push_back(
-                {{"start", annotation.start}, {"length", annotation.length}, {"text", annotation.text}});
+            ruby.push_back({{"start", annotation.start},
+                            {"length", annotation.length},
+                            {"text", annotation.text}});
         }
         entry["ruby"] = std::move(ruby);
         if (!item.patch.empty() && encodePng) {
