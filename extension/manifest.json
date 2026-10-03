@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "Translation Magic Window：網頁漫畫",
+  "version": "0.1.0",
+  "description": "把網頁上整章漫畫圖片裡的文字翻成繁體中文，直接蓋在原圖上。需要電腦上的 Translation Magic Window。",
+  "minimum_chrome_version": "116",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "nativeMessaging"
+  ],
+  "optional_host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "翻譯這一頁的漫畫（再按一次切換原文）"
+  },
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAzayCzgHGhwY+HPz9ReF6PlWW4Y9bKnqrWbe1RuVrVYCkH+0eNo1pVK8wrXmYS1YDPUS0p3F3v8iblEJTXljyk9QppULC1OLexEt7i7SpHL9zboppqgi1oh4ZlUwbJhPoMBEpQvF78j1SOue6qCVkbTvcbwQeXv1qOzO/MvS/mYLelEe2u0IaUKSVQeSvF2phNCzqW5AI4LVNWW5FrBnkiIeHsQocfmiBUUQaUq3X83cEJf6PTInZQsHss2uvnpTZLMHYFw9FO/zmwL1rV30rpnFXZbCgDgVPWaCq75C8odTyJH/luUHCOa3/HjCXRqTXXc3xwLYXAtLylxhcBMYT6wIDAQAB"
+}
