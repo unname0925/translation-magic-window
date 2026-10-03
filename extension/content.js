@@ -15,7 +15,9 @@
 
   const MIN_WIDTH = 200; // 顯示寬度比這小的不是漫畫頁
   const MIN_NATURAL = 300; // 原圖比這小的不是漫畫頁（也排除延遲載入的佔位圖）
-  const IN_FLIGHT = 3; // 同時交給背景的張數：主程式一次處理一張，其餘先抓圖、解碼
+  // 同時交給背景的張數：主程式一頁一頁做 OCR、好幾頁同時翻譯（core/web_pipeline_worker.h），
+  // 送多一點它才不會閒著；先後順序還是這裡決定（離畫面近的先送）
+  const IN_FLIGHT = 6;
   // 延遲載入的寫法各家不同，真正的網址常放在這些屬性裡
   const LAZY_ATTRIBUTES = ["data-src", "data-original", "data-lazy-src", "data-lazy", "data-url",
                            "data-echo", "data-full", "data-srcset", "data-lazy-srcset"];
@@ -33,17 +35,121 @@
     rt { font-size: 0.45em; }
     .hidden { display: none; }`;
 
-  // 狀態列（右下角）
-  const badgeHost = document.createElement("tmw-status");
-  badgeHost.style.cssText =
-    "all:initial;position:fixed;right:12px;bottom:12px;z-index:2147483647;pointer-events:none;";
-  const badgeRoot = badgeHost.attachShadow({ mode: "closed" });
-  badgeRoot.innerHTML = `<style>
-    .badge { padding: 6px 10px; border-radius: 6px; background: rgba(32, 32, 32, 0.85); color: #fff;
-             font: 13px "Microsoft JhengHei", sans-serif; }
-    .hidden { display: none; }</style><div class="badge"></div>`;
-  document.documentElement.appendChild(badgeHost);
-  const badge = badgeRoot.querySelector(".badge");
+  // 控制面板：浮在網頁上，可以拖動、調透明度、縮小；位置和透明度記在 chrome.storage
+  const panelHost = document.createElement("tmw-panel");
+  panelHost.style.cssText = "all:initial;position:fixed;left:0;top:0;width:0;height:0;z-index:2147483647;";
+  const panelRoot = panelHost.attachShadow({ mode: "closed" });
+  panelRoot.innerHTML = `<style>
+    .panel { position: fixed; width: 230px; border-radius: 8px; background: #202124; color: #f1f1f1;
+             font: 12px/1.5 "Microsoft JhengHei", "Noto Sans TC", sans-serif; box-shadow: 0 4px 16px rgba(0,0,0,.35);
+             user-select: none; }
+    .head { display: flex; align-items: center; gap: 6px; padding: 6px 8px; cursor: move; border-bottom: 1px solid #3c3c3c; }
+    .head strong { flex: 1; font-size: 12px; }
+    .icon { width: 20px; height: 20px; border: 0; border-radius: 4px; background: transparent; color: #ccc;
+            font: 14px/1 sans-serif; cursor: pointer; }
+    .icon:hover { background: #3c3c3c; color: #fff; }
+    .body { padding: 8px; display: grid; gap: 7px; }
+    .bar { height: 4px; border-radius: 2px; background: #3c3c3c; overflow: hidden; }
+    .bar > div { height: 100%; width: 0; background: #63a4e8; transition: width .3s; }
+    .buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+    button.action { padding: 4px 6px; border: 1px solid #4a4a4a; border-radius: 5px; background: #2b2c2f;
+                    color: #f1f1f1; font: inherit; cursor: pointer; }
+    button.action:hover:not(:disabled) { border-color: #63a4e8; }
+    button.action:disabled { opacity: .45; cursor: default; }
+    .row { display: flex; align-items: center; gap: 6px; }
+    .row input[type=range] { flex: 1; }
+    label { display: flex; align-items: center; gap: 5px; cursor: pointer; }
+    .muted { color: #a8a8a8; }
+    .mini .body { display: none; }
+    .mini { width: auto; }
+    .mini .head { border-bottom: 0; }
+    .hidden { display: none !important; }
+  </style>
+  <div class="panel">
+    <div class="head"><strong id="title">網頁漫畫翻譯</strong>
+      <button class="icon" id="minimize" title="縮小／展開">–</button>
+      <button class="icon" id="close" title="關閉面板（翻譯繼續）">×</button></div>
+    <div class="body">
+      <div><span id="status">準備中…</span> <span id="detail" class="muted"></span></div>
+      <div class="bar"><div id="progress"></div></div>
+      <div class="buttons">
+        <button class="action" id="toggle">顯示原文</button>
+        <button class="action" id="retry">重試失敗的圖</button>
+        <button class="action" id="preload">載入整頁</button>
+        <button class="action" id="stop">停止並移除</button>
+      </div>
+      <label><input type="checkbox" id="autoPreload"> 開始時先載入整頁的圖</label>
+      <div class="row"><span>透明度</span><input type="range" id="opacity" min="20" max="100" step="5">
+        <span id="opacityText" class="muted"></span></div>
+    </div>
+  </div>`;
+  document.documentElement.appendChild(panelHost);
+  const panel = panelRoot.querySelector(".panel");
+  const $panel = (id) => panelRoot.getElementById(id);
+  const panelState = { left: null, top: 24, opacity: 95, minimized: false, hidden: false, autoPreload: true };
+
+  function applyPanel() {
+    panel.classList.toggle("mini", panelState.minimized);
+    panel.classList.toggle("hidden", panelState.hidden);
+    panel.style.opacity = String(panelState.opacity / 100);
+    const width = panel.offsetWidth || 230;
+    const left = panelState.left ?? innerWidth - width - 24;
+    panel.style.left = `${Math.max(0, Math.min(left, innerWidth - width))}px`;
+    panel.style.top = `${Math.max(0, Math.min(panelState.top, innerHeight - 32))}px`;
+    $panel("opacity").value = String(panelState.opacity);
+    $panel("opacityText").textContent = `${panelState.opacity}%`;
+    $panel("minimize").textContent = panelState.minimized ? "+" : "–";
+    $panel("autoPreload").checked = panelState.autoPreload;
+  }
+
+  function savePanel() {
+    const { left, top, opacity, minimized, autoPreload } = panelState;
+    chrome.storage?.local.set({ panel: { left, top, opacity, minimized, autoPreload } }).catch(() => {});
+  }
+
+  // 拖動標題列
+  $panel("title").parentElement.addEventListener("pointerdown", (event) => {
+    if (event.target.closest("button")) {
+      return;
+    }
+    const head = event.currentTarget;
+    head.setPointerCapture(event.pointerId);
+    const rect = panel.getBoundingClientRect();
+    const dx = event.clientX - rect.left;
+    const dy = event.clientY - rect.top;
+    const move = (e) => {
+      panelState.left = e.clientX - dx;
+      panelState.top = e.clientY - dy;
+      applyPanel();
+    };
+    const up = () => {
+      head.removeEventListener("pointermove", move);
+      head.removeEventListener("pointerup", up);
+      savePanel();
+    };
+    head.addEventListener("pointermove", move);
+    head.addEventListener("pointerup", up);
+  });
+  $panel("opacity").addEventListener("input", () => {
+    panelState.opacity = Number($panel("opacity").value);
+    applyPanel();
+  });
+  $panel("opacity").addEventListener("change", savePanel);
+  $panel("minimize").addEventListener("click", () => {
+    panelState.minimized = !panelState.minimized;
+    applyPanel();
+    savePanel();
+  });
+  $panel("close").addEventListener("click", () => {
+    panelState.hidden = true; // 只關面板，翻譯繼續；控制視窗可以再叫出來
+    applyPanel();
+  });
+  $panel("autoPreload").addEventListener("change", () => {
+    panelState.autoPreload = $panel("autoPreload").checked;
+    savePanel();
+  });
+  addEventListener("resize", applyPanel, { passive: true });
+  applyPanel();
 
   const pages = new Map(); // 元素 → { source, state, result, anchor, layer }
   const resultsBySource = new Map(); // 圖片網址 → 翻好的結果（元素被拿掉又建回來時直接用）
@@ -261,6 +367,11 @@
     if (reply?.type !== "result") {
       if (reply?.fetchFailed && element instanceof HTMLImageElement && !loaded(element)) {
         pages.delete(element); // 等它真的載入（load 事件會再掃到）
+        return;
+      }
+      if (reply?.message === "restarted") {
+        page.state = "queued"; // 主程式改了設定、重建工作佇列：再送一次
+        queue.push(element);
         return;
       }
       page.state = "failed";
@@ -514,25 +625,32 @@
 
   // ---------------------------------------------------------------- 狀態
 
-  let badgeTimer = 0;
   function updateBadge() {
     const states = [...pages.values()].map((page) => page.state);
     const done = states.filter((state) => state === "done").length;
     const failed = states.filter((state) => state === "failed").length;
-    clearTimeout(badgeTimer);
+    const finished = done + failed;
+    let text;
     if (fatal === "host-not-installed") {
-      badge.textContent = "找不到 Translation Magic Window（請先安裝，並在設定裡啟用瀏覽器擴充功能）";
+      text = "找不到 Translation Magic Window（請先安裝）";
     } else if (fatal === "app-unavailable") {
-      badge.textContent = "Translation Magic Window 沒有回應，請確認它已經開啟";
+      text = "Translation Magic Window 沒有回應，請確認它已經開啟";
+    } else if (preloading) {
+      text = `載入整頁中…（找到 ${states.length} 張）`;
     } else if (states.length === 0) {
-      badge.textContent = "這一頁沒有找到漫畫圖片";
-    } else if (done + failed < states.length) {
-      badge.textContent = `翻譯中 ${done}/${states.length}`;
+      text = "這一頁沒有找到漫畫圖片";
+    } else if (finished < states.length) {
+      text = `翻譯中 ${done} / ${states.length}`;
     } else {
-      badge.textContent = failed > 0 ? `完成 ${done} 張，${failed} 張失敗` : `完成 ${done} 張`;
-      badgeTimer = setTimeout(() => badge.classList.add("hidden"), 4000);
+      text = `完成 ${done} 張`;
     }
-    badge.classList.remove("hidden");
+    $panel("status").textContent = text;
+    $panel("detail").textContent = failed ? `${failed} 張失敗` : "";
+    $panel("progress").style.width = states.length ? `${(finished / states.length) * 100}%` : "0";
+    $panel("title").textContent = panelState.minimized && states.length ? `翻譯 ${done}/${states.length}` : "網頁漫畫翻譯";
+    $panel("retry").disabled = failed === 0;
+    $panel("preload").disabled = preloading;
+    $panel("toggle").textContent = visible ? "顯示原文" : "顯示譯文";
   }
 
   // ---------------------------------------------------------------- 開始
@@ -587,6 +705,67 @@
     for (const page of pages.values()) {
       page.layer?.classList.toggle("hidden", !visible);
     }
+    updateBadge();
+  }
+
+  // ---------------------------------------------------------------- 載入整頁
+
+  // 主要內容欄所在的捲動容器（閱讀器常把漫畫放在自己的捲動區塊裡），沒有就是整個視窗
+  function scrollerOf(element) {
+    for (let node = element?.parentElement; node && node !== document.body; node = node.parentElement) {
+      const style = getComputedStyle(node);
+      if (/(auto|scroll)/.test(style.overflowY) && node.scrollHeight > node.clientHeight + 10) {
+        return node;
+      }
+    }
+    return document.scrollingElement || document.documentElement;
+  }
+
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  let preloading = false;
+
+  // 有些網站要圖片真的捲進畫面才載入（而且網址不放在屬性裡）：自動捲到底一次再捲回來。
+  // 已經在屬性裡的網址 scan 本來就讀得到；這裡處理剩下的。最多 30 秒、到底且高度不再變就停
+  async function preloadAll() {
+    if (preloading || fatal === "stopped") {
+      return;
+    }
+    preloading = true;
+    updateBadge();
+    for (const img of document.images) {
+      if (img.loading === "lazy") {
+        img.loading = "eager"; // 瀏覽器內建的延遲載入：直接改成立刻載入
+      }
+    }
+    const first = [...pages.keys()][0] || [...document.images].find((img) => img.getBoundingClientRect().width >= MIN_WIDTH);
+    const scroller = scrollerOf(first);
+    const startTop = scroller.scrollTop;
+    const startUrl = location.href;
+    const deadline = Date.now() + 30_000;
+    let lastHeight = -1;
+    let stable = 0;
+    while (Date.now() < deadline && fatal !== "stopped" && location.href === startUrl) {
+      const step = Math.max(200, scroller.clientHeight * 0.9);
+      if (scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 4) {
+        // 到底了：等一下看會不會再長出新的內容（無限捲動）
+        stable = scroller.scrollHeight === lastHeight ? stable + 1 : 0;
+        lastHeight = scroller.scrollHeight;
+        if (stable >= 2) {
+          break;
+        }
+        await sleep(500);
+        continue;
+      }
+      scroller.scrollTo({ top: scroller.scrollTop + step, behavior: "instant" });
+      await sleep(180);
+      scan();
+    }
+    if (location.href === startUrl) {
+      scroller.scrollTo({ top: startTop, behavior: "instant" });
+    }
+    preloading = false;
+    scan();
+    updateBadge();
   }
 
   // 失敗的圖重新排隊（例如主程式剛剛沒開）
@@ -608,7 +787,6 @@
     resized.disconnect();
     timers.forEach(clearInterval);
     clearTimeout(scanTimer);
-    clearTimeout(badgeTimer);
     document.removeEventListener("load", scheduleScan, true);
     removeEventListener("scroll", onScroll, { capture: true });
     removeEventListener("resize", alignAll);
@@ -622,7 +800,7 @@
     pages.clear();
     queue = [];
     fatal = "stopped"; // 還在路上的請求回來時不再處理
-    badgeHost.remove();
+    panelHost.remove();
     delete window.__tmwWebManga;
   }
 
@@ -635,11 +813,22 @@
       done: states.filter((state) => state === "done").length,
       failed: states.filter((state) => state === "failed").length,
       fatal: fatal && fatal !== "stopped" ? fatal : "",
+      preloading,
+      panelHidden: panelState.hidden,
     };
   }
 
   function onMessage(request, sender, sendResponse) {
-    const actions = { toggle, retry, stop };
+    const actions = {
+      toggle,
+      retry,
+      stop,
+      preload: preloadAll,
+      "show-panel": () => {
+        panelState.hidden = false;
+        applyPanel();
+      },
+    };
     if (request?.kind === "page-status") {
       sendResponse(status());
     } else if (actions[request?.kind]) {
@@ -650,6 +839,22 @@
   }
   chrome.runtime.onMessage.addListener(onMessage);
 
-  window.__tmwWebManga = { toggle, retry, stop, status };
+  $panel("toggle").addEventListener("click", toggle);
+  $panel("retry").addEventListener("click", retry);
+  $panel("preload").addEventListener("click", preloadAll);
+  $panel("stop").addEventListener("click", stop);
+
+  window.__tmwWebManga = { toggle, retry, stop, status, preload: preloadAll };
   scan();
+  // 面板的設定（位置、透明度、要不要先載入整頁）讀回來之後才決定要不要自動載入整頁
+  (chrome.storage?.local.get({ panel: {} }) ?? Promise.resolve({ panel: {} }))
+    .then(({ panel: saved }) => {
+      Object.assign(panelState, saved, { hidden: false });
+      applyPanel();
+      updateBadge();
+      if (panelState.autoPreload) {
+        preloadAll();
+      }
+    })
+    .catch(() => {});
 })();

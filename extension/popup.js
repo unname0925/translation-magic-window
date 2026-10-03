@@ -30,6 +30,8 @@ function showPage(status) {
   $("toggle").disabled = !active;
   $("stop").disabled = !active;
   $("retry").disabled = !active || !status.failed;
+  $("panel").disabled = !active || !status.panelHidden;
+  $("preload").disabled = !active || status.preloading;
   $("toggle").textContent = status?.visible === false ? "顯示譯文" : "顯示原文";
   if (!active) {
     $("pageTitle").textContent = "這一頁還沒開始";
@@ -40,6 +42,8 @@ function showPage(status) {
   const finished = status.done + status.failed;
   if (status.fatal) {
     $("pageTitle").textContent = "連不上主程式";
+  } else if (status.preloading) {
+    $("pageTitle").textContent = `載入整頁中…（找到 ${status.total} 張）`;
   } else if (status.total === 0) {
     $("pageTitle").textContent = "這一頁沒有找到漫畫圖片";
   } else if (finished < status.total) {
@@ -112,6 +116,16 @@ $("toggle").addEventListener("click", async () => {
 
 $("retry").addEventListener("click", async () => {
   await chrome.tabs.sendMessage(tab.id, { kind: "retry" }).catch(() => {});
+  await refresh();
+});
+
+$("panel").addEventListener("click", async () => {
+  await chrome.tabs.sendMessage(tab.id, { kind: "show-panel" }).catch(() => {});
+  await refresh();
+});
+
+$("preload").addEventListener("click", async () => {
+  await chrome.tabs.sendMessage(tab.id, { kind: "preload" }).catch(() => {});
   await refresh();
 });
 

@@ -98,7 +98,7 @@ def make_page(content: str) -> str:
               listener({{ kind: "toggle" }}, {{}}, (r) => reply = r);
               check("控制視窗：切換原文", reply.visible === false);
               listener({{ kind: "stop" }}, {{}}, (r) => reply = r);
-              check("控制視窗：停止後譯文和狀態列都拿掉", overlays().length === 0 && !document.querySelector("tmw-status") && !window.__tmwWebManga,
+              check("控制視窗：停止後譯文和狀態列都拿掉", overlays().length === 0 && !document.querySelector("tmw-panel") && !window.__tmwWebManga,
                     overlays().length + " overlays");
               check("停止後不留 anchor-name", ![...document.images].some((i) => i.style.getPropertyValue("anchor-name")));
               document.body.setAttribute("data-report", report.join(" | "));
@@ -112,12 +112,70 @@ def make_page(content: str) -> str:
     return page
 
 
+def make_loader_page(content: str) -> str:
+    """網址不放在屬性裡、只有捲到畫面附近才由網頁自己的程式設定的圖：要靠「載入整頁」自動捲動。"""
+    page = f"""<!doctype html><meta charset=utf-8>
+    <style>
+      body {{ margin: 0; }}
+      #reader {{ width: 640px; margin: 0 auto; }}
+      #reader img {{ display: block; width: 600px; height: 900px; margin: 10px auto; background: #eee; }}
+    </style>
+    <div id=reader></div>
+    <script>
+    // 用 canvas 做 600×900 的圖當「漫畫頁」（data: 網址，不必連網）
+    const canvas = document.createElement("canvas");
+    canvas.width = 600; canvas.height = 900;
+    const reader = document.getElementById("reader");
+    const urls = [];
+    for (let i = 0; i < 10; i++) {{
+      const c = canvas.getContext("2d");
+      c.fillStyle = "#" + ((i + 1) * 1234567 % 0xffffff).toString(16).padStart(6, "0");
+      c.fillRect(0, 0, 40 + i * 10, 40);
+      urls.push(canvas.toDataURL());
+      reader.append(document.createElement("img"));
+    }}
+    // 網頁自己的延遲載入：每 100 ms 看哪些圖到了畫面附近才給網址（網址只在這個程式裡）
+    setInterval(() => {{
+      [...reader.querySelectorAll("img")].forEach((img, i) => {{
+        if (!img.getAttribute("src") && img.getBoundingClientRect().top < innerHeight * 1.2) img.src = urls[i];
+      }});
+    }}, 100);
+    let counter = 0;
+    const requests = [];
+    let listener = null;
+    window.chrome = {{ runtime: {{ onMessage: {{ addListener: (f) => listener = f, removeListener: () => listener = null }},
+                                  sendMessage: async (message) => {{
+      const id = message.url || ("inline-" + (counter++));
+      requests.push(id);
+      await new Promise((r) => setTimeout(r, 30));
+      return {{ type: "result", id, width: 600, height: 900, error: "", patchesDropped: 0,
+               items: [{{ rect: [100, 100, 300, 400], text: "譯文", vertical: true,
+                          foreground: "#000000", background: "#ffffff", size: "normal", lineThickness: 30, ruby: [] }}] }};
+    }} }} }};
+    </script>
+    <script>{content}</script>
+    <script>
+    const report = [];
+    function check(name, ok, detail = "") {{ report.push((ok ? "PASS " : "FAIL ") + name + (detail ? " (" + detail + ")" : "")); }}
+    setTimeout(() => {{
+      check("載入整頁：只有捲到才給網址的圖，自動捲動後全部翻到", requests.length === 10, requests.length + " requests");
+      check("載入整頁之後捲回原本的位置", Math.abs(scrollY) < 1, "scrollY " + scrollY);
+      let reply = null;
+      listener({{ kind: "page-status" }}, {{}}, (r) => reply = r);
+      check("載入整頁結束、全部翻完", reply && reply.preloading === false && reply.done === 10, JSON.stringify(reply));
+      check("控制面板在頁面上", Boolean(document.querySelector("tmw-panel")));
+      document.body.setAttribute("data-report", report.join(" | "));
+    }}, 20000);
+    </script>"""
+    return page
+
+
 def run(page: str, folder: Path, name: str) -> list[str]:
     path = folder / f"{name}.html"
     path.write_text(page, encoding="utf-8")
     dom = subprocess.run(
         [str(CHROME), "--headless=new", "--disable-gpu", "--no-first-run",
-         f"--user-data-dir={folder / 'profile'}", "--virtual-time-budget=30000",
+         f"--user-data-dir={folder / 'profile'}", "--virtual-time-budget=40000",
          "--window-size=1280,900", "--dump-dom", path.as_uri()],
         capture_output=True, text=True, encoding="utf-8", timeout=120).stdout
     found = re.search(r'data-report="([^"]*)"', dom)
@@ -134,6 +192,7 @@ def main() -> int:
         "anchor": page,
         "js-fallback": page.replace("window.chrome = {",
                                     "CSS.supports = () => false;\nwindow.chrome = {", 1),
+        "page-loader": make_loader_page(content),
     }
     failed = 0
     with tempfile.TemporaryDirectory() as folder:
