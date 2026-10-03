@@ -1,6 +1,7 @@
 // Translation Magic Window：網頁漫畫（背景 service worker）
 //
-// - 工具列按鈕：第一次在這個分頁按 → 注入 content.js 開始翻譯；之後再按 → 切換原文／譯文（content.js 自己判斷）
+// - 工具列按鈕打開控制視窗（popup.html）；開始翻譯時由這裡注入 content.js
+// - 「這個網站自動翻譯」：用 chrome.scripting.registerContentScripts 在那些網站載入時自動注入
 // - 和電腦上的主程式溝通：chrome.runtime.connectNative → tmw_web_host.exe → 主程式（core/web_protocol.h）
 // - 幫 content.js 抓圖：擴充功能有權限時不受網頁的跨網域限制；解碼、縮小、轉成 RGBA 再送給主程式
 // - 同一張圖（內容的雜湊相同）只翻一次：結果記在記憶體裡
@@ -12,6 +13,16 @@ const MAX_PIXELS = 4_000_000;
 let port = null;
 const waiting = new Map(); // id → [resolve…]：等主程式回覆
 const results = new Map(); // id → 回覆（這次瀏覽器執行期間的快取）
+// 主程式的狀態（控制視窗顯示）："unknown" | "connected" | "host-not-installed" | "app-unavailable" | 其他錯誤
+let appState = "unknown";
+const stateWaiters = [];
+
+function setAppState(state) {
+  appState = state;
+  for (const resolve of stateWaiters.splice(0)) {
+    resolve(state);
+  }
+}
 
 function connect() {
   if (port) {
@@ -23,7 +34,9 @@ function connect() {
     // 主機沒註冊、主程式沒裝或結束了
     const reason = chrome.runtime.lastError?.message || "disconnected";
     port = null;
-    failAll(reason.includes("not found") ? "host-not-installed" : reason);
+    const state = reason.includes("not found") ? "host-not-installed" : appState === "connected" ? "unknown" : "app-unavailable";
+    setAppState(state);
+    failAll(state === "unknown" ? reason : state);
   });
   port.postMessage({ type: "hello", protocol: 1 });
   return port;
@@ -31,9 +44,11 @@ function connect() {
 
 function onHostMessage(message) {
   if (message.type === "hello") {
+    setAppState("connected");
     return;
   }
   if (message.type === "error" && !message.id) {
+    setAppState(message.message);
     failAll(message.message); // 整條連線不能用（例如主程式叫不起來）
     return;
   }
@@ -106,7 +121,9 @@ async function translate(request) {
       return { type: "error", fetchFailed: true, message: String(error?.message || error) };
     }
   }
-  const id = await sha256(`${image.width}x${image.height}:${image.pixels}`);
+  const { language } = await chrome.storage.local.get({ language: "auto" });
+  // 同一張圖用不同的辨識語言是不同的結果
+  const id = await sha256(`${language}:${image.width}x${image.height}:${image.pixels}`);
   const cached = results.get(id);
   if (cached) {
     return { ...cached, width: image.width, height: image.height };
@@ -125,7 +142,7 @@ async function translate(request) {
         width: image.width,
         height: image.height,
         pixels: image.pixels,
-        language: "auto",
+        language,
       });
     } catch (error) {
       port = null;
@@ -135,23 +152,73 @@ async function translate(request) {
   return { ...reply, width: image.width, height: image.height };
 }
 
+// 控制視窗問主程式的狀態：還沒連過就連一次，最多等 5 秒
+async function currentAppState() {
+  if (appState === "connected" && port) {
+    return appState;
+  }
+  const answer = new Promise((resolve) => stateWaiters.push(resolve));
+  try {
+    connect();
+  } catch (error) {
+    setAppState(String(error?.message || error));
+  }
+  return Promise.race([answer, new Promise((resolve) => setTimeout(() => resolve("app-unavailable"), 5000))]);
+}
+
+async function start(tabId) {
+  await chrome.scripting.executeScript({ target: { tabId }, files: ["content.js"] });
+}
+
+// 「這個網站自動翻譯」的網站：網頁載入完成時自動注入 content.js
+const AUTO_SCRIPT = "tmw-auto";
+
+async function registerAutoSites() {
+  const { autoSites } = await chrome.storage.local.get({ autoSites: [] });
+  const existing = await chrome.scripting.getRegisteredContentScripts({ ids: [AUTO_SCRIPT] });
+  if (existing.length > 0) {
+    await chrome.scripting.unregisterContentScripts({ ids: [AUTO_SCRIPT] });
+  }
+  if (autoSites.length === 0 || !(await chrome.permissions.contains({ origins: ["<all_urls>"] }))) {
+    return;
+  }
+  await chrome.scripting.registerContentScripts([{
+    id: AUTO_SCRIPT,
+    matches: autoSites.map((origin) => `${origin}/*`),
+    js: ["content.js"],
+    runAt: "document_idle",
+  }]);
+}
+
+async function setAutoSite(origin, enabled) {
+  const { autoSites } = await chrome.storage.local.get({ autoSites: [] });
+  const next = autoSites.filter((site) => site !== origin);
+  if (enabled) {
+    next.push(origin);
+  }
+  await chrome.storage.local.set({ autoSites: next });
+  await registerAutoSites();
+}
+
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request?.kind !== "translate" || !sender.tab) {
+  let work = null;
+  if (request?.kind === "translate" && sender.tab) {
+    work = translate(request);
+  } else if (request?.kind === "app-status") {
+    work = currentAppState().then((state) => ({ state }));
+  } else if (request?.kind === "start") {
+    work = start(request.tabId).then(() => ({ ok: true }));
+  } else if (request?.kind === "auto-site") {
+    work = setAutoSite(request.origin, request.enabled).then(() => ({ ok: true }));
+  }
+  if (!work) {
     return false;
   }
-  translate(request)
-    .then(sendResponse)
-    .catch((error) => sendResponse({ type: "error", message: String(error?.message || error) }));
+  work.then(sendResponse).catch((error) => sendResponse({ type: "error", message: String(error?.message || error) }));
   return true; // 非同步回覆
 });
 
-chrome.action.onClicked.addListener(async (tab) => {
-  // 讀跨網域的圖片要「所有網站」的權限：第一次按的時候才問（使用者可以拒絕，
-  // 那就只能翻同網域、或網頁本身讀得到像素的圖）
-  try {
-    await chrome.permissions.request({ origins: ["<all_urls>"] });
-  } catch {
-    // 已經有權限、或使用者拒絕：照樣繼續
-  }
-  await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["content.js"] });
-});
+// 權限被拿掉時，自動翻譯也注入不了：重新登記（沒有權限就不登記）
+chrome.permissions.onRemoved.addListener(registerAutoSites);
+chrome.permissions.onAdded.addListener(registerAutoSites);
+chrome.runtime.onInstalled.addListener(registerAutoSites);

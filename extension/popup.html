@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<title>Translation Magic Window：網頁漫畫</title>
+<style>
+  :root {
+    --bg: #ffffff; --fg: #1f1f1f; --muted: #666666; --line: #e3e3e3; --panel: #f6f6f6;
+    --accent: #2b6cb0; --accent-fg: #ffffff; --ok: #2f855a; --warn: #b7791f; --bad: #c53030;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1e1e1e; --fg: #ececec; --muted: #a0a0a0; --line: #3a3a3a; --panel: #2a2a2a;
+      --accent: #63a4e8; --accent-fg: #101010; --ok: #68d391; --warn: #f6c35b; --bad: #fc8181;
+    }
+  }
+  body { margin: 0; width: 300px; background: var(--bg); color: var(--fg);
+         font: 13px/1.5 "Microsoft JhengHei", "Noto Sans TC", sans-serif; }
+  header { padding: 12px 14px 8px; border-bottom: 1px solid var(--line); }
+  h1 { margin: 0; font-size: 14px; font-weight: 700; }
+  .app { display: flex; align-items: center; gap: 6px; margin-top: 4px; color: var(--muted); font-size: 12px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
+  .dot.ok { background: var(--ok); } .dot.warn { background: var(--warn); } .dot.bad { background: var(--bad); }
+  main { padding: 10px 14px 12px; display: grid; gap: 10px; }
+  .status { padding: 8px 10px; border-radius: 6px; background: var(--panel); }
+  .status strong { display: block; font-size: 13px; }
+  .bar { height: 4px; margin-top: 6px; border-radius: 2px; background: var(--line); overflow: hidden; }
+  .bar > div { height: 100%; width: 0; background: var(--accent); transition: width 0.3s; }
+  .buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  button { padding: 7px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg);
+           color: var(--fg); font: inherit; cursor: pointer; }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:disabled { opacity: 0.45; cursor: default; }
+  button.primary { grid-column: 1 / -1; background: var(--accent); border-color: var(--accent);
+                   color: var(--accent-fg); font-weight: 700; }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  select { font: inherit; padding: 3px 4px; border: 1px solid var(--line); border-radius: 4px;
+           background: var(--bg); color: var(--fg); }
+  label.check { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+  .note { margin: 0; color: var(--muted); font-size: 12px; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<header>
+  <h1>網頁漫畫翻譯</h1>
+  <div class="app"><span class="dot" id="appDot"></span><span id="appText">檢查主程式…</span></div>
+</header>
+<main>
+  <div class="status">
+    <strong id="pageTitle">這一頁還沒開始</strong>
+    <span id="pageDetail" class="note"></span>
+    <div class="bar"><div id="progress"></div></div>
+  </div>
+
+  <div class="buttons">
+    <button class="primary" id="start">翻譯這一頁</button>
+    <button id="toggle" disabled>顯示原文</button>
+    <button id="retry" disabled>重試失敗的圖</button>
+    <button id="stop" disabled>停止並移除譯文</button>
+    <button id="permission" class="hidden">允許讀取圖片</button>
+  </div>
+
+  <div class="row">
+    <span>辨識語言</span>
+    <select id="language">
+      <option value="auto">自動判斷</option>
+      <option value="ja">日文</option>
+      <option value="en">英文</option>
+      <option value="ko">韓文</option>
+    </select>
+  </div>
+  <label class="check"><input type="checkbox" id="auto"> <span id="autoText">這個網站自動翻譯</span></label>
+  <p class="note" id="hint"></p>
+</main>
+<script src="popup.js"></script>
+</body>
+</html>
