@@ -2,6 +2,7 @@
 
 #include <windowsx.h>
 
+#include <algorithm>
 #include <exception>
 #include <span>
 #include <utility>
@@ -108,6 +109,26 @@ bool LensWindow::isVisible() const {
 
 void LensWindow::setVisible(bool visible) {
     ShowWindow(hwnd_, visible ? SW_SHOWNOACTIVATE : SW_HIDE);
+}
+
+void LensWindow::moveBy(int dx, int dy) {
+    RECT window{};
+    if (!GetWindowRect(hwnd_, &window)) {
+        return;
+    }
+    // 不能移出這個螢幕的工作區：新增好幾個透鏡時，最後一個不會跑到螢幕外面
+    MONITORINFO monitor{};
+    monitor.cbSize = sizeof(monitor);
+    GetMonitorInfoW(MonitorFromWindow(hwnd_, MONITOR_DEFAULTTONEAREST), &monitor);
+    const core::RectI work{monitor.rcWork.left, monitor.rcWork.top, monitor.rcWork.right,
+                           monitor.rcWork.bottom};
+    const int left = static_cast<int>(window.left);
+    const int top = static_cast<int>(window.top);
+    const int width = static_cast<int>(window.right) - left;
+    const int height = static_cast<int>(window.bottom) - top;
+    const int x = std::clamp(left + dx, work.left, std::max(work.left, work.right - width));
+    const int y = std::clamp(top + dy, work.top, std::max(work.top, work.bottom - height));
+    SetWindowPos(hwnd_, nullptr, x, y, 0, 0, SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOSIZE);
 }
 
 void LensWindow::setAccent(core::Rgba accent) {

@@ -243,6 +243,49 @@ TEST_F(AppTest, TranslationIsDrawnOverTheTextAndHiddenWhenItChanges) {
         kUiTimeout));
 }
 
+// 主程式的所有可見透鏡
+std::vector<HWND> visibleLenses(DWORD processId) {
+    struct Search {
+        DWORD processId;
+        std::vector<HWND> found;
+    } search{processId, {}};
+    EnumWindows(
+        [](HWND hwnd, LPARAM data) -> BOOL {
+            auto* s = reinterpret_cast<Search*>(data);
+            DWORD owner = 0;
+            GetWindowThreadProcessId(hwnd, &owner);
+            wchar_t className[128]{};
+            GetClassNameW(hwnd, className, 128);
+            if (owner == s->processId && IsWindowVisible(hwnd) &&
+                std::wstring(className) == platform::LensWindow::kClassName) {
+                s->found.push_back(hwnd);
+            }
+            return TRUE;
+        },
+        reinterpret_cast<LPARAM>(&search));
+    return search.found;
+}
+
+// M5-05：系統匣可以新增透鏡、關掉最後新增的那一個；第一個不能關
+TEST_F(AppTest, LensesCanBeAddedAndRemoved) {
+    ASSERT_EQ(visibleLenses(app_->processId()).size(), 1u);
+    ASSERT_TRUE(app_->postCommand(app::kCommandAddLens));
+    ASSERT_TRUE(waitUntil([&] { return visibleLenses(app_->processId()).size() == 2; }, kUiTimeout))
+        << "主程式的記錄：\n"
+        << appLog();
+    const std::vector<HWND> two = visibleLenses(app_->processId());
+    EXPECT_NE(windowRectOf(two[0]).left, windowRectOf(two[1]).left)
+        << "新的透鏡錯開，不會和第一個疊在一起";
+
+    ASSERT_TRUE(app_->postCommand(app::kCommandRemoveLens));
+    EXPECT_TRUE(
+        waitUntil([&] { return visibleLenses(app_->processId()).size() == 1; }, kUiTimeout));
+    ASSERT_TRUE(app_->postCommand(app::kCommandRemoveLens));
+    ASSERT_TRUE(app_->isResponsive(kUiTimeout));
+    EXPECT_EQ(visibleLenses(app_->processId()).size(), 1u) << "第一個透鏡不能關，只能藏起來";
+    EXPECT_TRUE(IsWindowVisible(lens_)) << "留下來的是第一個透鏡";
+}
+
 // M1-12：系統匣選單的「開啟結果視窗」
 TEST_F(AppTest, OpenResultsCommandShowsTheWindow) {
     ASSERT_EQ(app_->findWindowByTitle(L"翻譯結果"), nullptr) << "一開始不該顯示";

@@ -35,6 +35,9 @@ public:
 
     void setAccent(core::Rgba accent);
 
+    // 整個透鏡移動 dx、dy（實體像素），不會移出螢幕的工作區（新增透鏡時錯開用）
+    void moveBy(int dx, int dy);
+
     // 擷取範圍（可見邊框的內緣），螢幕座標、實體像素。
     core::RectI contentScreenRect() const;
 

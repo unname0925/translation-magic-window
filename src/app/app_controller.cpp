@@ -51,6 +51,8 @@ constexpr UINT kTickMilliseconds = 100;
 
 // 擷取範圍的預設大小（96 DPI 基準）
 constexpr core::SizeI kDefaultContentSize{480, 270};
+// 新增的透鏡往右下錯開多少（實體像素），免得和前一個疊在一起看不出來
+constexpr int kNewLensOffset = 48;
 
 // 邊框顏色（見 docs/design.md 4.1 的「狀態顯示」）
 constexpr core::Rgba kDraggingAccent{245, 158, 11, 230};    // 橘：拖動中
@@ -222,26 +224,7 @@ AppController::AppController(HINSTANCE instance, std::filesystem::path dataDirec
         capture_ = std::make_unique<platform::ScreenCapture>();
         frameSource_ = std::make_unique<platform::CaptureFrameSource>(*capture_);
 
-        core::AutoTrigger::Callbacks triggerCallbacks;
-        triggerCallbacks.onStateChanged = [this](core::LensState) { updateAccent(); };
-        triggerCallbacks.onProcess = [this](const core::ProcessRequest& request) {
-            process(request);
-        };
-        core::AutoTriggerConfig triggerConfig;
-        triggerConfig.focusOnText = settings_.gameMode;
-        triggerConfig.settleTime = std::chrono::milliseconds(settings_.settleMs);
-        trigger_ = std::make_unique<core::AutoTrigger>(clock_, *frameSource_, triggerConfig,
-                                                       std::move(triggerCallbacks));
-
-        platform::LensWindow::Callbacks lensCallbacks;
-        lensCallbacks.onMoveSizeStart = [this] { trigger_->onMoveSizeStart(); };
-        lensCallbacks.onMoveSizeEnd = [this] {
-            trigger_->onMoveSizeEnd(lens_->contentScreenRect());
-        };
-        lens_ = std::make_unique<platform::LensWindow>(instance, kDefaultContentSize,
-                                                       std::move(lensCallbacks));
-        trigger_->onMoveSizeEnd(lens_->contentScreenRect());
-        updateAccent();
+        addLens();  // 第一個透鏡
 
         tray_ = std::make_unique<platform::TrayIcon>(hwnd_, kTrayCallbackMessage,
                                                      LoadIconW(nullptr, IDI_APPLICATION),
@@ -321,7 +304,7 @@ LRESULT AppController::handleMessage(UINT message, WPARAM wParam, LPARAM lParam)
                 break;
             case NIN_SELECT:
             case NIN_KEYSELECT:
-                setLensVisible(!lens_->isVisible());
+                setLensVisible(!lenses_.front()->window->isVisible());
                 break;
             default:
                 break;
@@ -332,7 +315,7 @@ LRESULT AppController::handleMessage(UINT message, WPARAM wParam, LPARAM lParam)
         tray_->add();
         return 0;
     }
-    if (message == showLensMessage_ && lens_) {
+    if (message == showLensMessage_ && !lenses_.empty()) {
         setLensVisible(true);
         return 0;
     }
@@ -341,11 +324,17 @@ LRESULT AppController::handleMessage(UINT message, WPARAM wParam, LPARAM lParam)
         case WM_COMMAND:
             switch (LOWORD(wParam)) {
                 case kCommandToggleLens:
-                    setLensVisible(!lens_->isVisible());
+                    setLensVisible(!lenses_.front()->window->isVisible());
+                    break;
+                case kCommandAddLens:
+                    addLens();
+                    break;
+                case kCommandRemoveLens:
+                    removeLens();
                     break;
                 case kCommandCapture:
-                    if (lens_->isVisible()) {
-                        flashLens(saveLensCapture() ? kSuccessAccent : kErrorAccent);
+                    if (Lens& lens = activeLens(); lens.window->isVisible()) {
+                        flashLens(lens, saveLensCapture(lens) ? kSuccessAccent : kErrorAccent);
                     }
                     break;
                 case kCommandOpenCaptures:
@@ -363,7 +352,8 @@ LRESULT AppController::handleMessage(UINT message, WPARAM wParam, LPARAM lParam)
                     openSettings();
                     break;
                 case kCommandDebugDump:
-                    flashLens(writeDebugDump().empty() ? kErrorAccent : kSuccessAccent);
+                    flashLens(activeLens(),
+                              writeDebugDump().empty() ? kErrorAccent : kSuccessAccent);
                     break;
                 case kCommandToggleMangaMode:
                     setMangaMode(!settings_.mangaMode);
@@ -394,15 +384,13 @@ LRESULT AppController::handleMessage(UINT message, WPARAM wParam, LPARAM lParam)
                     saveSettings();
                     break;
                 case kCommandToggleDebugOverlay:
-                    setDebugOverlayEnabled(debugOverlay_ == nullptr);
+                    setDebugOverlayEnabled(!debugOverlayEnabled_);
                     break;
                 case kCommandTogglePause:
                     setPaused(!paused_);
                     break;
                 case kCommandTranslateNow:
-                    if (lens_->isVisible() && !paused_) {
-                        trigger_->manualTrigger();
-                    }
+                    translateNow();
                     break;
                 case kCommandExit:
                     DestroyWindow(hwnd_);
@@ -412,44 +400,51 @@ LRESULT AppController::handleMessage(UINT message, WPARAM wParam, LPARAM lParam)
             }
             return 0;
         case WM_HOTKEY:
-            if (wParam == kHotkeyCapture && lens_->isVisible()) {
-                flashLens(saveLensCapture() ? kSuccessAccent : kErrorAccent);
-            } else if (wParam == kHotkeyTranslate && lens_->isVisible() && !paused_) {
-                trigger_->manualTrigger();
+            if (Lens& lens = activeLens(); wParam == kHotkeyCapture && lens.window->isVisible()) {
+                flashLens(lens, saveLensCapture(lens) ? kSuccessAccent : kErrorAccent);
+            } else if (wParam == kHotkeyTranslate) {
+                translateNow();
             } else if (wParam == kHotkeyDebugDump) {
-                flashLens(writeDebugDump().empty() ? kErrorAccent : kSuccessAccent);
+                flashLens(lens, writeDebugDump().empty() ? kErrorAccent : kSuccessAccent);
             }
             return 0;
         case WM_TIMER:
             if (wParam == kTimerTick) {
-                trigger_->tick();
-                refreshDebugOverlay();
-                refreshOverlay();
+                for (const std::unique_ptr<Lens>& lens : lenses_) {
+                    lens->trigger->tick();
+                    refreshDebugOverlay(*lens);
+                    refreshOverlay(*lens);
+                }
             } else if (wParam == kTimerRestoreAccent) {
                 KillTimer(hwnd_, kTimerRestoreAccent);
-                flashing_ = false;
-                updateAccent();
+                for (const std::unique_ptr<Lens>& lens : lenses_) {
+                    lens->flashing = false;
+                    updateAccent(*lens);
+                }
             }
             return 0;
         case WM_DISPLAYCHANGE:
             // 解析度或螢幕配置改變：重建擷取，並重新等待畫面穩定
             capture_->reset();
-            trigger_->onMoveSizeEnd(lens_->contentScreenRect());
+            for (const std::unique_ptr<Lens>& lens : lenses_) {
+                lens->trigger->onMoveSizeEnd(lens->window->contentScreenRect());
+            }
             return 0;
         case WM_POWERBROADCAST:
             if (wParam == PBT_APMRESUMEAUTOMATIC) {
                 capture_->reset();
-                trigger_->onMoveSizeEnd(lens_->contentScreenRect());
+                for (const std::unique_ptr<Lens>& lens : lenses_) {
+                    lens->trigger->onMoveSizeEnd(lens->window->contentScreenRect());
+                }
             }
             return TRUE;
         case WM_DESTROY:
             KillTimer(hwnd_, kTimerTick);
             KillTimer(hwnd_, kTimerRestoreAccent);
             unregisterHotkeys();
-            // 依相依關係的反向順序釋放：透鏡的回呼會用到 trigger_，trigger_ 會用到 frameSource_
-            lens_.reset();
+            // 依相依關係的反向順序釋放：透鏡（視窗和觸發器）會用到 frameSource_
+            lenses_.clear();
             tray_.reset();
-            trigger_.reset();
             frameSource_.reset();
             capture_.reset();
             PostQuitMessage(0);
@@ -465,8 +460,14 @@ void AppController::showTrayMenu(POINT anchor) {
     if (menu == nullptr) {
         return;
     }
-    AppendMenuW(menu, MF_STRING | (lens_->isVisible() ? MF_CHECKED : MF_UNCHECKED),
+    AppendMenuW(menu,
+                MF_STRING | (lenses_.front()->window->isVisible() ? MF_CHECKED : MF_UNCHECKED),
                 kCommandToggleLens, L"顯示透鏡");
+    const std::wstring addLabel = L"新增透鏡（目前 " + std::to_wstring(lenses_.size()) + L" 個）";
+    AppendMenuW(menu, MF_STRING | (lenses_.size() < kMaxLenses ? MF_ENABLED : MF_GRAYED),
+                kCommandAddLens, addLabel.c_str());
+    AppendMenuW(menu, MF_STRING | (lenses_.size() > 1 ? MF_ENABLED : MF_GRAYED), kCommandRemoveLens,
+                L"關閉最後新增的透鏡");
     AppendMenuW(menu, MF_STRING | (settings_.overlay ? MF_CHECKED : MF_UNCHECKED),
                 kCommandToggleOverlay, L"在原位顯示譯文");
     AppendMenuW(menu, MF_STRING, kCommandOpenResults, L"開啟結果視窗");
@@ -506,7 +507,7 @@ void AppController::showTrayMenu(POINT anchor) {
     AppendMenuW(
         menu, MF_STRING, kCommandDebugDump,
         menuLabel(L"除錯傾印", debugDumpHotkeyRegistered_, settings_.hotkeys.debugDump).c_str());
-    AppendMenuW(menu, MF_STRING | (debugOverlay_ != nullptr ? MF_CHECKED : MF_UNCHECKED),
+    AppendMenuW(menu, MF_STRING | (debugOverlayEnabled_ ? MF_CHECKED : MF_UNCHECKED),
                 kCommandToggleDebugOverlay, L"除錯覆蓋框（顯示 OCR 框和耗時）");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu, MF_STRING | (autoSave_ ? MF_CHECKED : MF_UNCHECKED), kCommandToggleAutoSave,
@@ -528,38 +529,126 @@ void AppController::showTrayMenu(POINT anchor) {
 }
 
 void AppController::setLensVisible(bool visible) {
-    lens_->setVisible(visible);
-    // 隱藏時完全不取樣、不觸發；重新顯示時從「等待穩定」開始
-    trigger_->setEnabled(visible);
+    for (const std::unique_ptr<Lens>& lens : lenses_) {
+        lens->window->setVisible(visible);
+        // 隱藏時完全不取樣、不觸發；重新顯示時從「等待穩定」開始
+        lens->trigger->setEnabled(visible && !paused_);
+    }
 }
 
-void AppController::process(const core::ProcessRequest& request) {
-    if (autoSave_ && !saveLensCapture()) {
-        flashLens(kErrorAccent);
-    }
-    const platform::LogContext context{.lens = 1, .sequence = request.generation};
-    if (worker_ == nullptr || !lens_->isVisible()) {
-        platform::log(platform::LogLevel::Info, context,
-                      worker_ == nullptr ? "沒有可用的處理管線，跳過" : "透鏡沒顯示，跳過");
-        trigger_->onProcessingFinished(request.generation);
+void AppController::addLens() {
+    if (lenses_.size() >= kMaxLenses) {
         return;
     }
-    const core::RectI region = lens_->contentScreenRect();
+    auto lens = std::make_unique<Lens>();
+    lens->id = nextLensId_++;
+    Lens* const self = lens.get();  // 放在堆積上，加進 lenses_ 之後位址不變
+
+    core::AutoTrigger::Callbacks triggerCallbacks;
+    triggerCallbacks.onStateChanged = [this, self](core::LensState) { updateAccent(*self); };
+    triggerCallbacks.onProcess = [this, self](const core::ProcessRequest& request) {
+        process(*self, request);
+    };
+    core::AutoTriggerConfig triggerConfig;
+    triggerConfig.focusOnText = settings_.gameMode;
+    triggerConfig.settleTime = std::chrono::milliseconds(settings_.settleMs);
+    lens->trigger = std::make_unique<core::AutoTrigger>(clock_, *frameSource_, triggerConfig,
+                                                        std::move(triggerCallbacks));
+
+    platform::LensWindow::Callbacks lensCallbacks;
+    lensCallbacks.onMoveSizeStart = [this, self] {
+        activeLensId_ = self->id;  // 擷取、除錯傾印跟著最後拖動的透鏡
+        self->trigger->onMoveSizeStart();
+    };
+    lensCallbacks.onMoveSizeEnd = [self] {
+        self->trigger->onMoveSizeEnd(self->window->contentScreenRect());
+    };
+    lens->window = std::make_unique<platform::LensWindow>(
+        reinterpret_cast<HINSTANCE>(GetWindowLongPtrW(hwnd_, GWLP_HINSTANCE)), kDefaultContentSize,
+        std::move(lensCallbacks));
+    if (!lenses_.empty()) {
+        // 新的透鏡和第一個一樣出現在螢幕中央，疊在一起看不出來：往右下錯開
+        const int step = kNewLensOffset * static_cast<int>(lenses_.size());
+        lens->window->moveBy(step, step);
+    }
+    lens->trigger->setEnabled(!paused_);
+    lens->trigger->onMoveSizeEnd(lens->window->contentScreenRect());
+    updateAccent(*lens);
+    attachOverlays(*lens);
+    activeLensId_ = lens->id;
+    platform::logInfo("新增透鏡 " + std::to_string(lens->id) + "，共 " +
+                      std::to_string(lenses_.size() + 1) + " 個");
+    lenses_.push_back(std::move(lens));
+}
+
+void AppController::removeLens() {
+    if (lenses_.size() <= 1) {
+        return;  // 第一個透鏡不關，只能藏起來
+    }
+    const int id = lenses_.back()->id;
+    if (worker_ != nullptr) {
+        worker_->cancel(id);  // 還在路上的結果回來時找不到透鏡，會被丟掉
+    }
+    lenses_.pop_back();
+    if (activeLensId_ == id) {
+        activeLensId_ = lenses_.front()->id;
+    }
+    platform::logInfo("關閉透鏡 " + std::to_string(id) + "，剩 " + std::to_string(lenses_.size()) +
+                      " 個");
+}
+
+AppController::Lens* AppController::findLens(int id) {
+    for (const std::unique_ptr<Lens>& lens : lenses_) {
+        if (lens->id == id) {
+            return lens.get();
+        }
+    }
+    return nullptr;
+}
+
+AppController::Lens& AppController::activeLens() {
+    Lens* lens = findLens(activeLensId_);
+    return lens != nullptr ? *lens : *lenses_.front();
+}
+
+void AppController::translateNow() {
+    if (paused_) {
+        return;
+    }
+    for (const std::unique_ptr<Lens>& lens : lenses_) {
+        if (lens->window->isVisible()) {
+            lens->trigger->manualTrigger();
+        }
+    }
+}
+
+void AppController::process(Lens& lens, const core::ProcessRequest& request) {
+    if (autoSave_ && !saveLensCapture(lens)) {
+        flashLens(lens, kErrorAccent);
+    }
+    const platform::LogContext context{.lens = lens.id, .sequence = request.generation};
+    if (worker_ == nullptr || !lens.window->isVisible()) {
+        platform::log(platform::LogLevel::Info, context,
+                      worker_ == nullptr ? "沒有可用的處理管線，跳過" : "透鏡沒顯示，跳過");
+        lens.trigger->onProcessingFinished(request.generation);
+        return;
+    }
+    const core::RectI region = lens.window->contentScreenRect();
     std::optional<core::ImageBgra> frame = capture_->readRegion(region);
     if (!frame) {
         platform::log(platform::LogLevel::Warn, context, "擷取透鏡範圍失敗，這次不處理");
-        trigger_->onProcessingFinished(request.generation);
+        lens.trigger->onProcessingFinished(request.generation);
         return;
     }
     core::PipelineJob job;
     job.generation = request.generation;
-    job.lens = 1;
+    job.lens = lens.id;
     job.region = region;
     job.frame = std::move(*frame);
     job.manual = request.manual;
     job.language = settings_.ocrLanguage;
     job.glossary = currentGlossary();
-    if (overlay_ != nullptr) {
+    if (lens.overlay != nullptr) {
         job.inpainter = inpainter_;  // 只有譯文要蓋在原文上時才修補背景
     }
     platform::log(platform::LogLevel::Info, context,
@@ -704,13 +793,17 @@ void AppController::applyProfileValues() {
     setMangaMode(settings_.mangaMode);  // 模型載入失敗時它會把 mangaMode 留在 false
     setGameMode(settings_.gameMode);
     setOcrLanguage(settings_.ocrLanguage);
-    trigger_->setSettleTime(std::chrono::milliseconds(settings_.settleMs));
+    for (const std::unique_ptr<Lens>& lens : lenses_) {
+        lens->trigger->setSettleTime(std::chrono::milliseconds(settings_.settleMs));
+    }
     rebuildTranslation();  // 處理管線的「碰到邊緣的句子不翻」
 }
 
 void AppController::setGameMode(bool enabled) {
     settings_.gameMode = enabled;
-    trigger_->setFocusOnText(enabled);
+    for (const std::unique_ptr<Lens>& lens : lenses_) {
+        lens->trigger->setFocusOnText(enabled);
+    }
     platform::logInfo(enabled ? "遊戲模式：開（辨識之後只看文字區域有沒有變）" : "遊戲模式：關");
 }
 
@@ -842,7 +935,9 @@ void AppController::applySettings(const core::Settings& settings) {
     // 這兩項改的是目前情境的值（切走情境時會存回去）；處理管線在下面重建時套用
     settings_.dropEdgeBlocks = settings.dropEdgeBlocks;
     settings_.settleMs = settings.settleMs;
-    trigger_->setSettleTime(std::chrono::milliseconds(settings_.settleMs));
+    for (const std::unique_ptr<Lens>& lens : lenses_) {
+        lens->trigger->setSettleTime(std::chrono::milliseconds(settings_.settleMs));
+    }
     if (!settingsPath_.empty()) {
         platform::saveSettings(settingsPath_, settings_);
     }
@@ -851,79 +946,94 @@ void AppController::applySettings(const core::Settings& settings) {
 }
 
 void AppController::setDebugOverlayEnabled(bool enabled) {
-    if (!enabled) {
-        debugOverlay_.reset();
-        return;
+    debugOverlayEnabled_ = enabled;
+    for (const std::unique_ptr<Lens>& lens : lenses_) {
+        if (enabled) {
+            attachOverlays(*lens);
+        } else {
+            lens->debugOverlay.reset();
+        }
     }
-    if (debugOverlay_ != nullptr) {
-        return;
+    platform::logInfo(enabled ? "打開除錯覆蓋框" : "關閉除錯覆蓋框");
+}
+
+void AppController::attachOverlays(Lens& lens) {
+    const auto instance = reinterpret_cast<HINSTANCE>(GetWindowLongPtrW(hwnd_, GWLP_HINSTANCE));
+    if (debugOverlayEnabled_ && lens.debugOverlay == nullptr) {
+        try {
+            lens.debugOverlay = std::make_unique<platform::DebugOverlayWindow>(instance);
+            // 剛打開就畫一次，不必等下一個結果
+            lens.debugOverlayGeneration = 0;
+            lens.debugOverlayRect = {};
+            refreshDebugOverlay(lens);
+        } catch (const std::exception& error) {
+            platform::logWarn(std::string("打不開除錯覆蓋框：") + error.what());
+        }
     }
-    try {
-        debugOverlay_ = std::make_unique<platform::DebugOverlayWindow>(
-            reinterpret_cast<HINSTANCE>(GetWindowLongPtrW(hwnd_, GWLP_HINSTANCE)));
-        // 剛打開就畫一次，不必等下一個結果
-        debugOverlayGeneration_ = 0;
-        debugOverlayRect_ = {};
-        refreshDebugOverlay();
-        platform::logInfo("打開除錯覆蓋框");
-    } catch (const std::exception& error) {
-        platform::logWarn(std::string("打不開除錯覆蓋框：") + error.what());
-        debugOverlay_.reset();
+    if (overlayRenderer_ != nullptr && lens.overlay == nullptr) {
+        try {
+            lens.overlay = std::make_unique<platform::TranslationOverlayWindow>(instance);
+            lens.overlayGeneration = 0;
+            refreshOverlay(lens);
+        } catch (const std::exception& error) {
+            platform::logWarn(std::string("無法在原位顯示譯文：") + error.what());
+        }
     }
 }
 
-void AppController::refreshDebugOverlay() {
-    if (debugOverlay_ == nullptr || lens_ == nullptr) {
+void AppController::refreshDebugOverlay(Lens& lens) {
+    if (lens.debugOverlay == nullptr) {
         return;
     }
-    if (!lens_->isVisible()) {
-        debugOverlay_->hide();
+    if (!lens.window->isVisible()) {
+        lens.debugOverlay->hide();
         return;
     }
-    const core::RectI rect = lens_->contentScreenRect();
-    const core::LensState state = trigger_->state();
-    const std::uint64_t generation = lastResult_.has_value() ? lastResult_->generation : 0;
+    const core::RectI rect = lens.window->contentScreenRect();
+    const core::LensState state = lens.trigger->state();
+    const std::uint64_t generation = lens.lastResult.has_value() ? lens.lastResult->generation : 0;
     // 每 100 毫秒都會走到這裡，沒變就不重畫
-    if (state == debugOverlayState_ && generation == debugOverlayGeneration_ &&
-        rect == debugOverlayRect_ && debugOverlay_->isVisible()) {
+    if (state == lens.debugOverlayState && generation == lens.debugOverlayGeneration &&
+        rect == lens.debugOverlayRect && lens.debugOverlay->isVisible()) {
         return;
     }
-    debugOverlayState_ = state;
-    debugOverlayGeneration_ = generation;
-    debugOverlayRect_ = rect;
+    lens.debugOverlayState = state;
+    lens.debugOverlayGeneration = generation;
+    lens.debugOverlayRect = rect;
 
     const core::DebugOverlay overlay =
-        lastResult_.has_value() ? core::buildDebugOverlay(*lastResult_, rect, stateName(state))
-                                : core::buildDebugOverlay(stateName(state));
-    debugOverlay_->update(rect, overlay);
+        lens.lastResult.has_value()
+            ? core::buildDebugOverlay(*lens.lastResult, rect, stateName(state))
+            : core::buildDebugOverlay(stateName(state));
+    lens.debugOverlay->update(rect, overlay);
 }
 
 void AppController::setOverlayEnabled(bool enabled) {
     settings_.overlay = enabled;
-    overlayGeneration_ = 0;
     if (!enabled) {
-        overlay_.reset();
+        for (const std::unique_ptr<Lens>& lens : lenses_) {
+            lens->overlay.reset();
+        }
         overlayRenderer_.reset();
         inpainter_.reset();  // 釋放 LaMa 占的記憶體
         return;
     }
-    if (overlay_ != nullptr) {
+    if (overlayRenderer_ != nullptr) {
         return;
     }
     try {
         overlayRenderer_ = std::make_unique<platform::OverlayRenderer>();
-        applyOverlayFont();
-        setUpInpainter();
-        overlay_ = std::make_unique<platform::TranslationOverlayWindow>(
-            reinterpret_cast<HINSTANCE>(GetWindowLongPtrW(hwnd_, GWLP_HINSTANCE)));
-        refreshOverlay();
-        platform::logInfo("在原位顯示譯文");
     } catch (const std::exception& error) {
         platform::logWarn(std::string("無法在原位顯示譯文：") + error.what());
-        overlay_.reset();
-        overlayRenderer_.reset();
         settings_.overlay = false;
+        return;
     }
+    applyOverlayFont();
+    setUpInpainter();
+    for (const std::unique_ptr<Lens>& lens : lenses_) {
+        attachOverlays(*lens);
+    }
+    platform::logInfo("在原位顯示譯文");
 }
 
 void AppController::setUpInpainter() {
@@ -961,46 +1071,51 @@ void AppController::applyOverlayFont() {
     } else if (file.empty()) {
         overlayRenderer_->setFont({});
     }
-    overlayGeneration_ = 0;  // 換了字型要重畫
-    refreshOverlay();
+    for (const std::unique_ptr<Lens>& lens : lenses_) {
+        lens->overlayGeneration = 0;  // 換了字型要重畫
+        refreshOverlay(*lens);
+    }
 }
 
-void AppController::refreshOverlay() {
-    if (overlay_ == nullptr || lens_ == nullptr) {
+void AppController::refreshOverlay(Lens& lens) {
+    if (lens.overlay == nullptr || overlayRenderer_ == nullptr) {
         return;
     }
     // 結果要是透鏡「現在」底下的畫面：透鏡移動過、畫面變了、正在重新處理，譯文都會錯位
-    const bool current = lens_->isVisible() && !paused_ && lastResult_.has_value() &&
-                         trigger_->state() == core::LensState::Showing &&
-                         lastResult_->region == lens_->contentScreenRect() &&
-                         !lastResult_->overlay.empty();
+    const std::optional<core::PipelineResult>& result = lens.lastResult;
+    const bool current = lens.window->isVisible() && !paused_ && result.has_value() &&
+                         lens.trigger->state() == core::LensState::Showing &&
+                         result->region == lens.window->contentScreenRect() &&
+                         !result->overlay.empty();
     if (!current) {
-        overlay_->hide();
-        overlayGeneration_ = 0;
+        lens.overlay->hide();
+        lens.overlayGeneration = 0;
         return;
     }
     // 每 100 毫秒都會走到這裡，同一個結果不重畫
-    if (lastResult_->generation == overlayGeneration_ && overlay_->isVisible()) {
+    if (result->generation == lens.overlayGeneration && lens.overlay->isVisible()) {
         return;
     }
-    const core::RectI& region = lastResult_->region;
+    const core::RectI& region = result->region;
     try {
-        const core::ImageBgra image = overlayRenderer_->render(
-            core::SizeI{region.width(), region.height()}, lastResult_->overlay);
-        overlay_->show(core::PointI{region.left, region.top}, image);
-        overlayGeneration_ = lastResult_->generation;
+        const core::ImageBgra image =
+            overlayRenderer_->render(core::SizeI{region.width(), region.height()}, result->overlay);
+        lens.overlay->show(core::PointI{region.left, region.top}, image);
+        lens.overlayGeneration = result->generation;
     } catch (const std::exception& error) {
         platform::logWarn(std::string("畫不出譯文覆蓋層：") + error.what());
-        overlay_->hide();
+        lens.overlay->hide();
     }
 }
 
 std::filesystem::path AppController::writeDebugDump() {
     // 擷取當下的畫面。失敗（例如透鏡藏起來了）不算致命，報告照樣寫。
+    // 除錯傾印看的是最後拖動過的透鏡
+    Lens& lens = activeLens();
     std::optional<core::ImageBgra> capture;
-    if (lens_ != nullptr && capture_ != nullptr) {
+    if (capture_ != nullptr) {
         try {
-            capture = capture_->readRegion(lens_->contentScreenRect());
+            capture = capture_->readRegion(lens.window->contentScreenRect());
         } catch (const std::exception& error) {
             platform::logWarn(std::string("除錯傾印擷取不到畫面：") + error.what());
         }
@@ -1014,10 +1129,10 @@ std::filesystem::path AppController::writeDebugDump() {
     contents.report.engineStatus =
         translation_ == nullptr ? "（沒有翻譯引擎）" : translation_->engineStatus();
     contents.report.settings = settings_;
-    contents.report.lastResult = lastResult_;
+    contents.report.lastResult = lens.lastResult;
     contents.report.perfReport = perf_.report();
-    if (lastResult_.has_value()) {
-        contents.report.lastLines = lastResult_->lines;
+    if (lens.lastResult.has_value()) {
+        contents.report.lastLines = lens.lastResult->lines;
     }
     contents.capture = capture.has_value() ? &*capture : nullptr;
     contents.logsDirectory = dataDirectory_ / L"logs";
@@ -1033,11 +1148,16 @@ std::filesystem::path AppController::writeDebugDump() {
 
 void AppController::onPipelineResult(const core::PipelineResult& result) {
     const platform::LogContext context{.lens = result.lens, .sequence = result.generation};
-    if (!trigger_->onProcessingFinished(result.generation)) {
+    Lens* const lens = findLens(result.lens);
+    if (lens == nullptr) {
+        platform::log(platform::LogLevel::Info, context, "透鏡已經關掉，丟棄");
+        return;
+    }
+    if (!lens->trigger->onProcessingFinished(result.generation)) {
         platform::log(platform::LogLevel::Info, context, "結果已經過時，丟棄");
         return;
     }
-    lastResult_ = result;  // 除錯傾印要的是「最後真的處理過什麼」
+    lens->lastResult = result;  // 除錯傾印要的是「最後真的處理過什麼」
     if (settings_.gameMode) {
         // 下一次只看這些文字在的地方有沒有變（沒讀到文字時回到看整個範圍）
         std::vector<core::RectI> textRegions;
@@ -1045,11 +1165,11 @@ void AppController::onPipelineResult(const core::PipelineResult& result) {
         for (const core::OcrLine& line : result.lines) {
             textRegions.push_back(line.rect);
         }
-        trigger_->setFocusRegions(textRegions);
+        lens->trigger->setFocusRegions(textRegions);
     }
     perf_.add(result.timings);
-    refreshDebugOverlay();
-    refreshOverlay();
+    refreshDebugOverlay(*lens);
+    refreshOverlay(*lens);
     if (!result.error.empty()) {
         platform::log(platform::LogLevel::Warn, context, "翻譯失敗：" + result.error);
     }
@@ -1073,7 +1193,7 @@ void AppController::onPipelineResult(const core::PipelineResult& result) {
     // 視窗還沒開著才把它叫出來。透鏡放在一直變的內容上（遊戲、網頁漫畫）時，
     // 每隔幾秒把結果視窗拉到遊戲畫面前面是不能用的；要一直在最上層的話有「置頂」可以開。
     // 譯文已經蓋在原文上時也不叫：使用者看的是透鏡，結果視窗是要回頭看才開的。
-    if (!resultWindow_->isVisible() && overlay_ == nullptr) {
+    if (!resultWindow_->isVisible() && overlayRenderer_ == nullptr) {
         showResultWindow();
     }
 }
@@ -1088,11 +1208,13 @@ void AppController::showResultWindow() {
 
 void AppController::setPaused(bool paused) {
     paused_ = paused;
-    trigger_->setEnabled(!paused_);
-    if (paused_ && worker_ != nullptr) {
-        worker_->cancel(1);
+    for (const std::unique_ptr<Lens>& lens : lenses_) {
+        lens->trigger->setEnabled(!paused_ && lens->window->isVisible());
+        if (paused_ && worker_ != nullptr) {
+            worker_->cancel(lens->id);
+        }
+        updateAccent(*lens);
     }
-    updateAccent();
 }
 
 void AppController::saveSettings() {
@@ -1105,8 +1227,9 @@ void AppController::saveSettings() {
     platform::saveSettings(settingsPath_, settings_);
 }
 
-bool AppController::saveLensCapture() {
-    const std::optional<core::ImageBgra> image = capture_->readRegion(lens_->contentScreenRect());
+bool AppController::saveLensCapture(Lens& lens) {
+    const std::optional<core::ImageBgra> image =
+        capture_->readRegion(lens.window->contentScreenRect());
     if (!image) {
         return false;
     }
@@ -1120,15 +1243,15 @@ bool AppController::saveLensCapture() {
     }
 }
 
-void AppController::updateAccent() {
-    if (lens_ && !flashing_) {
-        lens_->setAccent(accentFor(trigger_->state()));
+void AppController::updateAccent(Lens& lens) {
+    if (lens.window != nullptr && !lens.flashing) {
+        lens.window->setAccent(accentFor(lens.trigger->state()));
     }
 }
 
-void AppController::flashLens(core::Rgba accent) {
-    flashing_ = true;
-    lens_->setAccent(accent);
+void AppController::flashLens(Lens& lens, core::Rgba accent) {
+    lens.flashing = true;
+    lens.window->setAccent(accent);
     SetTimer(hwnd_, kTimerRestoreAccent, kFlashMilliseconds, nullptr);
 }
 

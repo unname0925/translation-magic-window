@@ -50,13 +50,42 @@ public:
     static void notifyRunningInstance();
 
 private:
+    // 一個透鏡，和只屬於它的東西（M5-05：可以開好幾個透鏡）。
+    // 成員的宣告順序就是解構的反序：視窗最先消失，不會再呼叫已經不在的觸發器
+    struct Lens {
+        int id = 1;  // 處理管線用它分開各透鏡的記憶；關掉的編號不再使用
+        std::unique_ptr<core::AutoTrigger> trigger;
+        std::unique_ptr<platform::LensWindow> window;
+        // 最後一次處理的結果，除錯傾印、覆蓋框和譯文覆蓋層要用
+        std::optional<core::PipelineResult> lastResult;
+        // 譯文覆蓋層（打開「在原位顯示譯文」時才有）和目前貼著的是哪一次的結果
+        std::unique_ptr<platform::TranslationOverlayWindow> overlay;
+        std::uint64_t overlayGeneration = 0;
+        // 除錯覆蓋框，和上一次畫的是什麼（一樣就不重畫，每 100 毫秒會檢查一次）
+        std::unique_ptr<platform::DebugOverlayWindow> debugOverlay;
+        core::LensState debugOverlayState = core::LensState::Showing;
+        std::uint64_t debugOverlayGeneration = 0;
+        core::RectI debugOverlayRect{};
+        bool flashing = false;
+    };
+
     static LRESULT CALLBACK windowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
     LRESULT handleMessage(UINT message, WPARAM wParam, LPARAM lParam);
     void showTrayMenu(POINT anchor);
+    // 所有透鏡一起藏起或叫出來
     void setLensVisible(bool visible);
+    // 新增一個透鏡（最多 kMaxLenses 個），放在第一個透鏡的右下方
+    void addLens();
+    // 關掉最後新增的那個透鏡（第一個透鏡不能關，只能藏起來）
+    void removeLens();
+    Lens* findLens(int id);
+    // 最後拖動過的透鏡：擷取、除錯傾印用它
+    Lens& activeLens();
+    // 「立即翻譯」：每個顯示中的透鏡都翻一次
+    void translateNow();
 
     // 畫面穩定後的「處理」：擷取透鏡底下的畫面，交給處理管線。
-    void process(const core::ProcessRequest& request);
+    void process(Lens& lens, const core::ProcessRequest& request);
 
     // 處理管線的結果回到 UI 執行緒之後
     void onPipelineResult(const core::PipelineResult& result);
@@ -84,7 +113,7 @@ private:
     // 例如「Ctrl+Alt+T（立即翻譯）」
     std::vector<std::string> registerHotkeys();
     void unregisterHotkeys();
-    void refreshDebugOverlay();
+    void refreshDebugOverlay(Lens& lens);
     // glossary.txt 改過（或第一次）就重新讀取，回傳目前的詞表；沒有檔案時是 nullptr
     std::shared_ptr<const core::Glossary> currentGlossary();
     // 用預設的編輯器打開 glossary.txt，還沒有的話先建立一份附說明的
@@ -97,10 +126,10 @@ private:
     void saveSettings();
 
     // 把透鏡範圍擷取下來存成 PNG（開發用的驗證工具）
-    bool saveLensCapture();
+    bool saveLensCapture(Lens& lens);
 
     // 邊框顏色：平常依照觸發狀態，手動擷取時短暫閃一下成功或失敗的顏色
-    void updateAccent();
+    void updateAccent(Lens& lens);
     // 在原位顯示譯文（M3）。只在「顯示結果中」而且透鏡沒動過時顯示；
     // 畫面一變、開始拖動或重新處理就先藏起來（M3-04），不會留下錯位的譯文
     void setOverlayEnabled(bool enabled);
@@ -108,8 +137,10 @@ private:
     void applyOverlayFont();
     // 背景修補（M4-01）：OCR 用顯示卡而且有 LaMa 模型時才有
     void setUpInpainter();
-    void refreshOverlay();
-    void flashLens(core::Rgba accent);
+    void refreshOverlay(Lens& lens);
+    // 建立這個透鏡的譯文覆蓋層和除錯覆蓋框（有打開的話）
+    void attachOverlays(Lens& lens);
+    void flashLens(Lens& lens, core::Rgba accent);
 
     std::filesystem::path dataDirectory_;
     HWND hwnd_ = nullptr;
@@ -119,7 +150,6 @@ private:
     bool translateHotkeyRegistered_ = false;
     bool debugDumpHotkeyRegistered_ = false;
     bool autoSave_ = false;
-    bool flashing_ = false;
     bool paused_ = false;
     std::filesystem::path settingsPath_;
     core::Settings settings_;
@@ -134,7 +164,6 @@ private:
     core::SteadyClock clock_;
     std::unique_ptr<platform::ScreenCapture> capture_;
     std::unique_ptr<platform::CaptureFrameSource> frameSource_;
-    std::unique_ptr<core::AutoTrigger> trigger_;
     // 翻譯：OCR 和引擎鏈建立失敗時這些會是空的，程式照常執行
     std::unique_ptr<ocr::OcrService> ocr_;
     std::shared_ptr<core::TranslationService> translation_;
@@ -143,25 +172,23 @@ private:
     core::History history_;
     std::unique_ptr<ui::ResultWindow> resultWindow_;
     std::unique_ptr<ui::SettingsWindow> settingsWindow_;
-    // 最後一次處理的結果，除錯傾印和覆蓋框要用
-    std::optional<core::PipelineResult> lastResult_;
     // 每個步驟的耗時，除錯傾印會附上統計（M1-15）
     core::PerfStats perf_;
-    std::unique_ptr<platform::DebugOverlayWindow> debugOverlay_;
-    // 上一次畫的是什麼，一樣就不重畫（每 100 毫秒會檢查一次）
-    core::LensState debugOverlayState_ = core::LensState::Showing;
-    std::uint64_t debugOverlayGeneration_ = 0;
-    core::RectI debugOverlayRect_{};
-    // 譯文覆蓋層：關掉時兩個都是空的
+    bool debugOverlayEnabled_ = false;
+    // 譯文覆蓋層的繪製器（所有透鏡共用）。關掉時是空的
     std::unique_ptr<platform::OverlayRenderer> overlayRenderer_;
-    std::unique_ptr<platform::TranslationOverlayWindow> overlay_;
     // 背景修補。工作執行緒在用的時候 job 也握著它，所以是 shared_ptr
     std::shared_ptr<core::IInpainter> inpainter_;
-    // 目前貼在畫面上的是哪一次的結果（0 = 沒有）
-    std::uint64_t overlayGeneration_ = 0;
 
     std::unique_ptr<platform::TrayIcon> tray_;
-    std::unique_ptr<platform::LensWindow> lens_;
+    // 透鏡（M5-05）。第一個一定在；放在最後，解構時最先消失
+    std::vector<std::unique_ptr<Lens>> lenses_;
+    int nextLensId_ = 1;
+    int activeLensId_ = 1;
+
+public:
+    // 同時最多幾個透鏡。每個透鏡處理時都要 OCR，太多會互相等待
+    static constexpr std::size_t kMaxLenses = 4;
 };
 
 }  // namespace tmw::app

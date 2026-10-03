@@ -40,6 +40,9 @@ enum Command : UINT {
     kCommandProfileGame = 21,
     kCommandProfileWeb = 22,
     kCommandToggleOverlay = 23,
+    // 多個透鏡（M5-05）
+    kCommandAddLens = 24,
+    kCommandRemoveLens = 25,
 };
 
 }  // namespace tmw::app
