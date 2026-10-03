@@ -90,6 +90,8 @@ void OcrPipeline::warmUp() {
                                                                                : mainRecognizer();
     const cv::Mat crop(48, 512, CV_8UC3, cv::Scalar(255, 255, 255));
     if (options_.batchRecognition) {
+        // DirectML：固定形狀的工作階段先建好，第一次真的辨識時才不會卡住
+        recognizer.warmUpFixedShapes();
         const std::array<cv::Mat, 1> crops{crop};
         recognizer.recognize(crops, options_.maxBatch);
     } else {

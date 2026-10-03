@@ -69,6 +69,36 @@ TEST(CtcGreedyDecodeTest, TieTakesFirstIndexLikeNumpyArgmax) {
     EXPECT_EQ(ctcGreedyDecode(row, 1, kCharacters).text, "a");
 }
 
+// 模型已經挑好每個時間點的最大值（inference_argmax.onnx）：結果要和整張機率表解碼完全一樣
+TEST(CtcDecodeMaximaTest, GivesTheSameResultAsTheFullProbabilities) {
+    const auto p =
+        steps({{1, 0.9f}, {1, 0.8f}, {0, 0.9f}, {1, 0.7f}, {2, 0.6f}, {2, 0.9f}, {3, 0.5f}});
+    std::vector<float> maxima;
+    for (std::size_t t = 0; t < 7; ++t) {
+        const auto row = std::span(p).subspan(t * kCharacters.size(), kCharacters.size());
+        const auto best = std::max_element(row.begin(), row.end());
+        maxima.push_back(static_cast<float>(best - row.begin()));
+        maxima.push_back(*best);
+    }
+    const Recognition full = ctcGreedyDecode(p, 7, kCharacters);
+    const Recognition fromMaxima = ctcDecodeMaxima(maxima, 7, kCharacters);
+    EXPECT_EQ(fromMaxima.text, full.text);
+    EXPECT_FLOAT_EQ(fromMaxima.score, full.score);
+}
+
+TEST(CtcDecodeMaximaTest, SizeMismatchThrows) {
+    EXPECT_THROW(ctcDecodeMaxima(std::vector<float>(5, 0.1f), 2, kCharacters),
+                 std::invalid_argument);
+}
+
+TEST(FixedRecognitionShapeTest, PicksTheNarrowestShapeThatFits) {
+    EXPECT_EQ(fixedRecognitionShapeFor(320), 0) << "最常見的寬度（中位數）";
+    EXPECT_EQ(fixedRecognitionShapeFor(384), 0);
+    EXPECT_EQ(fixedRecognitionShapeFor(385), 1);
+    EXPECT_EQ(fixedRecognitionShapeFor(1536), 2);
+    EXPECT_EQ(fixedRecognitionShapeFor(1537), -1) << "更寬的走原本的動態路線";
+}
+
 TEST(CtcGreedyDecodeTest, SizeMismatchThrows) {
     EXPECT_THROW(ctcGreedyDecode(std::vector<float>(7, 0.1f), 2, kCharacters),
                  std::invalid_argument);

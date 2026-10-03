@@ -89,11 +89,14 @@ struct OnnxModel::Impl {
 namespace {
 
 // Auto：先試 DirectML。建立工作階段就會用到顯示卡和驅動，失敗表示這台電腦跑不了，改用 CPU。
-Ort::Session createSession(const std::filesystem::path& onnxFile, Device device,
-                           bool optimizeGraph) {
+Ort::Session createSession(const std::filesystem::path& onnxFile, Device device, bool optimizeGraph,
+                           std::span<const FixedDimension> fixedDimensions) {
     Ort::SessionOptions options;
     if (!optimizeGraph) {
         options.SetGraphOptimizationLevel(ORT_DISABLE_ALL);
+    }
+    for (const FixedDimension& dimension : fixedDimensions) {
+        options.AddFreeDimensionOverrideByName(dimension.name.c_str(), dimension.size);
     }
     if (device == Device::DirectML) {
         if (!directMLAvailable()) {
@@ -111,27 +114,29 @@ Ort::Session createSession(const std::filesystem::path& onnxFile, Device device,
 }  // namespace
 
 Ort::Session createOnnxSession(const std::filesystem::path& onnxFile, Device& device,
-                               bool optimizeGraph) {
+                               bool optimizeGraph,
+                               std::span<const FixedDimension> fixedDimensions) {
     const bool automatic = device == Device::Auto;
     device = automatic ? Device::DirectML : device;
     try {
-        return createSession(onnxFile, device, optimizeGraph);
+        return createSession(onnxFile, device, optimizeGraph, fixedDimensions);
     } catch (const Ort::Exception&) {
         if (!automatic) {
             throw;  // 明確指定的裝置建立不起來就是失敗，不能默默換掉
         }
         // 沒有相容的顯示卡或驅動有問題：改用 CPU（design.md 4.4）
         device = Device::Cpu;
-        return createSession(onnxFile, Device::Cpu, optimizeGraph);
+        return createSession(onnxFile, Device::Cpu, optimizeGraph, fixedDimensions);
     }
 }
 
 OnnxModel::OnnxModel(const std::filesystem::path& onnxFile, Device device,
-                     std::string_view outputName, bool optimizeGraph)
+                     std::string_view outputName, bool optimizeGraph,
+                     std::span<const FixedDimension> fixedDimensions)
     : impl_(std::make_unique<Impl>()) {
     impl_->device = device;
     try {
-        impl_->session = createOnnxSession(onnxFile, impl_->device, optimizeGraph);
+        impl_->session = createOnnxSession(onnxFile, impl_->device, optimizeGraph, fixedDimensions);
 
         if (impl_->session.GetInputCount() != 1) {
             throw std::runtime_error("expected a model with one input");
@@ -168,6 +173,19 @@ OnnxModel::~OnnxModel() = default;
 
 Device OnnxModel::device() const {
     return impl_->device;
+}
+
+std::vector<std::string> OnnxModel::inputDimensionNames() const {
+    const Ort::TypeInfo type = impl_->session.GetInputTypeInfo(0);
+    const auto info = type.GetTensorTypeAndShapeInfo();
+    std::vector<const char*> names(info.GetDimensionsCount(), nullptr);
+    info.GetSymbolicDimensions(names.data(), names.size());
+    std::vector<std::string> out;
+    out.reserve(names.size());
+    for (const char* name : names) {
+        out.emplace_back(name != nullptr ? name : "");
+    }
+    return out;
 }
 
 Tensor OnnxModel::run(std::span<const float> input, std::span<const std::int64_t> shape) {

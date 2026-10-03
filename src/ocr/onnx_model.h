@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <memory>
 #include <span>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -39,6 +40,12 @@ bool directMLAvailable();
 // 還沒載入或找不到時是空的。
 std::filesystem::path loadedDirectMLPath();
 
+// 模型可變維度的名稱和要固定的大小（例如 PP-OCR 辨識模型的 "DynamicDimension.1" = 384）
+struct FixedDimension {
+    std::string name;
+    std::int64_t size = 0;
+};
+
 struct Tensor {
     std::vector<std::int64_t> shape;
     std::vector<float> data;
@@ -52,8 +59,10 @@ public:
     // outputName：模型有好幾個輸出時要取哪一個。空字串表示模型必須剛好只有一個輸出，
     // 多了就當成放錯模型（例如把 comic-text-detector 當成 PP-OCR 載入）。
     // optimizeGraph：ONNX Runtime 自己的圖形最佳化（見 onnx_internal.h 的量測）
+    // fixedDimensions：固定可變的維度，給 DirectML 走快的路線（見 onnx_internal.h）
     OnnxModel(const std::filesystem::path& onnxFile, Device device,
-              std::string_view outputName = {}, bool optimizeGraph = true);
+              std::string_view outputName = {}, bool optimizeGraph = true,
+              std::span<const FixedDimension> fixedDimensions = {});
     ~OnnxModel();
 
     OnnxModel(const OnnxModel&) = delete;
@@ -61,6 +70,9 @@ public:
 
     // 實際使用的裝置（Auto 會解析成 Cpu 或 DirectML）
     Device device() const;
+
+    // 輸入的可變維度名稱，依維度順序（固定的維度是空字串）
+    std::vector<std::string> inputDimensionNames() const;
 
     // 輸入一個 float 張量（例如 NCHW），回傳輸出張量。失敗時丟出 std::runtime_error。
     Tensor run(std::span<const float> input, std::span<const std::int64_t> shape);

@@ -117,6 +117,14 @@ tools/eval/.venv/Scripts/python tools/eval/furigana_dict.py build --jmdict .cach
 
 沒有讀音表時程式照常運作，改用「讀音是片假名」判斷。
 
+**辨識加速**（建議，需要顯示卡）：在辨識模型最後加上「取最大值」，顯示卡上每批辨識快約 1/3（需要 `pip install onnx`，
+程式找不到這些檔案時照舊執行）：
+
+```powershell
+tools/eval/.venv/Scripts/python tools/eval/rec_argmax.py models/PP-OCRv6_medium_rec models/PP-OCRv6_small_rec `
+    models/korean_PP-OCRv5_mobile_rec
+```
+
 **背景修補**（選用，需要顯示卡）：在原位顯示譯文時，把畫在圖上的字抹掉再畫譯文（遊戲的半透明對話框效果最好）。
 模型 208 MB，下載後要改寫成顯示卡跑得動的版本（需要 `pip install onnx`）：
 

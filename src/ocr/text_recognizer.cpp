@@ -58,6 +58,15 @@ int recognitionBatchSize(int bucketWidth, int maxBatch) {
     return std::clamp(kBatchWidthBudget / bucketWidth, 1, std::max(1, maxBatch));
 }
 
+int fixedRecognitionShapeFor(int paddedWidth) {
+    for (std::size_t i = 0; i < kFixedRecognitionShapes.size(); ++i) {
+        if (paddedWidth <= kFixedRecognitionShapes[i].width) {
+            return static_cast<int>(i);
+        }
+    }
+    return -1;
+}
+
 int recognitionWidthBucket(int paddedWidth) {
     for (const int bucket : kWidthBuckets) {
         if (paddedWidth <= bucket) {
@@ -110,6 +119,30 @@ Recognition ctcGreedyDecode(std::span<const float> probabilities, int timeSteps,
     return result;
 }
 
+Recognition ctcDecodeMaxima(std::span<const float> maxima, int timeSteps,
+                            const std::vector<std::string>& characters) {
+    if (maxima.size() != static_cast<std::size_t>(timeSteps) * 2) {
+        throw std::invalid_argument("ctcDecodeMaxima: size mismatch");
+    }
+    Recognition result;
+    double scoreSum = 0.0;
+    int selected = 0;
+    std::size_t previous = 0;
+    for (int t = 0; t < timeSteps; ++t) {
+        const auto index = static_cast<std::size_t>(maxima[static_cast<std::size_t>(t) * 2]);
+        const bool repeated = t > 0 && index == previous;
+        previous = index;
+        if (repeated || index == 0 || index >= characters.size()) {
+            continue;
+        }
+        result.text += characters[index];
+        scoreSum += maxima[static_cast<std::size_t>(t) * 2 + 1];
+        ++selected;
+    }
+    result.score = selected > 0 ? static_cast<float>(scoreSum / selected) : 0.0f;
+    return result;
+}
+
 cv::Mat cropTextRegion(const cv::Mat& bgr, const Quad& box) {
     // get_minarea_rect_crop：先取最小外接矩形，四個角排成左上、右上、右下、左下
     const std::vector<cv::Point> points(box.begin(), box.end());
@@ -139,8 +172,77 @@ cv::Mat cropTextRegion(const cv::Mat& bgr, const Quad& box) {
 }
 
 TextRecognizer::TextRecognizer(const std::filesystem::path& modelDir, Device device)
-    : config_(loadRecognitionModelConfig(modelDir / "inference.yml")),
-      model_(modelDir / "inference.onnx", device) {}
+    : modelFile_(modelDir / "inference.onnx"),
+      config_(loadRecognitionModelConfig(modelDir / "inference.yml")),
+      model_(modelFile_, device) {
+    const std::filesystem::path maxima = modelDir / "inference_argmax.onnx";
+    fixedOutputsMaxima_ = std::filesystem::exists(maxima);
+    fixedModelFile_ = fixedOutputsMaxima_ ? maxima : modelFile_;
+}
+
+OnnxModel& TextRecognizer::fixedModel(std::size_t index) {
+    if (fixed_[index] == nullptr) {
+        // 可變的維度是批次和寬度（PP-OCR 匯出的名稱是 DynamicDimension.0／.1，從模型讀出來）
+        const std::vector<std::string> names = model_.inputDimensionNames();
+        if (names.size() != 4 || names[0].empty() || names[3].empty()) {
+            throw std::runtime_error("recognition model input has no variable batch and width");
+        }
+        const FixedRecognitionShape shape = kFixedRecognitionShapes[index];
+        const std::array<FixedDimension, 2> fixed{FixedDimension{names[0], shape.batch},
+                                                  FixedDimension{names[3], shape.width}};
+        fixed_[index] = std::make_unique<OnnxModel>(fixedModelFile_, Device::DirectML,
+                                                    std::string_view{}, true, fixed);
+    }
+    return *fixed_[index];
+}
+
+void TextRecognizer::warmUpFixedShapes() {
+    if (model_.device() != Device::DirectML) {
+        return;
+    }
+    const cv::Mat blank(config_.imageHeight, config_.imageHeight * 4, CV_8UC3,
+                        cv::Scalar(255, 255, 255));
+    for (std::size_t i = 0; i < kFixedRecognitionShapes.size(); ++i) {
+        std::vector<Recognition> ignored(1);
+        const std::array<std::size_t, 1> item{0};
+        recognizeFixed(std::span(&blank, 1), item, i, ignored);
+    }
+}
+
+void TextRecognizer::recognizeFixed(std::span<const cv::Mat> crops,
+                                    std::span<const std::size_t> items, std::size_t shapeIndex,
+                                    std::vector<Recognition>& results) {
+    const FixedRecognitionShape shape = kFixedRecognitionShapes[shapeIndex];
+    const int imageHeight = config_.imageHeight;
+    const std::size_t classes = config_.characters.size();
+    // 一批一定是 shape.batch 張：沒用到的位置留 0，結果不看
+    std::vector<float> input(static_cast<std::size_t>(shape.batch) * 3 * imageHeight * shape.width,
+                             0.0f);
+    for (std::size_t i = 0; i < items.size(); ++i) {
+        const cv::Mat& crop = crops[items[i]];
+        const RecognitionWidth width =
+            recognitionInputWidth(crop.rows, crop.cols, imageHeight, config_.imageWidth);
+        writeInput(crop, imageHeight, width, shape.width, i, input);
+    }
+    const std::array<std::int64_t, 4> inputShape{shape.batch, 3, imageHeight, shape.width};
+    const Tensor output = fixedModel(shapeIndex).run(input, inputShape);
+    // 每個時間點：挑好的最大值（2 個數）或整張機率表（classes 個數）
+    const std::size_t perStep = fixedOutputsMaxima_ ? 2 : classes;
+    if (output.shape.size() != 3 || output.shape[0] != shape.batch ||
+        output.shape[2] != static_cast<std::int64_t>(perStep)) {
+        throw std::runtime_error("recognition output does not match the character dictionary (" +
+                                 std::to_string(classes) + " characters)");
+    }
+    const auto timeSteps = static_cast<std::size_t>(output.shape[1]);
+    for (std::size_t i = 0; i < items.size(); ++i) {
+        const std::span<const float> row(output.data.data() + i * timeSteps * perStep,
+                                         timeSteps * perStep);
+        results[items[i]] =
+            fixedOutputsMaxima_
+                ? ctcDecodeMaxima(row, static_cast<int>(timeSteps), config_.characters)
+                : ctcGreedyDecode(row, static_cast<int>(timeSteps), config_.characters);
+    }
+}
 
 Recognition TextRecognizer::recognize(const cv::Mat& crop) {
     CV_Assert(crop.type() == CV_8UC3 && !crop.empty());
@@ -166,6 +268,34 @@ std::vector<Recognition> TextRecognizer::recognize(std::span<const cv::Mat> crop
     const std::size_t classes = config_.characters.size();
     std::vector<Recognition> results(crops.size());
 
+    // DirectML：放得進固定形狀的行，依形狀分組、一批批送（見 kFixedRecognitionShapes）。
+    // 剩下的（比最寬的固定形狀還寬，實測沒有出現過）和 CPU 照下面原本的做法
+    std::vector<bool> done(crops.size(), false);
+    if (model_.device() == Device::DirectML) {
+        std::array<std::vector<std::size_t>, kFixedRecognitionShapes.size()> groups;
+        for (std::size_t i = 0; i < crops.size(); ++i) {
+            if (crops[i].empty()) {
+                continue;
+            }
+            CV_Assert(crops[i].type() == CV_8UC3);
+            const int shape = fixedRecognitionShapeFor(
+                recognitionInputWidth(crops[i].rows, crops[i].cols, imageHeight, config_.imageWidth)
+                    .paddedWidth);
+            if (shape >= 0) {
+                groups[static_cast<std::size_t>(shape)].push_back(i);
+                done[i] = true;
+            }
+        }
+        for (std::size_t shape = 0; shape < groups.size(); ++shape) {
+            const auto batch = static_cast<std::size_t>(kFixedRecognitionShapes[shape].batch);
+            for (std::size_t start = 0; start < groups[shape].size(); start += batch) {
+                const std::size_t count = std::min(batch, groups[shape].size() - start);
+                recognizeFixed(crops, std::span(groups[shape]).subspan(start, count), shape,
+                               results);
+            }
+        }
+    }
+
     // 先算每張要補到多寬，再依級距排序，寬度相近的才會落在同一批
     struct Item {
         std::size_t index = 0;
@@ -176,8 +306,8 @@ std::vector<Recognition> TextRecognizer::recognize(std::span<const cv::Mat> crop
     items.reserve(crops.size());
     for (std::size_t i = 0; i < crops.size(); ++i) {
         const cv::Mat& crop = crops[i];
-        if (crop.empty()) {
-            continue;  // 裁不出來的框留空結果
+        if (crop.empty() || done[i]) {
+            continue;  // 裁不出來的框留空結果；已經用固定形狀辨識過的不再做
         }
         CV_Assert(crop.type() == CV_8UC3);
         const RecognitionWidth width =
