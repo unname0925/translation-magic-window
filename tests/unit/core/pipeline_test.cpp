@@ -35,6 +35,12 @@ public:
         return {lines, reports, bubbles};
     }
 
+    OcrResult recognizeManga(const ImageBgra& frame, Language script,
+                             std::stop_token cancel) override {
+        ++mangaCalls;
+        return recognize(frame, script, cancel);
+    }
+
     std::vector<std::optional<std::string>> reread(const ImageBgra&,
                                                    std::span<const RereadRequest> requests,
                                                    std::stop_token) override {
@@ -52,6 +58,7 @@ public:
     // 漫畫模式時 OCR 會回報的對話框
     std::vector<RectI> bubbles;
     int calls = 0;
+    int mangaCalls = 0;  // 其中有幾次是「一律當漫畫」（recognizeManga）
     SizeI lastSize;
     // 每次被呼叫時，呼叫端說「上次是哪個語言」
     std::vector<Language> askedWith;
@@ -590,6 +597,16 @@ TEST_F(MangaRereadTest, OnlyNewBubblesAreReadAgain) {
     ASSERT_EQ(ocr_.rereadRects.size(), 2u);
     EXPECT_EQ(ocr_.rereadRects[1].left, 100) << "第二次只讀新的對話框";
     EXPECT_EQ(result.groups.size(), 2u);
+}
+
+TEST_F(MangaRereadTest, AMangaJobAlwaysLooksForBubbles) {
+    // 網頁漫畫：不管透鏡的漫畫模式設定
+    PipelineJob web = job(400, 300);
+    web.manga = true;
+    run(web);
+    EXPECT_EQ(ocr_.mangaCalls, 1);
+    run(job(400, 300));
+    EXPECT_EQ(ocr_.mangaCalls, 1) << "一般的透鏡工作照舊";
 }
 
 TEST_F(MangaRereadTest, KeepsThePpOcrTextWhenMangaOcrIsUnavailable) {

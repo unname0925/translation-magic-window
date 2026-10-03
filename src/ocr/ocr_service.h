@@ -37,6 +37,9 @@ public:
 
     core::OcrResult recognize(const core::ImageBgra& frame, core::Language script,
                               std::stop_token cancel) override;
+    // 一律找對話框：第一次用到時才載入漫畫模式的模型（在工作執行緒上）
+    core::OcrResult recognizeManga(const core::ImageBgra& frame, core::Language script,
+                                   std::stop_token cancel) override;
 
     // 漫畫模式、而且 manga-ocr 的模型在 models/manga-ocr 時，用它一起重讀這幾段（M2-03）
     std::vector<std::optional<std::string>> reread(const core::ImageBgra& frame,
@@ -62,6 +65,11 @@ public:
     static std::filesystem::path comicTextModelPath(const std::filesystem::path& modelsDirectory);
 
 private:
+    // 載入漫畫模式的模型（已經載入就直接回傳）。comic-text-detector 不在或載入失敗時回傳 false
+    bool loadMangaModels();
+    core::OcrResult recognizeWith(const core::ImageBgra& frame, core::Language script,
+                                  std::stop_token cancel, bool bubbles);
+
     std::filesystem::path modelsDirectory_;
     // 選模型時用的裝置（resolveDevice）。一定要排在 pipeline_ 前面：成員依宣告順序初始化
     Device device_;
@@ -72,6 +80,7 @@ private:
     std::unique_ptr<ComicTextDetector> comicText_;
     std::unique_ptr<MangaOcr> mangaOcr_;
     std::atomic<bool> mangaMode_{false};
+    std::atomic<bool> comicTextLoaded_{false};
     std::atomic<bool> mangaOcrLoaded_{false};
 };
 

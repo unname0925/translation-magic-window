@@ -51,6 +51,8 @@ struct PipelineJob {
     std::uint64_t prepareTicket = 0;
     // 不是 0：預先做過 OCR 的票號，之後畫面沒有變。記下來的是同一個票號就直接沿用
     std::uint64_t usePrepared = 0;
+    // 一律當漫畫處理（找對話框、直排對白用 manga-ocr 重讀），不管透鏡的漫畫模式設定（網頁漫畫）
+    bool manga = false;
 };
 
 struct PipelineTimings {
@@ -126,6 +128,13 @@ public:
     // 取消時可以提早回傳。
     virtual OcrResult recognize(const ImageBgra& frame, Language script,
                                 std::stop_token cancel) = 0;
+
+    // 和 recognize 相同，但不管透鏡的漫畫模式設定，一律當漫畫找對話框（網頁漫畫整頁翻譯）。
+    // 沒有漫畫模式的模型時和 recognize 相同
+    virtual OcrResult recognizeManga(const ImageBgra& frame, Language script,
+                                     std::stop_token cancel) {
+        return recognize(frame, script, cancel);
+    }
 
     // 用更準的模型重讀好幾段（漫畫模式的直排對白用 manga-ocr，M2-03）。一起交出去，
     // 模型才能一批一起讀（每一步的固定開銷只付一次）。結果的順序和 requests 相同；

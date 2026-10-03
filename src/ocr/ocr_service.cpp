@@ -74,6 +74,17 @@ OcrService::OcrService(const std::filesystem::path& modelsDirectory, Device devi
 
 core::OcrResult OcrService::recognize(const core::ImageBgra& frame, core::Language script,
                                       std::stop_token cancel) {
+    // acquire 對應 setMangaMode 裡的 release：看到 true 就一定看得到載入好的模型
+    return recognizeWith(frame, script, cancel, mangaMode_.load(std::memory_order_acquire));
+}
+
+core::OcrResult OcrService::recognizeManga(const core::ImageBgra& frame, core::Language script,
+                                           std::stop_token cancel) {
+    return recognizeWith(frame, script, cancel, loadMangaModels());
+}
+
+core::OcrResult OcrService::recognizeWith(const core::ImageBgra& frame, core::Language script,
+                                          std::stop_token cancel, bool bubbles) {
     if (frame.empty() || cancel.stop_requested()) {
         return {};
     }
@@ -85,8 +96,7 @@ core::OcrResult OcrService::recognize(const core::ImageBgra& frame, core::Langua
     core::OcrResult out;
     out.script = run.script;
     lastTimings_.bubbleMs = 0.0;
-    // acquire 對應 setMangaMode 裡的 release：看到 true 就一定看得到載入好的模型
-    if (mangaMode_.load(std::memory_order_acquire) && !cancel.stop_requested()) {
+    if (bubbles && !cancel.stop_requested()) {
         const auto bubbleStart = std::chrono::steady_clock::now();
         const std::vector<ComicTextBlock> blocks = comicText_->detect(bgr);
         lastTimings_.bubbleMs = std::chrono::duration<double, std::milli>(
@@ -110,6 +120,17 @@ std::filesystem::path OcrService::comicTextModelPath(const std::filesystem::path
 bool OcrService::setMangaMode(bool enabled) {
     if (!enabled) {
         mangaMode_.store(false, std::memory_order_release);
+        return true;
+    }
+    if (!loadMangaModels()) {
+        return false;
+    }
+    mangaMode_.store(true, std::memory_order_release);
+    return true;
+}
+
+bool OcrService::loadMangaModels() {
+    if (comicTextLoaded_.load(std::memory_order_acquire)) {
         return true;
     }
     {
@@ -138,7 +159,7 @@ bool OcrService::setMangaMode(bool enabled) {
             }
         }
     }
-    mangaMode_.store(true, std::memory_order_release);
+    comicTextLoaded_.store(true, std::memory_order_release);
     return true;
 }
 
@@ -151,8 +172,8 @@ std::vector<std::optional<std::string>> OcrService::reread(
     std::stop_token cancel) {
     std::vector<std::optional<std::string>> results(requests.size());
     // acquire 對應載入時的 release：看到 true 就一定看得到載入好的模型
-    if (!mangaMode_.load(std::memory_order_acquire) ||
-        !mangaOcrLoaded_.load(std::memory_order_acquire) || cancel.stop_requested() ||
+    // 管線只在找到對話框時才重讀（透鏡的漫畫模式或網頁漫畫），所以只看 manga-ocr 有沒有載入
+    if (!mangaOcrLoaded_.load(std::memory_order_acquire) || cancel.stop_requested() ||
         frame.empty() || requests.empty()) {
         return results;
     }

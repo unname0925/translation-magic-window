@@ -158,8 +158,9 @@ PipelineResult Pipeline::run(const PipelineJob& job, std::stop_token cancel) {
         recognized = std::move(prepared->ocr);
         result.timings.ocrPrepared = true;
     } else {
-        recognized = ocr_.recognize(
-            job.frame, forced != Language::Unknown ? forced : memory(job.lens).script, cancel);
+        const Language script = forced != Language::Unknown ? forced : memory(job.lens).script;
+        recognized = job.manga ? ocr_.recognizeManga(job.frame, script, cancel)
+                               : ocr_.recognize(job.frame, script, cancel);
         if (forced == Language::Unknown) {
             rememberScript(job.lens, recognized.script, recognized.lines);
         }
