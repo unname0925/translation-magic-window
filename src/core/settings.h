@@ -19,6 +19,8 @@
 
 namespace tmw::core {
 
+inline constexpr std::size_t kMaxSavedLenses = 4;
+
 // 一個翻譯引擎的設定。金鑰以加密後的形式存放（見 platform/secret.h），這裡只當成字串搬運。
 struct EngineSettings {
     std::string id;               // 例如 "google"、"openai-compatible"
@@ -68,6 +70,9 @@ struct Settings {
     bool overlay = false;
     // 譯文用的字型：core/overlay_font 的 id（M4-04）。空字串是系統的微軟正黑體
     std::string overlayFont;
+    // 上次結束時每個透鏡的位置和大小（整個視窗，螢幕座標、實體像素，M5-05）。
+    // 空的代表第一次啟動：一個透鏡、放在螢幕中央。最多 kMaxSavedLenses 個，壞掉的矩形略過
+    std::vector<RectI> lenses;
     // 辨識語言："auto"（自動判斷）、"ja"、"en"、"ko"。指定之後只用那個語言的模型，
     // 不再判斷（design.md 4.4「語言判斷」第 5 步）。讀不懂的值一律當成 "auto"。
     std::string ocrLanguage = "auto";

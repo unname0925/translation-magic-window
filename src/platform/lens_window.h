@@ -35,6 +35,11 @@ public:
 
     void setAccent(core::Rgba accent);
 
+    // 整個視窗的範圍（螢幕座標、實體像素），存進設定檔用
+    core::RectI windowRect() const;
+    // 放到上次記住的位置和大小。那個位置已經不在任何螢幕上（拔掉了外接螢幕）時不動，回傳 false
+    bool setWindowRect(const core::RectI& rect);
+
     // 整個透鏡移動 dx、dy（實體像素），不會移出螢幕的工作區（新增透鏡時錯開用）
     void moveBy(int dx, int dy);
 
@@ -55,7 +60,6 @@ private:
 
     void destroy();
     unsigned dpi() const;
-    core::RectI windowRect() const;
     core::LensLayout currentLayout() const;
     void ensureBitmap(core::SizeI size);
     void releaseBitmap();

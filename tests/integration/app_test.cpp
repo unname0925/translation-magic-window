@@ -8,6 +8,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -15,6 +16,7 @@
 #include <optional>
 #include <sstream>
 #include <string>
+#include <tuple>
 #include <vector>
 
 #include "app/app_identity.h"
@@ -284,6 +286,35 @@ TEST_F(AppTest, LensesCanBeAddedAndRemoved) {
     ASSERT_TRUE(app_->isResponsive(kUiTimeout));
     EXPECT_EQ(visibleLenses(app_->processId()).size(), 1u) << "第一個透鏡不能關，只能藏起來";
     EXPECT_TRUE(IsWindowVisible(lens_)) << "留下來的是第一個透鏡";
+}
+
+// M5-05：結束時記住每個透鏡的位置，下次啟動照樣開回來
+TEST_F(AppTest, LensesComeBackWhereTheyWere) {
+    ASSERT_TRUE(app_->postCommand(app::kCommandAddLens));
+    ASSERT_TRUE(
+        waitUntil([&] { return visibleLenses(app_->processId()).size() == 2; }, kUiTimeout));
+    std::vector<core::RectI> before;
+    for (const HWND lens : visibleLenses(app_->processId())) {
+        before.push_back(windowRectOf(lens));
+    }
+    ASSERT_EQ(app_->requestExit(kExitTimeout), std::optional<DWORD>{0});
+
+    app_ = std::make_unique<AppProcess>(
+        std::vector<std::wstring>{L"--data-dir", dataDirectory_.wstring()});
+    ASSERT_TRUE(
+        waitUntil([&] { return visibleLenses(app_->processId()).size() == 2; }, kLaunchTimeout))
+        << "主程式的記錄：\n"
+        << appLog();
+    std::vector<core::RectI> after;
+    for (const HWND lens : visibleLenses(app_->processId())) {
+        after.push_back(windowRectOf(lens));
+    }
+    const auto byPosition = [](const core::RectI& a, const core::RectI& b) {
+        return std::tie(a.left, a.top) < std::tie(b.left, b.top);
+    };
+    std::sort(before.begin(), before.end(), byPosition);
+    std::sort(after.begin(), after.end(), byPosition);
+    EXPECT_EQ(after, before) << "位置和大小都一樣";
 }
 
 // M1-12：系統匣選單的「開啟結果視窗」

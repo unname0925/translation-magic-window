@@ -108,6 +108,21 @@ SettingsLoad parseSettings(std::string_view json_text,
     read(document, "gameMode", settings.gameMode);
     read(document, "overlay", settings.overlay);
     read(document, "overlayFont", settings.overlayFont);
+    if (const auto it = document.find("lenses"); it != document.end() && it->is_array()) {
+        for (const auto& entry : *it) {
+            if (!entry.is_object() || settings.lenses.size() >= kMaxSavedLenses) {
+                continue;
+            }
+            RectI rect;
+            readInt(entry, "left", rect.left);
+            readInt(entry, "top", rect.top);
+            readInt(entry, "right", rect.right);
+            readInt(entry, "bottom", rect.bottom);
+            if (!rect.empty()) {
+                settings.lenses.push_back(rect);  // 壞掉的矩形略過，那個透鏡用預設位置
+            }
+        }
+    }
     read(document, "ocrLanguage", settings.ocrLanguage);
     read(document, "dropEdgeBlocks", settings.dropEdgeBlocks);
     readInt(document, "settleMs", settings.settleMs);
@@ -190,6 +205,21 @@ void switchProfile(Settings& settings, std::string_view id) {
     settings.settleMs = values.settleMs;
 }
 
+namespace {
+
+nlohmann::json lensesJson(const std::vector<RectI>& lenses) {
+    nlohmann::json out = nlohmann::json::array();
+    for (const RectI& rect : lenses) {
+        out.push_back({{"left", rect.left},
+                       {"top", rect.top},
+                       {"right", rect.right},
+                       {"bottom", rect.bottom}});
+    }
+    return out;
+}
+
+}  // namespace
+
 std::string serializeSettings(const Settings& settings, int schemaVersion) {
     json engines = json::array();
     for (const EngineSettings& engine : settings.engines) {
@@ -225,6 +255,7 @@ std::string serializeSettings(const Settings& settings, int schemaVersion) {
             {"top", settings.resultWindow.geometry.top},
             {"right", settings.resultWindow.geometry.right},
             {"bottom", settings.resultWindow.geometry.bottom}}}}},
+        {"lenses", lensesJson(settings.lenses)},
         {"hotkeys",
          {{"translate", settings.hotkeys.translate},
           {"debugDump", settings.hotkeys.debugDump},

@@ -74,8 +74,9 @@ private:
     void showTrayMenu(POINT anchor);
     // 所有透鏡一起藏起或叫出來
     void setLensVisible(bool visible);
-    // 新增一個透鏡（最多 kMaxLenses 個），放在第一個透鏡的右下方
-    void addLens();
+    // 新增一個透鏡（最多 kMaxLenses 個）。placement 是上次記住的位置；
+    // 沒有（或已經不在任何螢幕上）時放在前一個透鏡的右下方
+    void addLens(const core::RectI* placement = nullptr);
     // 關掉最後新增的那個透鏡（第一個透鏡不能關，只能藏起來）
     void removeLens();
     Lens* findLens(int id);

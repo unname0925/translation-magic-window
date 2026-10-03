@@ -111,6 +111,17 @@ void LensWindow::setVisible(bool visible) {
     ShowWindow(hwnd_, visible ? SW_SHOWNOACTIVATE : SW_HIDE);
 }
 
+bool LensWindow::setWindowRect(const core::RectI& rect) {
+    const RECT wanted{rect.left, rect.top, rect.right, rect.bottom};
+    if (rect.empty() || MonitorFromRect(&wanted, MONITOR_DEFAULTTONULL) == nullptr) {
+        return false;
+    }
+    SetWindowPos(hwnd_, nullptr, rect.left, rect.top, rect.width(), rect.height(),
+                 SWP_NOZORDER | SWP_NOACTIVATE);
+    render();  // 大小變了，邊框要重畫
+    return true;
+}
+
 void LensWindow::moveBy(int dx, int dy) {
     RECT window{};
     if (!GetWindowRect(hwnd_, &window)) {

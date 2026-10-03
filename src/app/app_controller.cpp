@@ -224,7 +224,13 @@ AppController::AppController(HINSTANCE instance, std::filesystem::path dataDirec
         capture_ = std::make_unique<platform::ScreenCapture>();
         frameSource_ = std::make_unique<platform::CaptureFrameSource>(*capture_);
 
-        addLens();  // 第一個透鏡
+        // 上次結束時的透鏡（位置、大小、個數）；第一次啟動是一個，在螢幕中央
+        if (settings_.lenses.empty()) {
+            addLens();
+        }
+        for (const core::RectI& placement : settings_.lenses) {
+            addLens(&placement);
+        }
 
         tray_ = std::make_unique<platform::TrayIcon>(hwnd_, kTrayCallbackMessage,
                                                      LoadIconW(nullptr, IDI_APPLICATION),
@@ -442,6 +448,12 @@ LRESULT AppController::handleMessage(UINT message, WPARAM wParam, LPARAM lParam)
             KillTimer(hwnd_, kTimerTick);
             KillTimer(hwnd_, kTimerRestoreAccent);
             unregisterHotkeys();
+            // 記住每個透鏡的位置，下次啟動照樣開回來
+            settings_.lenses.clear();
+            for (const std::unique_ptr<Lens>& lens : lenses_) {
+                settings_.lenses.push_back(lens->window->windowRect());
+            }
+            saveSettings();
             // 依相依關係的反向順序釋放：透鏡（視窗和觸發器）會用到 frameSource_
             lenses_.clear();
             tray_.reset();
@@ -536,7 +548,7 @@ void AppController::setLensVisible(bool visible) {
     }
 }
 
-void AppController::addLens() {
+void AppController::addLens(const core::RectI* placement) {
     if (lenses_.size() >= kMaxLenses) {
         return;
     }
@@ -566,7 +578,9 @@ void AppController::addLens() {
     lens->window = std::make_unique<platform::LensWindow>(
         reinterpret_cast<HINSTANCE>(GetWindowLongPtrW(hwnd_, GWLP_HINSTANCE)), kDefaultContentSize,
         std::move(lensCallbacks));
-    if (!lenses_.empty()) {
+    if (placement != nullptr && lens->window->setWindowRect(*placement)) {
+        // 放回上次的位置
+    } else if (!lenses_.empty()) {
         // 新的透鏡和第一個一樣出現在螢幕中央，疊在一起看不出來：往右下錯開
         const int step = kNewLensOffset * static_cast<int>(lenses_.size());
         lens->window->moveBy(step, step);

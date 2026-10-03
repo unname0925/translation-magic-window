@@ -229,6 +229,29 @@ TEST(SettingsTest, RemembersTheOverlayFont) {
     EXPECT_EQ(parseSettings(serializeSettings(settings)).settings.overlayFont, "huninn");
 }
 
+TEST(SettingsTest, RemembersWhereTheLensesWere) {
+    EXPECT_TRUE(parseSettings(R"({"schemaVersion": 1})").settings.lenses.empty())
+        << "第一次啟動：一個透鏡，放在螢幕中央";
+    Settings settings;
+    settings.lenses = {RectI{100, 100, 600, 400}, RectI{-1800, 50, -1300, 350}};
+    EXPECT_EQ(parseSettings(serializeSettings(settings)).settings.lenses, settings.lenses)
+        << "負的座標是左邊的螢幕";
+}
+
+TEST(SettingsTest, BrokenLensRectanglesAreSkipped) {
+    const Settings settings = parseSettings(R"({"schemaVersion": 1, "lenses": [
+        {"left": 100, "top": 100, "right": 50, "bottom": 400},
+        {"left": 0, "top": 0, "right": 300, "bottom": 200},
+        "不是矩形",
+        {"left": 1, "top": 1, "right": 2, "bottom": 2},
+        {"left": 1, "top": 1, "right": 2, "bottom": 2},
+        {"left": 1, "top": 1, "right": 2, "bottom": 2},
+        {"left": 1, "top": 1, "right": 2, "bottom": 2}]})")
+                                  .settings;
+    ASSERT_EQ(settings.lenses.size(), kMaxSavedLenses) << "最多 4 個";
+    EXPECT_EQ(settings.lenses[0], (RectI{0, 0, 300, 200})) << "左右顛倒的矩形略過";
+}
+
 TEST(SettingsTest, OcrLanguageIsAutomaticUnlessChosen) {
     EXPECT_EQ(parseSettings(R"({"schemaVersion": 1})").settings.ocrLanguage, "auto");
     EXPECT_EQ(parseSettings(R"({"schemaVersion": 1, "ocrLanguage": "ko"})").settings.ocrLanguage,
