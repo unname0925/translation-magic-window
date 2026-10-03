@@ -11,6 +11,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <span>
 #include <stop_token>
 #include <string>
 #include <string_view>
@@ -102,6 +103,12 @@ struct OcrResult {
     std::vector<RectI> bubbles;
 };
 
+// 要重讀的一段：rect 是畫面座標，maxCharacters 是最多產生幾個字
+struct RereadRequest {
+    RectI rect;
+    int maxCharacters = 0;
+};
+
 // OCR 服務。正式程式接 ocr 模組的模型，測試時換成假的。
 class IOcrService {
 public:
@@ -113,11 +120,13 @@ public:
     virtual OcrResult recognize(const ImageBgra& frame, Language script,
                                 std::stop_token cancel) = 0;
 
-    // 用更準的模型重讀一段（漫畫模式的直排對白用 manga-ocr，M2-03）。rect 是畫面座標，
-    // maxCharacters 是最多產生幾個字。不支援或模型沒載入時回傳 nullopt，呼叫端沿用原本的文字。
-    virtual std::optional<std::string> reread(const ImageBgra& /*frame*/, const RectI& /*rect*/,
-                                              int /*maxCharacters*/, std::stop_token /*cancel*/) {
-        return std::nullopt;
+    // 用更準的模型重讀好幾段（漫畫模式的直排對白用 manga-ocr，M2-03）。一起交出去，
+    // 模型才能一批一起讀（每一步的固定開銷只付一次）。結果的順序和 requests 相同；
+    // 不支援、模型沒載入或讀不出東西的那段是 nullopt，呼叫端沿用原本的文字。
+    virtual std::vector<std::optional<std::string>> reread(
+        const ImageBgra& /*frame*/, std::span<const RereadRequest> requests,
+        std::stop_token /*cancel*/) {
+        return std::vector<std::optional<std::string>>(requests.size());
     }
 };
 

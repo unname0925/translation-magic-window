@@ -81,6 +81,59 @@ TEST(MangaOcrGreedyDecodeTest, StopsAtTheLengthLimit) {
     EXPECT_EQ(tokens, (std::vector<std::int64_t>{0, 1, 1, 1, 1}));
 }
 
+// 好幾串一起解碼：每一步依序回傳預先準備好的 logits（每串一列），並記下收到的字和位置
+struct ScriptedBatchStep {
+    std::vector<std::vector<float>> logits;
+    std::vector<std::pair<std::vector<std::int64_t>, std::int64_t>> calls;
+
+    MangaOcrBatchStep function() {
+        return [this](std::span<const std::int64_t> tokens,
+                      std::int64_t position) -> std::span<const float> {
+            calls.emplace_back(std::vector<std::int64_t>(tokens.begin(), tokens.end()), position);
+            return logits[calls.size() - 1];
+        };
+    }
+};
+
+TEST(MangaOcrGreedyDecodeBatchTest, EachSequenceStopsAtItsOwnEnd) {
+    // 詞表 4 個字、eos = 3。第一串：1 → eos；第二串：2 → 1 → eos
+    ScriptedBatchStep step;
+    step.logits = {{0, 1, 0, 0, /**/ 0, 0, 1, 0},
+                   {0, 0, 0, 1, /**/ 0, 1, 0, 0},
+                   {0, 0, 1, 0, /**/ 0, 0, 0, 1}};
+    const std::vector<int> limits{300, 300};
+    const auto sequences = mangaOcrGreedyDecodeBatch(step.function(), 0, 3, limits);
+    ASSERT_EQ(sequences.size(), 2u);
+    EXPECT_EQ(sequences[0], (std::vector<std::int64_t>{0, 1, 3}));
+    EXPECT_EQ(sequences[1], (std::vector<std::int64_t>{0, 2, 1, 3}));
+    ASSERT_EQ(step.calls.size(), 3u) << "最長的那串結束才停";
+    // 已經結束的那串照樣給它最後一個字（結果不看），位置大家一樣
+    EXPECT_EQ(step.calls[2].first, (std::vector<std::int64_t>{3, 1}));
+    EXPECT_EQ(step.calls[2].second, 2);
+}
+
+TEST(MangaOcrGreedyDecodeBatchTest, GivesTheSameResultAsOneAtATime) {
+    // 第二串一直重複同一個字，靠自己的上限停下來
+    ScriptedBatchStep step;
+    step.logits.assign(10, {0, 1, 0, 0, /**/ 0, 0, 1, 0});
+    step.logits[1] = {0, 0, 0, 1, /**/ 0, 0, 1, 0};
+    const std::vector<int> limits{300, 4};
+    const auto sequences = mangaOcrGreedyDecodeBatch(step.function(), 0, 3, limits);
+    EXPECT_EQ(sequences[0], (std::vector<std::int64_t>{0, 1, 3}));
+    EXPECT_EQ(sequences[1], (std::vector<std::int64_t>{0, 2, 2, 2}));
+}
+
+TEST(MangaOcrGreedyDecodeBatchTest, PaddingThatIsAlreadyDoneIsNeverDecoded) {
+    // 上限 1：只有開頭的字（DirectML 固定批次補空白的位置）
+    ScriptedBatchStep step;
+    step.logits = {{0, 0, 0, 1, /**/ 0, 1, 0, 0}};
+    const std::vector<int> limits{300, 1};
+    const auto sequences = mangaOcrGreedyDecodeBatch(step.function(), 0, 3, limits);
+    EXPECT_EQ(sequences[0], (std::vector<std::int64_t>{0, 3}));
+    EXPECT_EQ(sequences[1], (std::vector<std::int64_t>{0}));
+    EXPECT_EQ(step.calls.size(), 1u);
+}
+
 TEST(MangaOcrGreedyDecodeTest, TiesGoToTheSmallerToken) {
     // 和 numpy 的 argmax 一樣
     ScriptedStep step;

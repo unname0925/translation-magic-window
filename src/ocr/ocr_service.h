@@ -38,9 +38,10 @@ public:
     core::OcrResult recognize(const core::ImageBgra& frame, core::Language script,
                               std::stop_token cancel) override;
 
-    // 漫畫模式、而且 manga-ocr 的模型在 models/manga-ocr 時，用它重讀一段（M2-03）
-    std::optional<std::string> reread(const core::ImageBgra& frame, const core::RectI& rect,
-                                      int maxCharacters, std::stop_token cancel) override;
+    // 漫畫模式、而且 manga-ocr 的模型在 models/manga-ocr 時，用它一起重讀這幾段（M2-03）
+    std::vector<std::optional<std::string>> reread(const core::ImageBgra& frame,
+                                                   std::span<const core::RereadRequest> requests,
+                                                   std::stop_token cancel) override;
 
     Device device() const { return pipeline_.device(); }
     const OcrTimings& lastTimings() const { return lastTimings_; }

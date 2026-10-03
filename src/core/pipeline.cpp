@@ -86,24 +86,42 @@ int mangaOcrCharacterLimit(std::string_view ppOcrText) {
 void Pipeline::rereadMangaBlocks(const PipelineJob& job, std::vector<TextBlock>& blocks,
                                  std::stop_token cancel) {
     LensMemory& state = memory(job.lens);
-    std::map<std::string, std::string> kept;
-    for (TextBlock& block : blocks) {
-        if (cancel.stop_requested()) {
-            return;
+    // 畫面沒變的段落沿用上一次的結果，其餘一起交給 manga-ocr（一批一起讀比一段一段快很多）
+    std::vector<std::size_t> fresh;
+    std::vector<RereadRequest> requests;
+    for (std::size_t i = 0; i < blocks.size(); ++i) {
+        if (shouldRereadWithMangaOcr(blocks[i]) && !state.reread.contains(blocks[i].text)) {
+            fresh.push_back(i);
+            requests.push_back({blocks[i].rect, mangaOcrCharacterLimit(blocks[i].text)});
         }
+    }
+    std::vector<std::optional<std::string>> results;
+    if (!requests.empty()) {
+        results = ocr_.reread(job.frame, requests, cancel);
+        results.resize(requests.size());
+    }
+    if (cancel.stop_requested()) {
+        return;
+    }
+
+    std::map<std::string, std::string> kept;
+    std::size_t next = 0;
+    for (std::size_t i = 0; i < blocks.size(); ++i) {
+        TextBlock& block = blocks[i];
         if (!shouldRereadWithMangaOcr(block)) {
             continue;
         }
         std::string reread;
-        if (const auto found = state.reread.find(block.text); found != state.reread.end()) {
-            reread = found->second;  // 畫面沒變：沿用上一次的結果
-        } else {
-            std::optional<std::string> fresh =
-                ocr_.reread(job.frame, block.rect, mangaOcrCharacterLimit(block.text), cancel);
-            if (!fresh || fresh->empty()) {
+        if (next < fresh.size() && fresh[next] == i) {
+            std::optional<std::string>& result = results[next++];
+            if (!result || result->empty()) {
                 continue;  // 不支援、模型沒載入或讀不出東西：沿用 PP-OCR 的文字
             }
-            reread = std::move(*fresh);
+            reread = std::move(*result);
+        } else if (const auto found = state.reread.find(block.text); found != state.reread.end()) {
+            reread = found->second;  // 畫面沒變：沿用上一次的結果
+        } else {
+            continue;
         }
         kept.emplace(block.text, reread);
         // ルビ 的位置是 PP-OCR 那個版本的第幾個字，要搬到新的文字上（找不到本文的丟掉）

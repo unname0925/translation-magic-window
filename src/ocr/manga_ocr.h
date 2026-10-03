@@ -9,6 +9,9 @@
 // - 逐字解碼（M0-11：比官方的 beam search 準），解碼器有 KV cache：
 //   decoder_cross.onnx 每個區塊算一次圖像特徵的 K／V，decoder_step.onnx 每次只處理一個新字。
 //   DirectML 上每個區塊從 197 ms 降到 19 ms（export_manga_decoder.py 的量測）。
+// - 一頁的區塊一起解碼（一批 kMangaOcrBatch 個，所有區塊同一步走）：每一步的固定開銷只付一次。
+//   K／V 固定 kMangaOcrSlots 格、留在顯示卡上（IoBinding），形狀不變 DirectML 才走快的路線。
+//   8 個區塊從約 500 ms 降到約 80 ms（docs/proposal-speed-and-web-manga.md）。
 // - 轉回文字：略過 5 個特殊符號（[PAD] [UNK] [CLS] [SEP] [MASK]），其餘直接接起來
 // - 後處理：manga_ocr 的 post_process（去空白、刪節號換成點、半形英數轉全形）
 //
@@ -18,14 +21,15 @@
 #include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <memory>
 #include <opencv2/core.hpp>
 #include <span>
+#include <stop_token>
 #include <string>
 #include <string_view>
 #include <vector>
 
 #include "ocr/onnx_model.h"
-#include "ocr/onnx_session.h"
 
 namespace tmw::ocr {
 
@@ -49,24 +53,56 @@ using MangaOcrStep =
 std::vector<std::int64_t> mangaOcrGreedyDecode(const MangaOcrStep& step, std::int64_t start,
                                                std::int64_t eos, int maxLength);
 
+// 好幾串一起逐字解碼：每一步把每一串的上一個字（已經結束的那串照樣給它最後一個字，結果不看）
+// 和共同的位置交給 step，它回傳 maxLengths.size() 列 logits（每列一樣長）。
+// 每一串各自停在 eos 或自己的 maxLengths；全部停了才結束。回傳每一串（包含 start）。
+using MangaOcrBatchStep = std::function<std::span<const float>(
+    std::span<const std::int64_t> tokens, std::int64_t position)>;
+std::vector<std::vector<std::int64_t>> mangaOcrGreedyDecodeBatch(const MangaOcrBatchStep& step,
+                                                                 std::int64_t start,
+                                                                 std::int64_t eos,
+                                                                 std::span<const int> maxLengths);
+
+// K／V 的格數（tools/eval/export_manga_decoder.py 的 SLOTS）：開頭的字加最多 95 個字
+inline constexpr int kMangaOcrSlots = 96;
+// 一批幾個區塊（export_manga_decoder.py 的 BATCH）。整頁的直排對白通常 9～19 個
+inline constexpr int kMangaOcrBatch = 8;
+
+struct MangaOcrRequest {
+    cv::Mat bgr;  // 一個對話框的裁切圖（CV_8UC3）
+    // 最多產生幾個字。逐字解碼偶爾會一直重複同一個字停不下來
+    // （M0-11：一整行極細長的註解重複了 98 個字），呼叫端依區塊大小給一個上限。
+    // 不會超過 kMangaOcrSlots - 1。
+    int maxCharacters = 0;
+};
+
 class MangaOcr {
 public:
     static constexpr int kImageSize = 224;
 
     // directory：放模型檔的資料夾（見檔頭）。建立失敗時丟出 std::runtime_error。
     MangaOcr(const std::filesystem::path& directory, Device device);
+    ~MangaOcr();
 
-    // bgr：一個對話框的裁切圖（CV_8UC3）。
-    // maxCharacters：最多產生幾個字。逐字解碼偶爾會一直重複同一個字停不下來
-    // （M0-11：一整行極細長的註解重複了 98 個字），呼叫端依區塊大小給一個上限。
+    MangaOcr(const MangaOcr&) = delete;
+    MangaOcr& operator=(const MangaOcr&) = delete;
+
+    // 一起讀好幾個區塊，結果的順序和 requests 相同；讀不出來或裁切圖是空的給空字串。
+    // cancel：每一批之間檢查，取消後剩下的都是空字串。
+    std::vector<std::string> read(std::span<const MangaOcrRequest> requests,
+                                  std::stop_token cancel = {});
     std::string read(const cv::Mat& bgr, int maxCharacters);
 
     Device device() const { return encoder_.device(); }
 
 private:
+    struct Decoder;
+    // 一批（最多 kMangaOcrBatch 個）：requests 的索引
+    void readBatch(std::span<const MangaOcrRequest> requests, std::span<const std::size_t> items,
+                   std::vector<std::string>& results);
+
     OnnxModel encoder_;
-    OnnxSession cross_;
-    OnnxSession step_;
+    std::unique_ptr<Decoder> decoder_;
     std::vector<std::string> vocab_;
     std::int64_t startToken_ = 2;
     std::int64_t endToken_ = 3;

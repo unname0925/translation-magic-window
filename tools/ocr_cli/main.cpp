@@ -256,7 +256,11 @@ nlohmann::json readWithMangaOcr(nlohmann::json blocks, const cv::Mat& bgr,
     if (!mangaOcr) {
         return blocks;
     }
-    for (nlohmann::json& block : blocks) {
+    // 一張圖的區塊一起讀（和正式程式一樣一批一起解碼）；manga_ms 是平均每個區塊的時間
+    std::vector<std::size_t> picked;
+    std::vector<tmw::ocr::MangaOcrRequest> requests;
+    for (std::size_t i = 0; i < blocks.size(); ++i) {
+        const nlohmann::json& block = blocks[i];
         const int left = block["rect"][0];
         const int top = block["rect"][1];
         const int right = block["rect"][2];
@@ -269,11 +273,21 @@ nlohmann::json readWithMangaOcr(nlohmann::json blocks, const cv::Mat& bgr,
                                        bottom - top + 2 * kMargin) &
                               cv::Rect(0, 0, bgr.cols, bgr.rows);
         const int limit = tmw::core::mangaOcrCharacterLimit(block["text"].get<std::string>());
-        const auto start = std::chrono::steady_clock::now();
-        block["manga_text"] = mangaOcr->read(bgr(area), limit);
-        block["manga_ms"] =
-            std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start)
-                .count();
+        picked.push_back(i);
+        requests.push_back({area.empty() ? cv::Mat() : bgr(area), limit});
+    }
+    if (requests.empty()) {
+        return blocks;
+    }
+    const auto start = std::chrono::steady_clock::now();
+    const std::vector<std::string> texts = mangaOcr->read(requests);
+    const double perBlock =
+        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start)
+            .count() /
+        static_cast<double>(requests.size());
+    for (std::size_t i = 0; i < picked.size(); ++i) {
+        blocks[picked[i]]["manga_text"] = texts[i];
+        blocks[picked[i]]["manga_ms"] = perBlock;
     }
     return blocks;
 }

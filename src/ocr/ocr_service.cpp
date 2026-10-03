@@ -146,24 +146,36 @@ std::filesystem::path OcrService::mangaOcrDirectory(const std::filesystem::path&
     return modelsDirectory / "manga-ocr";
 }
 
-std::optional<std::string> OcrService::reread(const core::ImageBgra& frame, const core::RectI& rect,
-                                              int maxCharacters, std::stop_token cancel) {
+std::vector<std::optional<std::string>> OcrService::reread(
+    const core::ImageBgra& frame, std::span<const core::RereadRequest> requests,
+    std::stop_token cancel) {
+    std::vector<std::optional<std::string>> results(requests.size());
     // acquire 對應載入時的 release：看到 true 就一定看得到載入好的模型
     if (!mangaMode_.load(std::memory_order_acquire) ||
         !mangaOcrLoaded_.load(std::memory_order_acquire) || cancel.stop_requested() ||
-        frame.empty()) {
-        return std::nullopt;
+        frame.empty() || requests.empty()) {
+        return results;
     }
     // 四周多留幾個像素：框是依文字行算的，貼得太緊的話字的邊緣會被切掉
     constexpr int kMargin = 4;
-    const cv::Mat bgr = toBgr(frame);
-    const cv::Rect area = cv::Rect(rect.left - kMargin, rect.top - kMargin,
-                                   rect.width() + 2 * kMargin, rect.height() + 2 * kMargin) &
-                          cv::Rect(0, 0, bgr.cols, bgr.rows);
-    if (area.empty()) {
-        return std::nullopt;
+    const cv::Mat bgr = toBgr(frame);  // 整張只轉一次
+    std::vector<MangaOcrRequest> crops;
+    crops.reserve(requests.size());
+    for (const core::RereadRequest& request : requests) {
+        const core::RectI& rect = request.rect;
+        const cv::Rect area = cv::Rect(rect.left - kMargin, rect.top - kMargin,
+                                       rect.width() + 2 * kMargin, rect.height() + 2 * kMargin) &
+                              cv::Rect(0, 0, bgr.cols, bgr.rows);
+        // 空的裁切圖 MangaOcr 會跳過，結果是空字串
+        crops.push_back({area.empty() ? cv::Mat() : bgr(area), request.maxCharacters});
     }
-    return mangaOcr_->read(bgr(area), maxCharacters);
+    std::vector<std::string> texts = mangaOcr_->read(crops, cancel);
+    for (std::size_t i = 0; i < texts.size() && i < results.size(); ++i) {
+        if (!texts[i].empty()) {
+            results[i] = std::move(texts[i]);
+        }
+    }
+    return results;
 }
 
 }  // namespace tmw::ocr

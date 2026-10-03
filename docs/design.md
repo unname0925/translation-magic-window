@@ -382,6 +382,11 @@ C++ 版每次 37 ms（DirectML；輸入固定 1024×1024，所以和畫面大小
   拆成 `decoder_cross.onnx`（每段算一次）和 `decoder_step.onnx`（每次一個字）之後降到 19 ms。
   單步是直接用權重寫的標準 BERT 層（`tools/eval/export_manga_decoder.py`），不靠 transformers
   一直在改的 cache 介面；每一步的 logits 和原模型差 7.6×10⁻⁶，40 張真實裁切圖產生的字完全相同。
+- **一頁一起讀**（速度優化 3）：一頁的直排對白一次交給 manga-ocr，每 8 個一批、同一步走（批次大小
+  在 DirectML 上固定、不足補空白）。K／V 固定 96 格加遮罩，形狀不變 DirectML 才走快的路線；
+  用 IoBinding 讓 K／V 留在顯示卡上，每一步只送字、收 logits。編碼器打開圖形最佳化（13 → 5.3 ms，
+  漫畫模式多約 270 MB）。124 個對白的文字和逐段讀完全相同，每頁 150～430 → 80～200 ms
+  （`docs/proposal-speed-and-web-manga.md`）。最多讀 95 個字。
 - **前處理用 OpenCV 近似 PIL**：分兩次縮放，縮小的軸用 INTER_AREA、放大的用 INTER_LINEAR。
   沒有照抄 PIL 的定點運算，而是量最終結果：C++ 和 Python 的字元錯誤率、一字不差的數量都一樣。
 - **ルビ 跟著搬**：manga-ocr 只給整句文字，PP-OCR 那個版本標好的 ルビ 拿本文（例如「楓林」）

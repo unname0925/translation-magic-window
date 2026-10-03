@@ -35,11 +35,15 @@ public:
         return {lines, reports, bubbles};
     }
 
-    std::optional<std::string> reread(const ImageBgra&, const RectI& rect, int maxCharacters,
-                                      std::stop_token) override {
-        rereadRects.push_back(rect);
-        lastLimit = maxCharacters;
-        return rereadText;
+    std::vector<std::optional<std::string>> reread(const ImageBgra&,
+                                                   std::span<const RereadRequest> requests,
+                                                   std::stop_token) override {
+        ++rereadCalls;
+        for (const RereadRequest& request : requests) {
+            rereadRects.push_back(request.rect);
+            lastLimit = request.maxCharacters;
+        }
+        return std::vector<std::optional<std::string>>(requests.size(), rereadText);
     }
 
     std::vector<OcrLine> lines;
@@ -54,6 +58,7 @@ public:
     // manga-ocr 重讀：回傳什麼、被要求重讀了哪些範圍
     std::optional<std::string> rereadText;
     std::vector<RectI> rereadRects;
+    int rereadCalls = 0;  // 一次 Pipeline::run 最多呼叫一次（整頁一起讀）
     int lastLimit = 0;
 };
 
@@ -490,6 +495,31 @@ TEST_F(MangaRereadTest, ReusesTheResultWhenNothingChanged) {
     run(job(400, 300));
     run(job(400, 300));
     EXPECT_EQ(ocr_.rereadRects.size(), 1u);
+}
+
+TEST_F(MangaRereadTest, ReadsAllBubblesOfThePageInOneCall) {
+    // 兩個對話框：一起交給 manga-ocr，它才能一批一起讀
+    ocr_.lines.push_back(column(100, 100, 130, 250, "別の吹き出し"));
+    ocr_.bubbles.push_back(RectI{90, 90, 140, 260});
+    const PipelineResult result = run(job(400, 300));
+    EXPECT_EQ(ocr_.rereadCalls, 1);
+    EXPECT_EQ(ocr_.rereadRects.size(), 2u);
+    ASSERT_EQ(result.groups.size(), 2u);
+    for (const auto& group : result.groups) {
+        EXPECT_EQ(group.block.text, "この楓林女子校は学園併合");
+    }
+}
+
+TEST_F(MangaRereadTest, OnlyNewBubblesAreReadAgain) {
+    run(job(400, 300));
+    // 多了一個對話框：只重讀新的那個，舊的沿用
+    ocr_.lines.push_back(column(100, 100, 130, 250, "別の吹き出し"));
+    ocr_.bubbles.push_back(RectI{90, 90, 140, 260});
+    const PipelineResult result = run(job(400, 300));
+    EXPECT_EQ(ocr_.rereadCalls, 2);
+    ASSERT_EQ(ocr_.rereadRects.size(), 2u);
+    EXPECT_EQ(ocr_.rereadRects[1].left, 100) << "第二次只讀新的對話框";
+    EXPECT_EQ(result.groups.size(), 2u);
 }
 
 TEST_F(MangaRereadTest, KeepsThePpOcrTextWhenMangaOcrIsUnavailable) {
