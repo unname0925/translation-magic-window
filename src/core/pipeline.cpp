@@ -184,7 +184,8 @@ PipelineResult Pipeline::run(const PipelineJob& job, std::stop_token cancel) {
     if (result.language == Language::Japanese && !recognized.bubbles.empty()) {
         const auto rereadStart = std::chrono::steady_clock::now();
         rereadMangaBlocks(job, blocks, cancel);
-        result.timings.ocrMs += millisecondsSince(rereadStart);
+        result.timings.rereadMs = millisecondsSince(rereadStart);
+        result.timings.ocrMs += result.timings.rereadMs;
         if (cancel.stop_requested()) {
             return result;
         }

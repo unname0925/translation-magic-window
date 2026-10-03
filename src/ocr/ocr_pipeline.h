@@ -27,6 +27,7 @@ struct OcrTimings {
     double detectionMs = 0.0;    // 前處理 + 推論 + 後處理
     double recognitionMs = 0.0;  // 所有文字框的裁切 + 辨識
     int boxes = 0;               // 偵測到的文字框數
+    double bubbleMs = 0.0;       // 漫畫模式的對話框偵測（comic-text-detector）；沒開時是 0
 };
 
 // 產品用的偵測輸入大小。透鏡可以調整大小，但模型的輸入形狀必須固定：DirectML 上

@@ -53,6 +53,8 @@ struct PipelineTimings {
     double translationMs = 0.0;
     // 規劃覆蓋層（M3），包括背景修補（M4-01，每塊約 0.13 秒）
     double overlayMs = 0.0;
+    // 漫畫模式用 manga-ocr 重讀直排對白的時間（已經算在 ocrMs 裡，另外記下來找慢在哪）
+    double rereadMs = 0.0;
 
     double totalMs() const { return ocrMs + layoutMs + translationMs + overlayMs; }
 };

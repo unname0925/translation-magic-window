@@ -137,6 +137,7 @@ int run(const Options& options) {
 
     ocr::OcrOptions ocrOptions;
     ocrOptions.warmUpScript = core::languageFromCode(options.language);
+    ocrOptions.detection.fixedInput = ocr::lensDetectionInput();  // 和主程式一樣
     ocr::OcrService ocr(models, ocr::Device::Auto, ocrOptions);
     if (options.manga && !ocr.setMangaMode(true)) {
         std::fputs("漫畫模式的模型載入失敗，改用一般模式\n", stderr);
@@ -186,7 +187,12 @@ int run(const Options& options) {
                 core::backgroundUniformity(job.frame, padded, bg, 2, 72), group.block.score, r.left,
                 r.top, r.right, r.bottom, group.block.text.c_str(), group.translation.c_str());
         }
-        std::printf("覆蓋層 %.0f ms（含背景修補）\n", result.timings.overlayMs);
+        std::printf(
+            "耗時：OCR %.0f ms（偵測 %.0f、辨識 %.0f、對話框 %.0f、manga-ocr %.0f）"
+            "／分段 %.0f／翻譯 %.0f／覆蓋層 %.0f（含背景修補）／合計 %.0f ms\n",
+            result.timings.ocrMs, ocr.lastTimings().detectionMs, ocr.lastTimings().recognitionMs,
+            ocr.lastTimings().bubbleMs, result.timings.rereadMs, result.timings.layoutMs,
+            result.timings.translationMs, result.timings.overlayMs, result.timings.totalMs());
         for (const core::OverlayItem& item : result.overlay) {
             std::printf(
                 "  蓋上：底 %d,%d,%d 字 %d,%d,%d%s  %s\n", item.background.r, item.background.g,

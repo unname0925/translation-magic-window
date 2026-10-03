@@ -1,6 +1,7 @@
 #include "ocr/ocr_service.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <exception>
 #include <filesystem>
@@ -83,9 +84,15 @@ core::OcrResult OcrService::recognize(const core::ImageBgra& frame, core::Langua
     }
     core::OcrResult out;
     out.script = run.script;
+    lastTimings_.bubbleMs = 0.0;
     // acquire 對應 setMangaMode 裡的 release：看到 true 就一定看得到載入好的模型
     if (mangaMode_.load(std::memory_order_acquire) && !cancel.stop_requested()) {
-        for (const ComicTextBlock& block : comicText_->detect(bgr)) {
+        const auto bubbleStart = std::chrono::steady_clock::now();
+        const std::vector<ComicTextBlock> blocks = comicText_->detect(bgr);
+        lastTimings_.bubbleMs = std::chrono::duration<double, std::milli>(
+                                    std::chrono::steady_clock::now() - bubbleStart)
+                                    .count();
+        for (const ComicTextBlock& block : blocks) {
             out.bubbles.push_back(block.rect);
         }
     }
