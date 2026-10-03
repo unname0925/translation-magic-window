@@ -193,6 +193,7 @@ bool WebPipeServer::start() {
     // 第一個實例：同名管道已經存在（另一個主程式、或別人搶先開的）就失敗
     const HANDLE first = createInstance(true);
     if (first == INVALID_HANDLE_VALUE) {
+        lastError_ = GetLastError();
         return false;
     }
     stop_ = CreateEventW(nullptr, TRUE, FALSE, nullptr);

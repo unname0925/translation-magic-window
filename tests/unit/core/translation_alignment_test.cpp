@@ -22,6 +22,20 @@ TEST(ParseJsonArrayTest, PlainArray) {
     EXPECT_EQ(*parsed, (Strings{"你好", "再見"}));
 }
 
+TEST(ParseJsonArrayTest, ExtraCharactersAfterTheArray) {
+    // hy-mt2 有前一輪對話時會在陣列後面多吐一個 }
+    const auto parsed = parseJsonArray(R"(["你好", "再見"]})");
+    ASSERT_TRUE(parsed.has_value());
+    EXPECT_EQ(*parsed, (Strings{"你好", "再見"}));
+}
+
+TEST(ParseJsonArrayTest, ArrayWrappedInASegmentsObject) {
+    // 沒有前文時 hy-mt2 常回 {"segments": [...]}
+    const auto parsed = parseJsonArray(R"({"segments": ["你好", "再見"]})");
+    ASSERT_TRUE(parsed.has_value());
+    EXPECT_EQ(*parsed, (Strings{"你好", "再見"}));
+}
+
 TEST(ParseJsonArrayTest, CodeBlock) {
     const auto parsed = parseJsonArray("```json\n[\"你好\", \"再見\"]\n```");
     ASSERT_TRUE(parsed.has_value());

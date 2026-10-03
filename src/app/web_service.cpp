@@ -78,27 +78,38 @@ void WebService::cancel(int connection, const std::string& id) {
     std::erase_if(queue_, [&](const Pending& pending) {
         return pending.connection == connection && pending.id == id;
     });
-    if (running_ && running_->connection == connection && running_->id == id) {
-        callbacks_.cancel();
-        running_.reset();
-        pump();
+    for (auto it = running_.begin(); it != running_.end();) {
+        if (it->second.connection == connection && it->second.id == id) {
+            callbacks_.cancel(it->first);
+            it = running_.erase(it);
+        } else {
+            ++it;
+        }
     }
+    pump();
 }
 
 void WebService::dropConnection(int connection) {
     std::erase_if(
         queue_, [connection](const Pending& pending) { return pending.connection == connection; });
-    if (running_ && running_->connection == connection) {
-        callbacks_.cancel();
-        running_.reset();
+    for (auto it = running_.begin(); it != running_.end();) {
+        if (it->second.connection == connection) {
+            callbacks_.cancel(it->first);
+            it = running_.erase(it);
+        } else {
+            ++it;
+        }
     }
     pump();
 }
 
 void WebService::pump() {
-    if (running_ || queue_.empty()) {
-        return;
+    while (running_.size() < kInFlight && !queue_.empty()) {
+        submitNext();
     }
+}
+
+void WebService::submitNext() {
     Pending next = std::move(queue_.front());
     queue_.pop_front();
 
@@ -114,16 +125,33 @@ void WebService::pump() {
     if (!next.request->language.empty() && next.request->language != "auto") {
         job.language = next.request->language;  // 擴充功能指定的語言優先
     }
-    running_ = Running{next.connection, std::move(next.id), job.generation};
+    running_[job.generation] = Running{next.connection, std::move(next.id)};
     callbacks_.submit(std::move(job));
 }
 
+void WebService::abandonRunning(const std::string& reason) {
+    for (const auto& [generation, running] : running_) {
+        server_.send(running.connection, core::webErrorReply(running.id, reason));
+    }
+    running_.clear();
+}
+
 void WebService::onResult(const core::PipelineResult& result) {
-    if (!running_ || result.generation != running_->generation) {
+    const auto found = running_.find(result.generation);
+    if (found == running_.end()) {
         return;  // 已經取消了
     }
-    const Running done = *running_;
-    running_.reset();
+    const Running done = std::move(found->second);
+    running_.erase(found);
+    if (callbacks_.log) {
+        const core::PipelineTimings& t = result.timings;
+        callbacks_.log("網頁：" + std::to_string(result.groups.size()) + " 段，OCR " +
+                       std::to_string(static_cast<int>(t.ocrMs)) + " ms（manga-ocr " +
+                       std::to_string(static_cast<int>(t.rereadMs)) + "）、翻譯 " +
+                       std::to_string(static_cast<int>(t.translationMs)) + " ms、覆蓋層 " +
+                       std::to_string(static_cast<int>(t.overlayMs)) + " ms" +
+                       (result.error.empty() ? "" : "，翻譯失敗：" + result.error));
+    }
     const core::PngEncoder encode = [](const core::ImageBgra& image) {
         return platform::encodePng(image);
     };

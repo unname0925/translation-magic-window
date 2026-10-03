@@ -35,13 +35,9 @@ Pipeline::Pipeline(IOcrService& ocr, TranslationService& translation, PipelineOp
     : ocr_(ocr), translation_(translation), options_(std::move(options)) {}
 
 Pipeline::LensMemory& Pipeline::memory(int lens) {
-    for (auto& [id, state] : memories_) {
-        if (id == lens) {
-            return state;
-        }
-    }
-    memories_.emplace_back(lens, LensMemory{});
-    return memories_.back().second;
+    // map 新增元素不會讓已經拿到的參照失效：第一段和翻譯段可以在不同執行緒用同一個透鏡的記憶
+    const std::lock_guard lock(memoryMutex_);
+    return memories_[lens];
 }
 
 void Pipeline::rememberScript(int lens, Language script, const std::vector<OcrLine>& lines) {
@@ -132,16 +128,18 @@ void Pipeline::rereadMangaBlocks(const PipelineJob& job, std::vector<TextBlock>&
 }
 
 void Pipeline::forget(int lens) {
+    const std::lock_guard lock(memoryMutex_);
     std::erase_if(memories_, [lens](const auto& entry) { return entry.first == lens; });
 }
 
-PipelineResult Pipeline::run(const PipelineJob& job, std::stop_token cancel) {
-    PipelineResult result;
+Pipeline::RecognizedPage Pipeline::recognize(const PipelineJob& job, std::stop_token cancel) {
+    RecognizedPage page;
+    PipelineResult& result = page.result;
     result.generation = job.generation;
     result.lens = job.lens;
     result.region = job.region;
     if (cancel.stop_requested() || job.frame.empty()) {
-        return result;
+        return page;
     }
 
     const auto ocrStart = std::chrono::steady_clock::now();
@@ -173,7 +171,7 @@ PipelineResult Pipeline::run(const PipelineJob& job, std::stop_token cancel) {
     result.timings.ocrMs = millisecondsSince(ocrStart);
     result.lines = lines;
     if (cancel.stop_requested()) {
-        return result;
+        return page;
     }
 
     const auto layoutStart = std::chrono::steady_clock::now();
@@ -192,14 +190,14 @@ PipelineResult Pipeline::run(const PipelineJob& job, std::stop_token cancel) {
     }
     result.timings.layoutMs = millisecondsSince(layoutStart);
     if (job.prepareTicket != 0 && blocks.empty()) {
-        return result;  // 預先做：不記「沒有文字」，正式處理時才記
+        return page;  // 預先做：不記「沒有文字」，正式處理時才記
     }
     if (blocks.empty()) {
         // 透鏡底下沒有文字。記住這件事，畫面沒變時就不會一直重跑。
         LensMemory& state = memory(job.lens);
         result.unchanged = state.text.empty();
         state.text.clear();
-        return result;
+        return page;
     }
 
     // 整片一起判斷語言：單一段落常常太短（M0-11）
@@ -217,7 +215,7 @@ PipelineResult Pipeline::run(const PipelineJob& job, std::stop_token cancel) {
         if (result.language == Language::Japanese && !recognized.bubbles.empty()) {
             rereadMangaBlocks(job, blocks, cancel);
         }
-        return result;
+        return page;
     }
 
     LensMemory& state = memory(job.lens);
@@ -233,7 +231,7 @@ PipelineResult Pipeline::run(const PipelineJob& job, std::stop_token cancel) {
         result.timings.rereadMs = millisecondsSince(rereadStart);
         result.timings.ocrMs += result.timings.rereadMs;
         if (cancel.stop_requested()) {
-            return result;
+            return page;
         }
     }
 
@@ -251,11 +249,30 @@ PipelineResult Pipeline::run(const PipelineJob& job, std::stop_token cancel) {
     if (request.srcLang.empty()) {
         request.srcLang = "auto";
     }
-    request.context = state.recent;
+    {
+        const std::lock_guard lock(memoryMutex_);
+        request.context = state.recent;  // 好幾頁同時翻譯時，finish 會在別的執行緒寫它
+    }
     if (job.glossary != nullptr) {
         request.glossary = glossaryFor(sources, *job.glossary);
     }
 
+    page.blocks = std::move(blocks);
+    page.sources = std::move(sources);
+    page.request = std::move(request);
+    page.done = false;
+    return page;
+}
+
+PipelineResult Pipeline::finish(RecognizedPage page, const PipelineJob& job,
+                                std::stop_token cancel) {
+    PipelineResult result = std::move(page.result);
+    std::vector<TextBlock> blocks = std::move(page.blocks);
+    const std::vector<std::string> sources = std::move(page.sources);
+    const TranslateRequest request = std::move(page.request);
+    if (cancel.stop_requested()) {
+        return result;
+    }
     const auto translationStart = std::chrono::steady_clock::now();
     std::vector<std::string> translations;
     try {
@@ -279,6 +296,8 @@ PipelineResult Pipeline::run(const PipelineJob& job, std::stop_token cancel) {
     result.timings.overlayMs = millisecondsSince(overlayStart);
 
     if (result.error.empty()) {
+        LensMemory& state = memory(job.lens);
+        const std::lock_guard lock(memoryMutex_);
         // 留最後幾組當作下一次的上下文
         for (const TranslatedBlock& group : result.groups) {
             state.recent.emplace_back(group.block.text, group.translation);
@@ -290,6 +309,14 @@ PipelineResult Pipeline::run(const PipelineJob& job, std::stop_token cancel) {
         }
     }
     return result;
+}
+
+PipelineResult Pipeline::run(const PipelineJob& job, std::stop_token cancel) {
+    RecognizedPage page = recognize(job, cancel);
+    if (page.done) {
+        return std::move(page.result);
+    }
+    return finish(std::move(page), job, cancel);
 }
 
 }  // namespace tmw::core

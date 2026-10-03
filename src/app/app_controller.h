@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <thread>
 
@@ -12,11 +13,13 @@
 #include "core/auto_trigger.h"
 #include "core/clock.h"
 #include "core/glossary.h"
+#include "core/gpu_lock.h"
 #include "core/history.h"
 #include "core/perf_stats.h"
 #include "core/pipeline.h"
 #include "core/pipeline_worker.h"
 #include "core/settings.h"
+#include "core/web_pipeline_worker.h"
 #include "net/update_check.h"
 #include "ocr/ocr_service.h"
 #include "platform/capture_frame_source.h"
@@ -94,6 +97,8 @@ private:
     void prepare(Lens& lens, std::uint64_t ticket);
     // 網頁漫畫：開管道等瀏覽器擴充功能連線（setUpPipeline 的最後）
     void setUpWeb();
+    // 開管道；開不起來時過一下再試（attempt：第幾次）
+    void startWeb(int attempt);
 
     // 處理管線的結果回到 UI 執行緒之後
     void onPipelineResult(const core::PipelineResult& result);
@@ -178,9 +183,15 @@ private:
     // 翻譯：OCR 和引擎鏈建立失敗時這些會是空的，程式照常執行
     std::unique_ptr<ocr::OcrService> ocr_;
     std::shared_ptr<core::TranslationService> translation_;
+    // 顯示卡上的推論（OCR、背景修補）輪流做：透鏡和網頁漫畫在不同的執行緒（core/gpu_lock.h）
+    std::mutex gpu_;
+    std::unique_ptr<core::LockedOcrService> lockedOcr_;
     std::unique_ptr<core::Pipeline> pipeline_;
     std::unique_ptr<core::PipelineWorker> worker_;
-    // 網頁漫畫整頁翻譯：瀏覽器擴充功能的連線。排在 worker_ 後面，解構時先停
+    // 網頁漫畫整頁翻譯：自己的處理管線和工作佇列，瀏覽器擴充功能的連線。
+    // 排在後面，解構時先停：先關連線，再停工作佇列
+    std::unique_ptr<core::Pipeline> webPipeline_;
+    std::unique_ptr<core::WebPipelineWorker> webWorker_;
     std::unique_ptr<WebService> web_;
     core::History history_;
     std::unique_ptr<ui::ResultWindow> resultWindow_;

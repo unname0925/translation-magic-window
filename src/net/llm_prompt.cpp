@@ -53,18 +53,27 @@ std::string llmUserMessage(const core::TranslateRequest& request,
     }
     nlohmann::json user;
     user["source_lang"] = request.srcLang;
-    if (!request.context.empty()) {
-        nlohmann::json context = nlohmann::json::array();
-        for (const auto& [source, translation] : request.context) {
-            context.push_back({source, translation});
-        }
-        user["context"] = std::move(context);
-    }
     if (!request.glossary.empty()) {
         user["glossary"] = request.glossary;
     }
     user["segments"] = std::vector<std::string>(segments.begin(), segments.end());
     return user.dump();
+}
+
+std::optional<LlmTurn> llmContextTurn(const core::TranslateRequest& request) {
+    if (request.context.empty()) {
+        return std::nullopt;
+    }
+    nlohmann::json sources = nlohmann::json::array();
+    nlohmann::json translations = nlohmann::json::array();
+    for (const auto& [source, translation] : request.context) {
+        sources.push_back(source);
+        translations.push_back(translation);
+    }
+    nlohmann::json user;
+    user["source_lang"] = request.srcLang;
+    user["segments"] = std::move(sources);
+    return LlmTurn{user.dump(), translations.dump()};
 }
 
 core::TranslateError classifyHttpFailure(const HttpResponse& response) {

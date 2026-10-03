@@ -4,6 +4,7 @@
 
 #include <QApplication>
 #include <QMessageBox>
+#include <QTimer>
 #include <array>
 #include <chrono>
 #include <exception>
@@ -41,6 +42,9 @@ namespace {
 
 constexpr wchar_t kShowLensMessageName[] = L"TranslationMagicWindow.ShowLens";
 constexpr UINT kTrayCallbackMessage = WM_APP + 1;
+// 網頁漫畫同時翻譯幾頁。本機 Ollama 開平行處理（OLLAMA_NUM_PARALLEL=4）時 4 頁同時送快 2.3 倍；
+// 沒開時請求會在 Ollama 排隊，和一頁一頁送差不多，不會更慢
+constexpr int kWebTranslators = 4;
 
 constexpr int kHotkeyCapture = 1;
 constexpr int kHotkeyTranslate = 2;
@@ -900,7 +904,13 @@ void AppController::setMangaMode(bool enabled) {
 }
 
 void AppController::rebuildTranslation() {
-    // 解構的順序很重要：工作執行緒握著 pipeline_，pipeline_ 握著 translation_
+    // 解構的順序很重要：工作執行緒握著 pipeline_，pipeline_ 握著 translation_。
+    // 網頁漫畫的工作佇列也一樣；連線（web_）留著，進行中的頁回報錯誤讓擴充功能重試
+    if (web_ != nullptr) {
+        web_->abandonRunning("restarted");
+    }
+    webWorker_.reset();
+    webPipeline_.reset();
     worker_.reset();
     pipeline_.reset();
     translation_.reset();
@@ -926,7 +936,24 @@ void AppController::rebuildTranslation() {
     core::PipelineOptions pipelineOptions;
     pipelineOptions.dropEdgeBlocks = settings_.dropEdgeBlocks;
     pipelineOptions.furigana = furigana_;
-    pipeline_ = std::make_unique<core::Pipeline>(*ocr_, *translation_, pipelineOptions);
+    // 透鏡和網頁漫畫的推論輪流用顯示卡（core/gpu_lock.h）
+    lockedOcr_ = std::make_unique<core::LockedOcrService>(*ocr_, gpu_);
+    pipeline_ = std::make_unique<core::Pipeline>(*lockedOcr_, *translation_, pipelineOptions);
+    // 網頁漫畫用自己的一份（自己的上下文、語言記憶），推論和透鏡共用模型
+    webPipeline_ = std::make_unique<core::Pipeline>(*lockedOcr_, *translation_, pipelineOptions);
+    // 網頁漫畫自己的工作佇列：一個辨識執行緒＋kWebTranslators
+    // 個翻譯執行緒（core/web_pipeline_worker.h）
+    webWorker_ = std::make_unique<core::WebPipelineWorker>(
+        *webPipeline_, kWebTranslators, [this](core::PipelineResult result) {
+            QMetaObject::invokeMethod(
+                QApplication::instance(),
+                [this, moved = std::move(result)] {
+                    if (web_ != nullptr) {
+                        web_->onResult(moved);
+                    }
+                },
+                Qt::QueuedConnection);
+        });
     worker_ =
         std::make_unique<core::PipelineWorker>(*pipeline_, [this](core::PipelineResult result) {
             // 這裡是工作執行緒。回到 UI 執行緒才能碰透鏡和結果視窗（design.md 3.3）。
@@ -935,7 +962,9 @@ void AppController::rebuildTranslation() {
                 [this, moved = std::move(result)] { onPipelineResult(moved); },
                 Qt::QueuedConnection);
         });
-    setUpWeb();
+    if (web_ == nullptr) {
+        setUpWeb();  // 管道只開一次：改設定重建翻譯時連線不斷
+    }
 }
 
 void AppController::setUpWeb() {
@@ -948,24 +977,40 @@ void AppController::setUpWeb() {
         job.glossary = currentGlossary();
         job.inpainter = inpainter_;  // 有載入背景修補才有
     };
+    // 工作佇列會隨著改設定重建（rebuildTranslation），所以每次都用當下的那一個
     callbacks.submit = [this](core::PipelineJob job) {
-        if (worker_ != nullptr) {
-            worker_->submit(std::move(job));
+        if (webWorker_ != nullptr) {
+            webWorker_->submit(std::move(job));
         }
     };
-    callbacks.cancel = [this] {
-        if (worker_ != nullptr) {
-            worker_->cancel(WebService::kLensId);
+    callbacks.cancel = [this](std::uint64_t generation) {
+        if (webWorker_ != nullptr) {
+            webWorker_->cancel(generation);
         }
     };
     callbacks.log = [](const std::string& message) { platform::logInfo(message); };
     web_ = std::make_unique<WebService>(platform::webPipeName(), std::move(callbacks));
-    if (web_->start()) {
+    startWeb(0);
+}
+
+void AppController::startWeb(int attempt) {
+    if (web_ == nullptr || web_->start()) {
         platform::logInfo("網頁漫畫：等待瀏覽器擴充功能連線");
-    } else {
-        platform::logWarn("網頁漫畫：開不了管道（可能有另一個執行個體），瀏覽器擴充功能連不上");
-        web_.reset();
+        return;
     }
+    const unsigned long error = web_->startError();
+    // 上一個主程式剛結束、還沒放掉管道時會暫時開不起來：每 2 秒再試，最多 1 分鐘
+    constexpr int kAttempts = 30;
+    if (attempt + 1 >= kAttempts) {
+        platform::logWarn("網頁漫畫：開不了管道（錯誤碼 " + std::to_string(error) +
+                          "），瀏覽器擴充功能連不上");
+        return;
+    }
+    if (attempt == 0) {
+        platform::logInfo("網頁漫畫：管道暫時開不了（錯誤碼 " + std::to_string(error) +
+                          "），稍後再試");
+    }
+    QTimer::singleShot(2000, QApplication::instance(), [this, attempt] { startWeb(attempt + 1); });
 }
 
 void AppController::openSettings() {
@@ -1136,7 +1181,8 @@ void AppController::setUpInpainter() {
         return;
     }
     // 第一次真的需要修補時才載入模型
-    inpainter_ = std::make_shared<ocr::LamaInpainter>(model);
+    inpainter_ =
+        std::make_shared<core::LockedInpainter>(std::make_shared<ocr::LamaInpainter>(model), gpu_);
     platform::logInfo("背景修補：可以用（第一次需要時載入 LaMa）");
 }
 
@@ -1233,12 +1279,6 @@ std::filesystem::path AppController::writeDebugDump() {
 }
 
 void AppController::onPipelineResult(const core::PipelineResult& result) {
-    if (result.lens == WebService::kLensId) {
-        if (web_ != nullptr) {
-            web_->onResult(result);
-        }
-        return;
-    }
     const platform::LogContext context{.lens = result.lens, .sequence = result.generation};
     Lens* const lens = findLens(result.lens);
     if (lens == nullptr) {

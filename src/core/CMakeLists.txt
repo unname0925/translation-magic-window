@@ -68,6 +68,7 @@ add_library(tmw_core STATIC
     trigger_state_machine.cpp
     trigger_state_machine.h
     utf8.cpp
+    web_pipeline_worker.cpp
     web_protocol.cpp
     utf8.h)
 target_include_directories(tmw_core PUBLIC "${PROJECT_SOURCE_DIR}/src")

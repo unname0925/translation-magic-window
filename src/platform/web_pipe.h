@@ -44,8 +44,10 @@ public:
     WebPipeServer(const WebPipeServer&) = delete;
     WebPipeServer& operator=(const WebPipeServer&) = delete;
 
-    // 建立管道開始接受連線。同名的管道已經存在（另一個執行個體）或建立失敗時回傳 false
+    // 建立管道開始接受連線。同名的管道已經存在（另一個執行個體）或建立失敗時回傳 false，
+    // 原因（GetLastError）在 lastError()
     bool start();
+    DWORD lastError() const { return lastError_; }
     void stop();
 
     // 送一則訊息給某條連線（任何執行緒都可以呼叫）。連線已經斷了時回傳 false
@@ -66,6 +68,7 @@ private:
     std::map<int, std::shared_ptr<Connection>> connections_;
     int nextId_ = 1;
     std::atomic<bool> running_{false};
+    DWORD lastError_ = 0;
 };
 
 // 用戶端：連上主程式的管道。主程式還沒開管道時等到 timeoutMs 為止。

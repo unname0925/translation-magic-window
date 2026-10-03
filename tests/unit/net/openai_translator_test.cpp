@@ -297,6 +297,27 @@ TEST(BuildChatRequestTest, IncludesContextAndGlossaryOnlyWhenTheyExist) {
     EXPECT_NE(full.find("存檔"), std::string::npos);
 }
 
+TEST(BuildChatRequestTest, ContextIsAPreviousTurnNotPartOfTheSegments) {
+    // 前文放在要翻的 JSON 裡時，hy-mt2 會連前文一起照抄回來，輸出多一倍
+    const OpenAiTranslator::Options options;
+    core::TranslateRequest request{"ja", "zh-TW", {}, {}};
+    request.context.emplace_back("前の台詞", "上一句");
+    const Strings segments{"こんにちは"};
+    const nlohmann::json body =
+        nlohmann::json::parse(buildChatRequest(options, request, segments, true));
+    const nlohmann::json& messages = body["messages"];
+    ASSERT_EQ(messages.size(), 4u);
+    EXPECT_EQ(messages[1]["role"], "user");
+    EXPECT_EQ(nlohmann::json::parse(messages[1]["content"].get<std::string>())["segments"],
+              nlohmann::json::array({"前の台詞"}));
+    EXPECT_EQ(messages[2]["role"], "assistant");
+    EXPECT_EQ(nlohmann::json::parse(messages[2]["content"].get<std::string>()),
+              nlohmann::json::array({"上一句"}));
+    EXPECT_EQ(messages[3]["role"], "user");
+    EXPECT_EQ(messages[3]["content"].get<std::string>().find("上一句"), std::string::npos)
+        << "要翻的那一則不含前文";
+}
+
 std::string systemContent(const std::string& body) {
     return nlohmann::json::parse(body)["messages"][0]["content"].get<std::string>();
 }

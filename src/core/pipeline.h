@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <span>
 #include <stop_token>
@@ -174,6 +175,20 @@ public:
 
     PipelineResult run(const PipelineJob& job, std::stop_token cancel);
 
+    // run 拆成兩段，給網頁漫畫同時翻譯好幾頁用（WebPipelineWorker）：
+    // - recognize：OCR、分段、manga-ocr，組好要送去翻譯的內容。用顯示卡，一次一頁
+    // - finish：送去翻譯、規劃覆蓋層。大多在等網路，可以好幾頁同時做（各自的執行緒）
+    // done 是 true 時第一段就結束了（取消、沒有文字、只預先做 OCR），result 就是最後的結果
+    struct RecognizedPage {
+        PipelineResult result;
+        bool done = true;
+        std::vector<TextBlock> blocks;
+        std::vector<std::string> sources;
+        TranslateRequest request;
+    };
+    RecognizedPage recognize(const PipelineJob& job, std::stop_token cancel);
+    PipelineResult finish(RecognizedPage page, const PipelineJob& job, std::stop_token cancel);
+
     // 忘掉「上一次的結果」，下一次一定會被當成新的內容（例如透鏡被拖到別的地方）
     void forget(int lens);
 
@@ -209,7 +224,9 @@ private:
     IOcrService& ocr_;
     TranslationService& translation_;
     PipelineOptions options_;
-    std::vector<std::pair<int, LensMemory>> memories_;
+    // memory() 和「上下文」（recent）的讀寫：網頁漫畫的翻譯段在別的執行緒
+    std::mutex memoryMutex_;
+    std::map<int, LensMemory> memories_;
 };
 
 }  // namespace tmw::core

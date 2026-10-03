@@ -112,8 +112,15 @@ std::string buildMessagesRequest(const AnthropicTranslator::Options& options,
     body["model"] = options.model;
     body["max_tokens"] = options.maxTokens;
     body["system"] = llmSystemPrompt(request, asJsonArray);
-    body["messages"] = nlohmann::json::array(
-        {{{"role", "user"}, {"content", llmUserMessage(request, segments, asJsonArray)}}});
+    nlohmann::json messages = nlohmann::json::array();
+    if (const std::optional<LlmTurn> context =
+            asJsonArray ? llmContextTurn(request) : std::nullopt) {
+        messages.push_back({{"role", "user"}, {"content", context->user}});
+        messages.push_back({{"role", "assistant"}, {"content", context->assistant}});
+    }
+    messages.push_back(
+        {{"role", "user"}, {"content", llmUserMessage(request, segments, asJsonArray)}});
+    body["messages"] = std::move(messages);
     nlohmann::json config;
     if (!options.effort.empty()) {
         config["effort"] = options.effort;

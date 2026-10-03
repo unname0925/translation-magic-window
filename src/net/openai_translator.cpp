@@ -29,9 +29,16 @@ std::string buildChatRequest(const OpenAiTranslator::Options& options,
         body["max_tokens"] = options.maxTokens;
     }
     body["stream"] = options.stream;
-    body["messages"] = nlohmann::json::array(
-        {{{"role", "system"}, {"content", llmSystemPrompt(request, asJsonArray)}},
-         {{"role", "user"}, {"content", llmUserMessage(request, segments, asJsonArray)}}});
+    nlohmann::json messages = nlohmann::json::array(
+        {{{"role", "system"}, {"content", llmSystemPrompt(request, asJsonArray)}}});
+    if (const std::optional<LlmTurn> context =
+            asJsonArray ? llmContextTurn(request) : std::nullopt) {
+        messages.push_back({{"role", "user"}, {"content", context->user}});
+        messages.push_back({{"role", "assistant"}, {"content", context->assistant}});
+    }
+    messages.push_back(
+        {{"role", "user"}, {"content", llmUserMessage(request, segments, asJsonArray)}});
+    body["messages"] = std::move(messages);
     return body.dump();
 }
 
@@ -198,6 +205,8 @@ void OpenAiTranslator::keepOllamaLoaded() {
     if (options_.ollamaKeepAlive.empty() || keepAliveRunning_.exchange(true)) {
         return;  // 上一個還沒送完就不重送：反正是同一件事
     }
+    // 舊的執行緒可能剛把 running 設回 false、還沒結束，另一個翻譯也在這時候進來
+    const std::lock_guard lock(keepAliveThread_);
     if (keepAlive_.joinable()) {
         keepAlive_.join();  // 已經送完了（running 是 false），只是收回執行緒
     }
@@ -216,6 +225,7 @@ void OpenAiTranslator::keepOllamaLoaded() {
 }
 
 void OpenAiTranslator::waitForKeepAlive() {
+    const std::lock_guard lock(keepAliveThread_);
     if (keepAlive_.joinable()) {
         keepAlive_.join();
     }

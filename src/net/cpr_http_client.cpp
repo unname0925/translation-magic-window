@@ -7,13 +7,30 @@
 
 namespace tmw::net {
 
-CprHttpClient::CprHttpClient() : session_(std::make_unique<cpr::Session>()) {}
+CprHttpClient::CprHttpClient() {
+    idle_.push_back(std::make_unique<cpr::Session>());
+}
 
 CprHttpClient::~CprHttpClient() = default;
 
-HttpResponse CprHttpClient::send(const HttpRequest& request, std::stop_token cancel) {
+std::unique_ptr<cpr::Session> CprHttpClient::borrow() {
     const std::lock_guard lock(mutex_);
-    cpr::Session& session = *session_;
+    if (idle_.empty()) {
+        return std::make_unique<cpr::Session>();
+    }
+    std::unique_ptr<cpr::Session> session = std::move(idle_.back());
+    idle_.pop_back();
+    return session;
+}
+
+void CprHttpClient::giveBack(std::unique_ptr<cpr::Session> session) {
+    const std::lock_guard lock(mutex_);
+    idle_.push_back(std::move(session));
+}
+
+HttpResponse CprHttpClient::send(const HttpRequest& request, std::stop_token cancel) {
+    std::unique_ptr<cpr::Session> borrowed = borrow();
+    cpr::Session& session = *borrowed;
     session.SetUrl(cpr::Url{request.url});
 
     cpr::Header header;
@@ -48,6 +65,7 @@ HttpResponse CprHttpClient::send(const HttpRequest& request, std::stop_token can
     if (request.onChunk) {
         session.SetWriteCallback(cpr::WriteCallback{});
     }
+    giveBack(std::move(borrowed));
 
     HttpResponse out;
     out.status = static_cast<int>(response.status_code);

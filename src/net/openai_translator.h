@@ -13,6 +13,7 @@
 #include <cstddef>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <span>
 #include <stop_token>
@@ -85,7 +86,8 @@ private:
     Options options_;
     OnSegment onSegment_;
     std::atomic<bool> keepAliveRunning_{false};
-    std::jthread keepAlive_;  // 解構時等它送完（最多幾秒）
+    std::mutex keepAliveThread_;  // 好幾頁同時翻譯時，保護 keepAlive_ 的收回和重新指派
+    std::jthread keepAlive_;      // 解構時等它送完（最多幾秒）
 
 public:
     // 測試用：等背景的 keep_alive 請求送完
