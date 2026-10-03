@@ -26,21 +26,11 @@ winrt::com_ptr<IWICImagingFactory> createFactory() {
     return factory;
 }
 
-}  // namespace
-
-void savePng(const core::ImageBgra& image, const std::filesystem::path& path) {
-    if (image.empty()) {
-        throw std::runtime_error("savePng: image is empty");
-    }
-    const auto factory = createFactory();
-
-    winrt::com_ptr<IWICStream> stream;
-    check(factory->CreateStream(stream.put()), "CreateStream");
-    check(stream->InitializeFromFilename(path.c_str(), GENERIC_WRITE), "opening the PNG file");
-
+// 把圖片編成 PNG 寫進 stream
+void encodePngTo(IWICImagingFactory& factory, const core::ImageBgra& image, IStream* stream) {
     winrt::com_ptr<IWICBitmapEncoder> encoder;
-    check(factory->CreateEncoder(GUID_ContainerFormatPng, nullptr, encoder.put()), "CreateEncoder");
-    check(encoder->Initialize(stream.get(), WICBitmapEncoderNoCache), "initializing the encoder");
+    check(factory.CreateEncoder(GUID_ContainerFormatPng, nullptr, encoder.put()), "CreateEncoder");
+    check(encoder->Initialize(stream, WICBitmapEncoderNoCache), "initializing the encoder");
 
     winrt::com_ptr<IWICBitmapFrameEncode> frame;
     winrt::com_ptr<IPropertyBag2> properties;
@@ -51,14 +41,47 @@ void savePng(const core::ImageBgra& image, const std::filesystem::path& path) {
     WICPixelFormatGUID format = GUID_WICPixelFormat32bppBGRA;
     check(frame->SetPixelFormat(&format), "SetPixelFormat");
     if (format != GUID_WICPixelFormat32bppBGRA) {
-        throw std::runtime_error("savePng: the PNG encoder does not accept 32bpp BGRA");
+        throw std::runtime_error("PNG encoder does not accept 32bpp BGRA");
     }
     check(frame->WritePixels(static_cast<UINT>(image.height), static_cast<UINT>(image.stride()),
                              static_cast<UINT>(image.pixels.size()),
                              const_cast<BYTE*>(image.pixels.data())),
           "WritePixels");
     check(frame->Commit(), "committing the frame");
-    check(encoder->Commit(), "committing the PNG file");
+    check(encoder->Commit(), "committing the PNG");
+}
+
+}  // namespace
+
+void savePng(const core::ImageBgra& image, const std::filesystem::path& path) {
+    if (image.empty()) {
+        throw std::runtime_error("savePng: image is empty");
+    }
+    const auto factory = createFactory();
+    winrt::com_ptr<IWICStream> stream;
+    check(factory->CreateStream(stream.put()), "CreateStream");
+    check(stream->InitializeFromFilename(path.c_str(), GENERIC_WRITE), "opening the PNG file");
+    encodePngTo(*factory, image, stream.get());
+}
+
+std::vector<std::uint8_t> encodePng(const core::ImageBgra& image) {
+    if (image.empty()) {
+        throw std::runtime_error("encodePng: image is empty");
+    }
+    const auto factory = createFactory();
+    winrt::com_ptr<IStream> stream;
+    check(CreateStreamOnHGlobal(nullptr, TRUE, stream.put()), "CreateStreamOnHGlobal");
+    encodePngTo(*factory, image, stream.get());
+
+    STATSTG stat{};
+    check(stream->Stat(&stat, STATFLAG_NONAME), "Stat");
+    std::vector<std::uint8_t> bytes(static_cast<std::size_t>(stat.cbSize.QuadPart));
+    const LARGE_INTEGER zero{};
+    check(stream->Seek(zero, STREAM_SEEK_SET, nullptr), "Seek");
+    ULONG read = 0;
+    check(stream->Read(bytes.data(), static_cast<ULONG>(bytes.size()), &read), "Read");
+    bytes.resize(read);
+    return bytes;
 }
 
 core::ImageBgra loadImage(const std::filesystem::path& path) {

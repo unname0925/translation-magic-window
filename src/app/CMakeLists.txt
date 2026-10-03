@@ -5,7 +5,9 @@ add_executable(tmw_app WIN32
     app_identity.h
     main.cpp
     translation_setup.cpp
-    translation_setup.h)
+    translation_setup.h
+    web_service.cpp
+    web_service.h)
 set_target_properties(tmw_app PROPERTIES OUTPUT_NAME "TranslationMagicWindow")
 target_include_directories(tmw_app PRIVATE "${PROJECT_SOURCE_DIR}/src")
 target_link_libraries(tmw_app PRIVATE tmw_ui tmw_net tmw_ocr tmw_platform tmw_core tmw_options)

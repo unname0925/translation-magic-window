@@ -935,6 +935,37 @@ void AppController::rebuildTranslation() {
                 [this, moved = std::move(result)] { onPipelineResult(moved); },
                 Qt::QueuedConnection);
         });
+    setUpWeb();
+}
+
+void AppController::setUpWeb() {
+    WebService::Callbacks callbacks;
+    callbacks.post = [](std::function<void()> work) {
+        QMetaObject::invokeMethod(QApplication::instance(), std::move(work), Qt::QueuedConnection);
+    };
+    callbacks.configure = [this](core::PipelineJob& job) {
+        job.language = settings_.ocrLanguage;
+        job.glossary = currentGlossary();
+        job.inpainter = inpainter_;  // 有載入背景修補才有
+    };
+    callbacks.submit = [this](core::PipelineJob job) {
+        if (worker_ != nullptr) {
+            worker_->submit(std::move(job));
+        }
+    };
+    callbacks.cancel = [this] {
+        if (worker_ != nullptr) {
+            worker_->cancel(WebService::kLensId);
+        }
+    };
+    callbacks.log = [](const std::string& message) { platform::logInfo(message); };
+    web_ = std::make_unique<WebService>(platform::webPipeName(), std::move(callbacks));
+    if (web_->start()) {
+        platform::logInfo("網頁漫畫：等待瀏覽器擴充功能連線");
+    } else {
+        platform::logWarn("網頁漫畫：開不了管道（可能有另一個執行個體），瀏覽器擴充功能連不上");
+        web_.reset();
+    }
 }
 
 void AppController::openSettings() {
@@ -1202,6 +1233,12 @@ std::filesystem::path AppController::writeDebugDump() {
 }
 
 void AppController::onPipelineResult(const core::PipelineResult& result) {
+    if (result.lens == WebService::kLensId) {
+        if (web_ != nullptr) {
+            web_->onResult(result);
+        }
+        return;
+    }
     const platform::LogContext context{.lens = result.lens, .sequence = result.generation};
     Lens* const lens = findLens(result.lens);
     if (lens == nullptr) {

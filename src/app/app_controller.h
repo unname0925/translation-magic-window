@@ -8,6 +8,7 @@
 #include <optional>
 #include <thread>
 
+#include "app/web_service.h"
 #include "core/auto_trigger.h"
 #include "core/clock.h"
 #include "core/glossary.h"
@@ -91,6 +92,8 @@ private:
     void process(Lens& lens, const core::ProcessRequest& request);
     // 畫面還在等穩定時先做 OCR（AutoTrigger 的 onPrepare，速度優化 4）
     void prepare(Lens& lens, std::uint64_t ticket);
+    // 網頁漫畫：開管道等瀏覽器擴充功能連線（setUpPipeline 的最後）
+    void setUpWeb();
 
     // 處理管線的結果回到 UI 執行緒之後
     void onPipelineResult(const core::PipelineResult& result);
@@ -177,6 +180,8 @@ private:
     std::shared_ptr<core::TranslationService> translation_;
     std::unique_ptr<core::Pipeline> pipeline_;
     std::unique_ptr<core::PipelineWorker> worker_;
+    // 網頁漫畫整頁翻譯：瀏覽器擴充功能的連線。排在 worker_ 後面，解構時先停
+    std::unique_ptr<WebService> web_;
     core::History history_;
     std::unique_ptr<ui::ResultWindow> resultWindow_;
     std::unique_ptr<ui::SettingsWindow> settingsWindow_;
