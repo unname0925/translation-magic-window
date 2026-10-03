@@ -101,6 +101,9 @@ SettingsWindow::SettingsWindow(core::Settings settings, Encrypt encrypt, QWidget
     verbose_ = new QCheckBox(
         QStringLiteral("詳細診斷（記錄檔會包含辨識到的文字和譯文，回報問題時再打開）"), this);
     verbose_->setObjectName(QStringLiteral("verbose"));
+    checkUpdates_ = new QCheckBox(
+        QStringLiteral("每天檢查一次有沒有新版本（連到 GitHub，只讀取最新版本的編號）"), this);
+    checkUpdates_->setObjectName(QStringLiteral("checkUpdates"));
     mangaMode_ = new QCheckBox(
         QStringLiteral(
             "漫畫模式（同一個對話框裡的字當成同一句；每次多約 40 ms，網頁和遊戲不用開）"),
@@ -181,6 +184,7 @@ SettingsWindow::SettingsWindow(core::Settings settings, Encrypt encrypt, QWidget
     layout->addWidget(gameMode_);
     layout->addWidget(translateEdges_);
     layout->addWidget(verbose_);
+    layout->addWidget(checkUpdates_);
     layout->addWidget(hotkeys);
     layout->addWidget(buttons);
 
@@ -234,6 +238,7 @@ void SettingsWindow::applyToWidgets() {
     llmKind_->setCurrentIndex(kind < 0 ? 0 : kind);
     fallback_->setChecked(choice.fallbackToGoogle);
     verbose_->setChecked(settings_.verboseDiagnostics);
+    checkUpdates_->setChecked(settings_.checkUpdates);
     mangaMode_->setChecked(settings_.mangaMode);
     gameMode_->setChecked(settings_.gameMode);
     translateEdges_->setChecked(!settings_.dropEdgeBlocks);
@@ -347,6 +352,7 @@ void SettingsWindow::collectFromWidgets() {
 
     settings_.engines = enginesFor(choice, settings_, encrypted);
     settings_.verboseDiagnostics = verbose_->isChecked();
+    settings_.checkUpdates = checkUpdates_->isChecked();
     settings_.mangaMode = mangaMode_->isChecked();
     settings_.gameMode = gameMode_->isChecked();
     settings_.dropEdgeBlocks = !translateEdges_->isChecked();

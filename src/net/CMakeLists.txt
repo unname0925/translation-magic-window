@@ -24,6 +24,8 @@ add_library(tmw_net STATIC
     ruby_notes.h
     service_translators.cpp
     service_translators.h
+    update_check.cpp
+    update_check.h
     sse.cpp
     sse.h)
 target_include_directories(tmw_net PUBLIC "${PROJECT_SOURCE_DIR}/src")

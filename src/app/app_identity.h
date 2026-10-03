@@ -43,6 +43,7 @@ enum Command : UINT {
     // 多個透鏡（M5-05）
     kCommandAddLens = 24,
     kCommandRemoveLens = 25,
+    kCommandOpenUpdate = 26,  // 有新版本時：打開下載頁面
 };
 
 }  // namespace tmw::app

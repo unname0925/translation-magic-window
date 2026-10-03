@@ -35,6 +35,7 @@ add_executable(tmw_unit_tests
     net/custom_http_translator_test.cpp
     net/openai_translator_test.cpp
     net/service_translators_test.cpp
+    net/update_check_test.cpp
     net/rate_limiter_test.cpp
     ocr/comic_text_detector_test.cpp
     ocr/lama_inpainter_test.cpp

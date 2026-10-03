@@ -37,4 +37,16 @@ bool TrayIcon::add() {
     return true;
 }
 
+void TrayIcon::notify(const std::wstring& title, const std::wstring& text) {
+    if (!added_) {
+        return;
+    }
+    NOTIFYICONDATAW info = data_;
+    info.uFlags = NIF_INFO;
+    info.dwInfoFlags = NIIF_INFO;
+    wcsncpy_s(info.szInfoTitle, title.c_str(), _TRUNCATE);
+    wcsncpy_s(info.szInfo, text.c_str(), _TRUNCATE);
+    Shell_NotifyIconW(NIM_MODIFY, &info);
+}
+
 }  // namespace tmw::platform

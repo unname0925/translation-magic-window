@@ -26,6 +26,9 @@ public:
     // Explorer 還沒準備好時會失敗並回傳 false，等 TaskbarCreated 再試即可。
     bool add();
 
+    // 從系統匣跳出一則通知（Windows 11 顯示成通知中心的訊息）。沒有加進系統匣時不做任何事
+    void notify(const std::wstring& title, const std::wstring& text);
+
 private:
     NOTIFYICONDATAW data_{};
     bool added_ = false;

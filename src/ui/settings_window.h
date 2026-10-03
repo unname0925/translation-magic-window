@@ -67,6 +67,7 @@ private:
     QLabel* keyNote_ = nullptr;
     QCheckBox* fallback_ = nullptr;
     QCheckBox* verbose_ = nullptr;
+    QCheckBox* checkUpdates_ = nullptr;  // 每天檢查新版本（M5-04）
     QCheckBox* mangaMode_ = nullptr;
     QCheckBox* gameMode_ = nullptr;
     QCheckBox* translateEdges_ = nullptr;  // 勾起來代表 dropEdgeBlocks = false

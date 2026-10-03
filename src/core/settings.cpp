@@ -108,6 +108,11 @@ SettingsLoad parseSettings(std::string_view json_text,
     read(document, "gameMode", settings.gameMode);
     read(document, "overlay", settings.overlay);
     read(document, "overlayFont", settings.overlayFont);
+    read(document, "checkUpdates", settings.checkUpdates);
+    if (const auto it = document.find("lastUpdateCheck");
+        it != document.end() && it->is_number_integer()) {
+        settings.lastUpdateCheck = it->get<std::int64_t>();
+    }
     if (const auto it = document.find("lenses"); it != document.end() && it->is_array()) {
         for (const auto& entry : *it) {
             if (!entry.is_object() || settings.lenses.size() >= kMaxSavedLenses) {
@@ -256,6 +261,8 @@ std::string serializeSettings(const Settings& settings, int schemaVersion) {
             {"right", settings.resultWindow.geometry.right},
             {"bottom", settings.resultWindow.geometry.bottom}}}}},
         {"lenses", lensesJson(settings.lenses)},
+        {"checkUpdates", settings.checkUpdates},
+        {"lastUpdateCheck", settings.lastUpdateCheck},
         {"hotkeys",
          {{"translate", settings.hotkeys.translate},
           {"debugDump", settings.hotkeys.debugDump},

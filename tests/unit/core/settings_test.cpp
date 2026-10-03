@@ -252,6 +252,18 @@ TEST(SettingsTest, BrokenLensRectanglesAreSkipped) {
     EXPECT_EQ(settings.lenses[0], (RectI{0, 0, 300, 200})) << "左右顛倒的矩形略過";
 }
 
+TEST(SettingsTest, ChecksForUpdatesUnlessTurnedOff) {
+    const Settings defaults = parseSettings(R"({"schemaVersion": 1})").settings;
+    EXPECT_TRUE(defaults.checkUpdates);
+    EXPECT_EQ(defaults.lastUpdateCheck, 0) << "還沒檢查過";
+    Settings settings;
+    settings.checkUpdates = false;
+    settings.lastUpdateCheck = 1790000000;
+    const Settings back = parseSettings(serializeSettings(settings)).settings;
+    EXPECT_FALSE(back.checkUpdates);
+    EXPECT_EQ(back.lastUpdateCheck, 1790000000);
+}
+
 TEST(SettingsTest, OcrLanguageIsAutomaticUnlessChosen) {
     EXPECT_EQ(parseSettings(R"({"schemaVersion": 1})").settings.ocrLanguage, "auto");
     EXPECT_EQ(parseSettings(R"({"schemaVersion": 1, "ocrLanguage": "ko"})").settings.ocrLanguage,

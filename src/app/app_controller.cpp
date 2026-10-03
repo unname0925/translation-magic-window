@@ -23,6 +23,7 @@
 #include "core/language.h"
 #include "core/opencc_converter.h"
 #include "core/overlay_font.h"
+#include "net/cpr_http_client.h"
 #include "ocr/lama_inpainter.h"
 #include "ocr/onnx_model.h"
 #include "platform/app_paths.h"
@@ -51,6 +52,10 @@ constexpr UINT kTickMilliseconds = 100;
 
 // 擷取範圍的預設大小（96 DPI 基準）
 constexpr core::SizeI kDefaultContentSize{480, 270};
+// 檢查新版本：啟動後等一下再檢查（整合測試每次都會啟動程式，不能每次都連 GitHub，
+// 匿名的 API 每小時只有 60 次），之後每天一次
+constexpr auto kFirstUpdateCheckDelay = std::chrono::minutes(2);
+constexpr std::int64_t kUpdateCheckIntervalSeconds = 24 * 60 * 60;
 // 新增的透鏡往右下錯開多少（實體像素），免得和前一個疊在一起看不出來
 constexpr int kNewLensOffset = 48;
 
@@ -335,6 +340,13 @@ LRESULT AppController::handleMessage(UINT message, WPARAM wParam, LPARAM lParam)
                 case kCommandAddLens:
                     addLens();
                     break;
+                case kCommandOpenUpdate:
+                    if (availableUpdate_) {
+                        ShellExecuteW(nullptr, L"open",
+                                      platform::utf8ToWide(availableUpdate_->url).c_str(), nullptr,
+                                      nullptr, SW_SHOWNORMAL);
+                    }
+                    break;
                 case kCommandRemoveLens:
                     removeLens();
                     break;
@@ -416,6 +428,7 @@ LRESULT AppController::handleMessage(UINT message, WPARAM wParam, LPARAM lParam)
             return 0;
         case WM_TIMER:
             if (wParam == kTimerTick) {
+                maybeCheckForUpdates();
                 for (const std::unique_ptr<Lens>& lens : lenses_) {
                     lens->trigger->tick();
                     refreshDebugOverlay(*lens);
@@ -471,6 +484,12 @@ void AppController::showTrayMenu(POINT anchor) {
     const HMENU menu = CreatePopupMenu();
     if (menu == nullptr) {
         return;
+    }
+    if (availableUpdate_) {
+        const std::wstring label =
+            L"下載新版本 " + platform::utf8ToWide(availableUpdate_->version) + L"…";
+        AppendMenuW(menu, MF_STRING, kCommandOpenUpdate, label.c_str());
+        AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     }
     AppendMenuW(menu,
                 MF_STRING | (lenses_.front()->window->isVisible() ? MF_CHECKED : MF_UNCHECKED),
@@ -916,6 +935,7 @@ void AppController::applySettings(const core::Settings& settings) {
     // 設定視窗拿到的是打開當下的副本，整包蓋回去會把之後的移動和縮放洗掉。
     settings_.engines = settings.engines;
     settings_.verboseDiagnostics = settings.verboseDiagnostics;
+    settings_.checkUpdates = settings.checkUpdates;
     platform::setVerboseDiagnostics(settings_.verboseDiagnostics);
     if (settings.mangaMode != settings_.mangaMode) {
         setMangaMode(settings.mangaMode);  // 載入失敗時它會把 settings_.mangaMode 留在 false
@@ -1254,6 +1274,52 @@ bool AppController::saveLensCapture(Lens& lens) {
     } catch (const std::exception& error) {
         OutputDebugStringA(error.what());
         return false;
+    }
+}
+
+void AppController::maybeCheckForUpdates() {
+    if (!settings_.checkUpdates || updateCheck_.joinable() ||
+        std::chrono::steady_clock::now() - startedAt_ < kFirstUpdateCheckDelay) {
+        return;
+    }
+    const std::int64_t now = std::chrono::duration_cast<std::chrono::seconds>(
+                                 std::chrono::system_clock::now().time_since_epoch())
+                                 .count();
+    if (now - settings_.lastUpdateCheck < kUpdateCheckIntervalSeconds) {
+        return;
+    }
+    settings_.lastUpdateCheck = now;  // 連不上也算檢查過，明天再試
+    saveSettings();
+    updateCheck_ = std::jthread([this](std::stop_token stop) {
+        // 背景執行緒：連 GitHub 最多 10 秒，結果排回 UI 執行緒
+        net::CprHttpClient http;
+        std::optional<net::ReleaseInfo> release = net::fetchLatestRelease(http, stop);
+        if (stop.stop_requested()) {
+            return;
+        }
+        QMetaObject::invokeMethod(
+            QApplication::instance(),
+            [this, release = std::move(release)] { onUpdateChecked(release); },
+            Qt::QueuedConnection);
+    });
+}
+
+void AppController::onUpdateChecked(std::optional<net::ReleaseInfo> release) {
+    updateCheck_.join();  // 已經做完了，讓下一次可以再開
+    if (!release) {
+        platform::logInfo("檢查新版本：沒有找到（還沒有發行，或連不上 GitHub）");
+        return;
+    }
+    if (!net::isNewerVersion(release->version, TMW_VERSION)) {
+        platform::logInfo("檢查新版本：已經是最新的（" + std::string(TMW_VERSION) + "）");
+        return;
+    }
+    platform::logInfo("檢查新版本：有新版本 " + release->version);
+    availableUpdate_ = std::move(release);
+    if (tray_ != nullptr) {
+        tray_->notify(L"Translation Magic Window 有新版本",
+                      L"新版本 " + platform::utf8ToWide(availableUpdate_->version) +
+                          L" 可以下載了。在系統匣的選單裡點「下載新版本」。");
     }
 }
 

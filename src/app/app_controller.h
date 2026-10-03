@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <memory>
 #include <optional>
+#include <thread>
 
 #include "core/auto_trigger.h"
 #include "core/clock.h"
@@ -15,6 +16,7 @@
 #include "core/pipeline.h"
 #include "core/pipeline_worker.h"
 #include "core/settings.h"
+#include "net/update_check.h"
 #include "ocr/ocr_service.h"
 #include "platform/capture_frame_source.h"
 #include "platform/debug_overlay_window.h"
@@ -142,6 +144,9 @@ private:
     // 建立這個透鏡的譯文覆蓋層和除錯覆蓋框（有打開的話）
     void attachOverlays(Lens& lens);
     void flashLens(Lens& lens, core::Rgba accent);
+    // 檢查新版本（M5-04）：啟動 2 分鐘後第一次，之後每 24 小時一次，在背景執行緒連 GitHub
+    void maybeCheckForUpdates();
+    void onUpdateChecked(std::optional<net::ReleaseInfo> release);
 
     std::filesystem::path dataDirectory_;
     HWND hwnd_ = nullptr;
@@ -186,6 +191,11 @@ private:
     std::vector<std::unique_ptr<Lens>> lenses_;
     int nextLensId_ = 1;
     int activeLensId_ = 1;
+
+    // 檢查新版本（M5-04）。有比現在新的版本時，系統匣選單最上面出現「下載新版本」
+    std::optional<net::ReleaseInfo> availableUpdate_;
+    std::chrono::steady_clock::time_point startedAt_ = std::chrono::steady_clock::now();
+    std::jthread updateCheck_;  // 解構時請它停下來並等它結束
 
 public:
     // 同時最多幾個透鏡。每個透鏡處理時都要 OCR，太多會互相等待

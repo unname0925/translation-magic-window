@@ -6,6 +6,7 @@
 // - 欄位缺少或型別不對：用預設值補上，其餘欄位照常讀取。
 #pragma once
 
+#include <cstdint>
 #include <functional>
 #include <map>
 #include <nlohmann/json_fwd.hpp>
@@ -73,6 +74,10 @@ struct Settings {
     // 上次結束時每個透鏡的位置和大小（整個視窗，螢幕座標、實體像素，M5-05）。
     // 空的代表第一次啟動：一個透鏡、放在螢幕中央。最多 kMaxSavedLenses 個，壞掉的矩形略過
     std::vector<RectI> lenses;
+    // 每天檢查一次有沒有新版本（M5-04，連到 GitHub，見 docs/privacy.md）
+    bool checkUpdates = true;
+    // 上次檢查的時間（Unix 時間，秒）。0 = 還沒檢查過
+    std::int64_t lastUpdateCheck = 0;
     // 辨識語言："auto"（自動判斷）、"ja"、"en"、"ko"。指定之後只用那個語言的模型，
     // 不再判斷（design.md 4.4「語言判斷」第 5 步）。讀不懂的值一律當成 "auto"。
     std::string ocrLanguage = "auto";
