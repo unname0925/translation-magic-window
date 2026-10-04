@@ -170,6 +170,8 @@ OnnxModel::OnnxModel(const std::filesystem::path& onnxFile, Device device,
 }
 
 OnnxModel::~OnnxModel() = default;
+OnnxModel::OnnxModel(OnnxModel&&) noexcept = default;
+OnnxModel& OnnxModel::operator=(OnnxModel&&) noexcept = default;
 
 Device OnnxModel::device() const {
     return impl_->device;

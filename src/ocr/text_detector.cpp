@@ -217,11 +217,30 @@ void sortBoxes(std::vector<DetectedBox>& boxes) {
     }
 }
 
+namespace {
+
+// 顯示卡上用 fp16 版（tools/eval/to_fp16.py）：9 個分類的字元錯誤率和 fp32 幾乎相同
+// （辨識模型轉 fp16 會壞掉，所以只轉偵測）。CPU 上 fp16 反而慢，照舊用 fp32。
+// device 是 Auto 時要建立之後才知道是不是顯示卡：先試 fp16，落到 CPU 就改載 fp32
+OnnxModel loadDetectionModel(const std::filesystem::path& modelDir, Device device) {
+    const std::filesystem::path half = modelDir / "inference.fp16.onnx";
+    if (device != Device::Cpu && std::filesystem::exists(half)) {
+        OnnxModel model(half, device);
+        if (model.device() == Device::DirectML) {
+            return model;
+        }
+        device = Device::Cpu;
+    }
+    return OnnxModel(modelDir / "inference.onnx", device);
+}
+
+}  // namespace
+
 TextDetector::TextDetector(const std::filesystem::path& modelDir, Device device,
                            const DetectionOptions& options)
     : config_(loadDetectionModelConfig(modelDir / "inference.yml")),
       options_(options),
-      model_(modelDir / "inference.onnx", device) {}
+      model_(loadDetectionModel(modelDir, device)) {}
 
 cv::Size roundUpToDetectionGrid(cv::Size size) {
     const auto round = [](int value) {

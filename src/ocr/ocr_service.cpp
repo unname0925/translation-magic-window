@@ -136,9 +136,15 @@ bool OcrService::loadMangaModels() {
     {
         const std::lock_guard<std::mutex> lock(comicTextLoading_);
         if (comicText_ == nullptr) {
-            const std::filesystem::path model = comicTextModelPath(modelsDirectory_);
+            std::filesystem::path model = comicTextModelPath(modelsDirectory_);
             if (!std::filesystem::exists(model)) {
                 return false;
+            }
+            // 顯示卡上用 fp16 版（tools/eval/to_fp16.py）：顯示記憶體 796 → 411 MB、推論 39 → 15
+            // ms， 測試集 111 個對話框全部對得上。CPU 上 fp16 反而慢，照舊用 fp32
+            const std::filesystem::path half = model.parent_path() / "comictextdetector.fp16.onnx";
+            if (pipeline_.device() == Device::DirectML && std::filesystem::exists(half)) {
+                model = half;
             }
             try {
                 comicText_ = std::make_unique<ComicTextDetector>(model, pipeline_.device());

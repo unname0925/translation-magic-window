@@ -5,6 +5,7 @@
 需要：
 - 先用 ci preset 建置 Release（cmake --build build/ci --config Release）
 - models/ 下載好模型（tools/fetch_models），背景修補要先執行 tools/eval/lama_for_directml.py
+- 顯示卡用的 fp16 模型：tools/eval/to_fp16.py（沒有的話主程式照舊用 fp32，只是多占顯示記憶體）
 - Inno Setup 6 的 ISCC.exe（預設找 .cache/innosetup，或用 --iscc 指定）
 
 產生 build/installer/TranslationMagicWindow-<版本>-setup.exe。

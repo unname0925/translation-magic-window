@@ -75,6 +75,13 @@ std::vector<float> preprocess(const cv::Mat& bgr) {
     return input;
 }
 
+// 顯示卡上用 fp16 版的編碼器（tools/eval/to_fp16.py）：顯示記憶體 417 → 247 MB。CPU 上照舊用 fp32
+std::filesystem::path encoderFile(const std::filesystem::path& directory, Device device) {
+    const std::filesystem::path half = directory / "encoder.fp16.onnx";
+    return device == Device::DirectML && std::filesystem::exists(half) ? half
+                                                                       : directory / "encoder.onnx";
+}
+
 }  // namespace
 
 std::string mangaOcrPostProcess(std::string_view text) {
@@ -347,7 +354,7 @@ MangaOcr::MangaOcr(const std::filesystem::path& directory, Device device)
     // 代價是漫畫模式的工作集多約 270 MB（1203 → 1479 MB）。先存好最佳化過的模型再關掉最佳化載入
     // 也一樣多（1460 MB）：多的是 DirectML 編譯融合後的圖，不是最佳化的過程。
     // 以前量到「幾乎不變」是因為那時候時間都花在逐字解碼上
-    : encoder_(directory / "encoder.onnx", device, {}, /*optimizeGraph=*/true),
+    : encoder_(encoderFile(directory, device), device, {}, /*optimizeGraph=*/true),
       vocab_(readVocab(directory / "vocab.txt")) {
     // 解碼器跟著編碼器實際用的裝置
     decoder_ = std::make_unique<Decoder>(directory, encoder_.device());

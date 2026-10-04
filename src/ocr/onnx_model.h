@@ -67,6 +67,8 @@ public:
 
     OnnxModel(const OnnxModel&) = delete;
     OnnxModel& operator=(const OnnxModel&) = delete;
+    OnnxModel(OnnxModel&&) noexcept;
+    OnnxModel& operator=(OnnxModel&&) noexcept;
 
     // 實際使用的裝置（Auto 會解析成 Cpu 或 DirectML）
     Device device() const;
