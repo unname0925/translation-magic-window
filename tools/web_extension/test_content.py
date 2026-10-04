@@ -84,6 +84,9 @@ def make_page(content: str) -> str:
           const fresh = document.createElement("img");
           fresh.src = "{PIXEL}"; fresh.dataset.src = url;
           reader.insertBefore(fresh, reader.children[2]);
+          // 下一個畫格之前（不等延遲掃描）譯文就要在：捲動時不會一瞬間露出原文
+          setTimeout(() => check("元素重建後、下一個畫格之前就蓋上譯文",
+                                 fresh.nextElementSibling?.tagName === "TMW-OVERLAY"), 0);
           setTimeout(() => {{
             check("元素重建後譯文立刻回來、不重新翻譯",
                   fresh.nextElementSibling?.tagName === "TMW-OVERLAY" && requests.length === before,

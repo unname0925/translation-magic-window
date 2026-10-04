@@ -817,10 +817,45 @@
 
   // 版面變了（插進新的圖、上面的圖載入後變高）：馬上重新對齊（只有用 JS 對齊的譯文需要），再找新的圖
   // （MutationObserver 在畫面更新之前執行：在這裡對齊，連一個畫格的落後都沒有）
-  const observer = new MutationObserver(() => {
+  const observer = new MutationObserver((mutations) => {
+    for (const mutation of mutations) {
+      if (mutation.type === "attributes") {
+        attachKnown(mutation.target);
+      } else {
+        mutation.addedNodes.forEach(attachKnown);
+      }
+    }
     alignNow();
     scheduleScan();
   });
+
+  // 已經翻好的圖：新的元素（閱讀器捲動時拿掉又重建）或網址換了，當下就蓋上譯文，不等延遲掃描。
+  // MutationObserver 在畫面更新之前執行，所以一個畫格的原文都不會露出來
+  function attachKnown(node) {
+    if (!(node instanceof Element) || node.closest("tmw-overlay, tmw-panel")) {
+      return;
+    }
+    const images = node instanceof HTMLImageElement ? [node] : node.querySelectorAll("img");
+    for (const element of images) {
+      const source = sourceOf(element);
+      const result = doneBySource.get(source);
+      if (!result) {
+        continue; // 還沒翻：交給一般的掃描
+      }
+      const page = pages.get(element);
+      if (page?.source === source && page.anchor) {
+        continue;
+      }
+      if (page) {
+        removeOverlay(page);
+      }
+      const entry = sources.get(source) || track(source);
+      entry.element = element;
+      const fresh = { source, result };
+      pages.set(element, fresh);
+      showOverlay(element, fresh);
+    }
+  }
   observer.observe(document.documentElement, {
     childList: true,
     subtree: true,
