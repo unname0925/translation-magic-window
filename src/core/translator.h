@@ -56,6 +56,10 @@ public:
     // 能不能一次送出多段。不能的引擎由呼叫端逐段送出。
     virtual bool supportsBatch() const = 0;
 
+    // 在這台電腦上（127.0.0.1、localhost，例如 Ollama）：連不上通常只是服務還沒開或正在重開，
+    // 很快就會好，引擎鏈只短暫停用它（ChainOptions::localPause）
+    virtual bool local() const { return false; }
+
     // 回傳的陣列長度必須和 segments 相同（引擎自己負責對齊，見 translation_alignment.h）。
     // 失敗時丟出 TranslatorError。
     virtual std::vector<std::string> translate(std::span<const std::string> segments,

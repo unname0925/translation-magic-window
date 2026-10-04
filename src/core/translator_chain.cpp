@@ -59,7 +59,8 @@ std::string TranslatorChain::describeEngines() const {
 void TranslatorChain::recordFailure(State& state) {
     ++state.failures;
     if (state.failures >= options_.failuresBeforePause) {
-        state.pausedUntil = clock_.now() + options_.pause;
+        state.pausedUntil =
+            clock_.now() + (state.engine->local() ? options_.localPause : options_.pause);
         // 暫停結束後重新給它三次機會，而不是一失敗就又被停掉
         state.failures = 0;
     }

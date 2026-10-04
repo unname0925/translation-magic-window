@@ -4,6 +4,8 @@ add_executable(tmw_app WIN32
     app_controller.h
     app_identity.h
     main.cpp
+    ollama_launcher.cpp
+    ollama_launcher.h
     translation_setup.cpp
     translation_setup.h
     web_service.cpp

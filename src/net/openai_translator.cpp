@@ -201,6 +201,15 @@ std::string OpenAiTranslator::ollamaGenerateUrl(std::string_view baseUrl) {
     return root + "/api/generate";
 }
 
+bool OpenAiTranslator::local() const {
+    for (const char* host : {"://127.0.0.1", "://localhost", "://[::1]"}) {
+        if (options_.baseUrl.find(host) != std::string::npos) {
+            return true;
+        }
+    }
+    return false;
+}
+
 void OpenAiTranslator::keepOllamaLoaded() {
     if (options_.ollamaKeepAlive.empty() || keepAliveRunning_.exchange(true)) {
         return;  // 上一個還沒送完就不重送：反正是同一件事

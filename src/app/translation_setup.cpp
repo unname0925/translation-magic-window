@@ -16,13 +16,13 @@
 #include "platform/secret.h"
 
 namespace tmw::app {
-namespace {
 
-// 本機的 Ollama（預設的連接埠 11434）。網址可能寫 localhost 或 127.0.0.1
 bool isLocalOllama(std::string_view url) {
     return (url.find("://127.0.0.1:11434") != std::string_view::npos ||
             url.find("://localhost:11434") != std::string_view::npos);
 }
+
+namespace {
 
 std::shared_ptr<core::ITranslator> makeEngine(const core::EngineSettings& engine,
                                               const core::IClock& clock,

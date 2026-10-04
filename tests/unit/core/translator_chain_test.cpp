@@ -28,6 +28,7 @@ public:
 
     std::string id() const override { return id_; }
     bool supportsBatch() const override { return true; }
+    bool local() const override { return isLocal; }
 
     std::vector<std::string> translate(std::span<const std::string> segments,
                                        const TranslateRequest&, std::stop_token) override {
@@ -49,6 +50,7 @@ public:
     int calls = 0;
     std::optional<TranslateError> failure;
     bool dropOneSegment = false;
+    bool isLocal = false;  // 本機的引擎（例如 Ollama）
 
 private:
     std::string id_;
@@ -143,6 +145,19 @@ TEST_F(TranslatorChainTest, PausesAnEngineAfterThreeFailuresInARow) {
 
     translate(chain);
     EXPECT_EQ(first_->calls, 3) << "暫停中就不要再浪費時間等它逾時";
+}
+
+TEST_F(TranslatorChainTest, ALocalEngineIsOnlyPausedBriefly) {
+    // Ollama 沒開：把它開起來之後不必等 5 分鐘
+    first_->isLocal = true;
+    first_->failure = TranslateError::Network;
+    TranslatorChain chain = makeChain();
+    for (int i = 0; i < 3; ++i) {
+        translate(chain);
+    }
+    EXPECT_TRUE(chain.paused("first"));
+    clock_.advance(std::chrono::seconds(16));
+    EXPECT_FALSE(chain.paused("first"));
 }
 
 TEST_F(TranslatorChainTest, UsesThePausedEngineAgainAfterFiveMinutes) {

@@ -21,6 +21,9 @@ namespace tmw::core {
 struct ChainOptions {
     int failuresBeforePause = 3;
     Duration pause = std::chrono::minutes(5);
+    // 本機的引擎（ITranslator::local）：網頁漫畫一次送好幾頁，Ollama 一沒開馬上就失敗三次；
+    // 停用 5 分鐘的話，把 Ollama 開起來之後還要白等（2026-10-04 實際遇到）
+    Duration localPause = std::chrono::seconds(15);
 };
 
 struct ChainResult {

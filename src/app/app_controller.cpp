@@ -952,6 +952,9 @@ void AppController::rebuildTranslation() {
             QMetaObject::invokeMethod(
                 QApplication::instance(),
                 [this, moved = std::move(result)] {
+                    if (!moved.error.empty()) {
+                        ensureOllama();  // 連不上本機的 Ollama：把它叫起來
+                    }
                     if (web_ != nullptr) {
                         web_->onResult(moved);
                     }
@@ -968,6 +971,13 @@ void AppController::rebuildTranslation() {
         });
     if (web_ == nullptr) {
         setUpWeb();  // 管道只開一次：改設定重建翻譯時連線不斷
+    }
+    ensureOllama();
+}
+
+void AppController::ensureOllama() {
+    if (!settings_.engines.empty()) {
+        ollama_.ensureRunning(settings_.engines.front().endpoint);
     }
 }
 
@@ -1314,6 +1324,9 @@ void AppController::onPipelineResult(const core::PipelineResult& result) {
         return;
     }
     lens->lastResult = result;  // 除錯傾印要的是「最後真的處理過什麼」
+    if (!result.error.empty()) {
+        ensureOllama();  // 連不上本機的 Ollama：把它叫起來
+    }
     if (settings_.gameMode) {
         // 下一次只看這些文字在的地方有沒有變（沒讀到文字時回到看整個範圍）
         std::vector<core::RectI> textRegions;

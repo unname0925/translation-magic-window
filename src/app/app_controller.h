@@ -9,6 +9,7 @@
 #include <optional>
 #include <thread>
 
+#include "app/ollama_launcher.h"
 #include "app/web_service.h"
 #include "core/auto_trigger.h"
 #include "core/clock.h"
@@ -97,6 +98,8 @@ private:
     void prepare(Lens& lens, std::uint64_t ticket);
     // 網頁漫畫：開管道等瀏覽器擴充功能連線（setUpPipeline 的最後）
     void setUpWeb();
+    // 翻譯失敗或重建翻譯服務之後：本機 Ollama 沒在跑就啟動它
+    void ensureOllama();
     // 開管道；開不起來時過一下再試（attempt：第幾次）
     void startWeb(int attempt);
 
@@ -183,6 +186,8 @@ private:
     // 翻譯：OCR 和引擎鏈建立失敗時這些會是空的，程式照常執行
     std::unique_ptr<ocr::OcrService> ocr_;
     std::shared_ptr<core::TranslationService> translation_;
+    // 設定的引擎是本機 Ollama、但它沒在跑時把它叫起來（開機後不一定會自己啟動）
+    OllamaLauncher ollama_;
     // 顯示卡上的推論（OCR、背景修補）輪流做：透鏡和網頁漫畫在不同的執行緒（core/gpu_lock.h）
     std::mutex gpu_;
     std::unique_ptr<core::LockedOcrService> lockedOcr_;

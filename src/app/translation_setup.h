@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "core/clock.h"
@@ -26,6 +27,9 @@ struct TranslationSetup {
 
 // clock 必須活得比回傳的服務久。
 // openccConfig 是 s2twp.json 的路徑；找不到時不轉繁體，並在 problems 中說明。
+// 本機的 Ollama（預設的連接埠 11434）。網址可能寫 localhost 或 127.0.0.1
+bool isLocalOllama(std::string_view url);
+
 TranslationSetup makeTranslationService(const core::Settings& settings, const core::IClock& clock,
                                         const std::filesystem::path& openccConfig);
 

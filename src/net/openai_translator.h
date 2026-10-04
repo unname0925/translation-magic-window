@@ -59,6 +59,7 @@ public:
 
     std::string id() const override { return options_.id; }
     bool supportsBatch() const override { return true; }
+    bool local() const override;
 
     std::vector<std::string> translate(std::span<const std::string> segments,
                                        const core::TranslateRequest& request,
