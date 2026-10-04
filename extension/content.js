@@ -236,7 +236,40 @@
       }
       return `canvas:${canvasIds.get(element)}`;
     }
-    return loaded(element) ? element.currentSrc || element.src : lazyUrl(element);
+    if (!loaded(element)) {
+      return lazyUrl(element);
+    }
+    const url = element.currentSrc || element.src;
+    // blob:／data: 是臨時網址：有些閱讀器（例如 MangaDex）捲動時會給同一張圖換一個新的 blob: 網址。
+    // 依網址辨認的話每換一次就當成新的圖、拿掉譯文重翻；改用圖片內容辨認
+    return /^(blob|data):/i.test(url) ? fingerprintOf(element, url) : url;
+  }
+
+  // 圖片內容的指紋：縮成 32×32 的像素加上原圖大小，算一個雜湊。同一個元素、同一個網址只算一次
+  const fingerprints = new WeakMap(); // 元素 → { url, key }
+  function fingerprintOf(img, url) {
+    const cached = fingerprints.get(img);
+    if (cached?.url === url) {
+      return cached.key;
+    }
+    let key = url;
+    try {
+      const canvas = document.createElement("canvas");
+      canvas.width = 32;
+      canvas.height = 32;
+      const context = canvas.getContext("2d", { willReadFrequently: true });
+      context.drawImage(img, 0, 0, 32, 32);
+      const data = context.getImageData(0, 0, 32, 32).data;
+      let hash = 0x811c9dc5; // FNV-1a
+      for (let i = 0; i < data.length; i++) {
+        hash = Math.imul(hash ^ data[i], 0x01000193) >>> 0;
+      }
+      key = `pixels:${img.naturalWidth}x${img.naturalHeight}:${hash.toString(16)}`;
+    } catch {
+      // 讀不到像素（跨網域）：只好用網址
+    }
+    fingerprints.set(img, { url, key });
+    return key;
   }
 
   function isCandidate(element) {

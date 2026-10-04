@@ -279,6 +279,84 @@ def make_blocked_page(content: str) -> str:
     return page
 
 
+def make_blob_page(content: str) -> str:
+    """像 MangaDex：圖是 blob: 網址，捲動時閱讀器換成內容相同的新 blob: 網址。譯文不能消失、也不能重翻。"""
+    page = f"""<!doctype html><meta charset=utf-8>
+    <style>
+      body {{ margin: 0; }}
+      #reader img {{ display: block; width: 600px; height: 900px; margin: 10px auto; }}
+    </style>
+    <div id=reader></div>
+    <script>
+    const reader = document.getElementById("reader");
+    const blobs = [];
+    const makeBlob = (i) => new Promise((resolve) => {{
+      const canvas = document.createElement("canvas");
+      canvas.width = 600; canvas.height = 900;
+      const c = canvas.getContext("2d");
+      c.fillStyle = "#fff"; c.fillRect(0, 0, 600, 900);
+      c.fillStyle = "#" + ((i + 3) * 2345671 % 0xffffff).toString(16).padStart(6, "0");
+      c.fillRect(50 + i * 20, 80, 200, 300);
+      canvas.toBlob(resolve, "image/png");
+    }});
+    let requests = 0;
+    let listener = null;
+    window.chrome = {{ runtime: {{ onMessage: {{ addListener: (f) => listener = f, removeListener: () => listener = null }},
+                                  sendMessage: async (message) => {{
+      if (message.kind !== "translate") return {{ type: "engines", engines: [], current: "" }};
+      requests++;
+      await new Promise((r) => setTimeout(r, 20));
+      return {{ type: "result", id: "x" + requests, width: 600, height: 900, error: "", notice: "", patchesDropped: 0,
+               items: [{{ rect: [100, 100, 300, 400], text: "譯文", vertical: true, foreground: "#000000",
+                          background: "#ffffff", size: "normal", lineThickness: 30, ruby: [] }}] }};
+    }} }} }};
+    </script>
+    <script>
+    (async () => {{
+      for (let i = 0; i < 6; i++) {{
+        const blob = await makeBlob(i);
+        blobs.push(blob);
+        const img = document.createElement("img");
+        img.src = URL.createObjectURL(blob);
+        reader.append(img);
+      }}
+      await new Promise((r) => setTimeout(r, 200));
+      const script = document.createElement("script");
+      script.textContent = document.getElementById("content").textContent;
+      document.body.append(script);
+    }})();
+    </script>
+    <script type="text/plain" id="content">{content}</script>
+    <script>
+    const report = [];
+    function check(name, ok, detail = "") {{ report.push((ok ? "PASS " : "FAIL ") + name + (detail ? " (" + detail + ")" : "")); }}
+    const overlays = () => document.querySelectorAll("tmw-overlay").length;
+    // 6 張 blob: 圖產生完、content.js 開始執行之後，等翻好（最多 20 秒）
+    const ready = () => new Promise((resolve) => {{
+      const started = Date.now();
+      const poll = () => (window.__tmwWebManga && overlays() === 6) || Date.now() - started > 20000
+        ? resolve() : setTimeout(poll, 100);
+      poll();
+    }});
+    ready().then(() => {{
+      check("blob: 網址的圖都翻好", overlays() === 6 && requests === 6, overlays() + " overlays, " + requests + " requests");
+      const before = requests;
+      // 閱讀器換成內容相同的新 blob: 網址
+      [...reader.querySelectorAll("img")].forEach((img, i) => {{
+        URL.revokeObjectURL(img.src);
+        img.src = URL.createObjectURL(blobs[i]);
+      }});
+      setTimeout(() => check("換網址的當下譯文還在", overlays() === 6, overlays() + " overlays"), 0);
+      setTimeout(() => {{
+        check("換成新的 blob: 網址後譯文還在、不重翻", overlays() === 6 && requests === before,
+              overlays() + " overlays, requests " + before + " → " + requests);
+        document.body.setAttribute("data-report", report.join(" | "));
+      }}, 1500);
+    }});
+    </script>"""
+    return page
+
+
 def run(page: str, folder: Path, name: str) -> list[str]:
     path = folder / f"{name}.html"
     path.write_text(page, encoding="utf-8")
@@ -304,6 +382,7 @@ def main() -> int:
         "page-loader": make_loader_page(content),
         "failures": make_failure_page(content),
         "blocked": make_blocked_page(content),
+        "blob-swap": make_blob_page(content),
     }
     failed = 0
     with tempfile.TemporaryDirectory() as folder:
