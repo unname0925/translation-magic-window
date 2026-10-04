@@ -150,12 +150,23 @@ async function fetchPixels(url, page) {
   }
 }
 
-// content.js 的請求：{url} 由這裡抓，或 {image:{width,height,pixels}} 是頁面裡已經讀好的
+// 頁面送來的壓縮檔（data: 網址）：在這裡解碼，不佔網頁的主執行緒
+async function decodePixels(encoded) {
+  const bitmap = await createImageBitmap(await (await fetch(encoded)).blob());
+  try {
+    return pixelsOf(bitmap);
+  } finally {
+    bitmap.close();
+  }
+}
+
+// content.js 的請求：{url} 由這裡抓，{encoded} 是頁面裡拿到的壓縮檔，
+// 或 {image:{width,height,pixels}} 是頁面裡已經讀好的
 async function translate(request) {
   let image = request.image;
   if (!image) {
     try {
-      image = await fetchPixels(request.url, request.page);
+      image = request.encoded ? await decodePixels(request.encoded) : await fetchPixels(request.url, request.page);
     } catch (error) {
       // 抓不到（沒有權限、防盜連、格式不支援）：content.js 改在頁面裡讀
       return { type: "error", fetchFailed: true, message: String(error?.message || error) };

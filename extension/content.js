@@ -245,12 +245,13 @@
     return /^(blob|data):/i.test(url) ? fingerprintOf(element, url) : url;
   }
 
-  // 圖片內容的指紋：縮成 32×32 的像素加上原圖大小，算一個雜湊。同一個元素、同一個網址只算一次
-  const fingerprints = new WeakMap(); // 元素 → { url, key }
+  // 圖片內容的指紋：縮成 32×32 的像素加上原圖大小，算一個雜湊。同一個網址只算一次
+  // （blob: 網址的內容不會變；閱讀器重建元素時常沿用同一個網址）
+  const fingerprints = new Map(); // 網址 → 指紋
   function fingerprintOf(img, url) {
-    const cached = fingerprints.get(img);
-    if (cached?.url === url) {
-      return cached.key;
+    const cached = fingerprints.get(url);
+    if (cached) {
+      return cached;
     }
     let key = url;
     try {
@@ -258,6 +259,7 @@
       canvas.width = 32;
       canvas.height = 32;
       const context = canvas.getContext("2d", { willReadFrequently: true });
+      context.imageSmoothingEnabled = false; // 只要取樣，不必高品質縮小
       context.drawImage(img, 0, 0, 32, 32);
       const data = context.getImageData(0, 0, 32, 32).data;
       let hash = 0x811c9dc5; // FNV-1a
@@ -268,7 +270,9 @@
     } catch {
       // 讀不到像素（跨網域）：只好用網址
     }
-    fingerprints.set(img, { url, key });
+    if (key !== url) {
+      fingerprints.set(url, key); // 讀不到像素（還沒解碼完）時不記，下次再算
+    }
     return key;
   }
 
@@ -414,8 +418,42 @@
     }
   }
 
+  // blob:／data: 的圖（例如 MangaDex）：拿原本的壓縮檔（幾百 KB）轉成 data: 網址交給背景解碼。
+  // 在頁面裡讀像素（readInPage）要把幾百萬像素轉成 base64，一張約 50 毫秒，
+  // 幾張一起送時網頁會卡住好幾百毫秒，捲動就頓一下
+  async function encodedInPage(element) {
+    const url = element instanceof HTMLImageElement ? element.currentSrc || element.src : "";
+    if (!/^(blob|data):/i.test(url)) {
+      return null;
+    }
+    try {
+      const blob = await (await fetch(url)).blob();
+      if (!blob.type.startsWith("image/")) {
+        return null;
+      }
+      return await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(blob);
+      });
+    } catch {
+      return null; // 網址已經失效：改在頁面裡讀
+    }
+  }
+
   async function sendInPage(element) {
     try {
+      const encoded = await encodedInPage(element);
+      if (encoded) {
+        const reply = await chrome.runtime.sendMessage({ kind: "translate", encoded });
+        if (!reply?.fetchFailed) {
+          return reply;
+        }
+      }
+      if (!element.isConnected) {
+        return { type: "error", message: "圖片被網頁拿掉了" };
+      }
       return await chrome.runtime.sendMessage({ kind: "translate", image: readInPage(element) });
     } catch (error) {
       return { type: "error", message: error?.name === "SecurityError" ? "page-protected" : String(error?.message || error) };
