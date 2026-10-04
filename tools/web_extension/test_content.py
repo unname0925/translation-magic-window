@@ -96,6 +96,17 @@ def make_page(content: str) -> str:
             overlays()[0].remove();
             setTimeout(() => {{
               check("被網頁拿掉的譯文會補回去", overlays().length === 12, overlays().length + " overlays");
+              // 閱讀器捲動時一直把目前的頁碼寫進網址（MangaDex）：那不是換章，譯文不能被拆掉
+              const removedOverlays = [];
+              const watch = new MutationObserver((ms) => ms.forEach((m) => m.removedNodes.forEach((n) => {{
+                if (n.tagName === "TMW-OVERLAY") removedOverlays.push(n);
+              }})));
+              watch.observe(document.body, {{ childList: true, subtree: true }});
+              for (let page = 21; page < 26; page++) history.replaceState(null, "", "#page-" + page);
+              setTimeout(() => {{
+              watch.disconnect();
+              check("網址的頁碼一直變（不是換章）時譯文不會被拆掉", removedOverlays.length === 0 && overlays().length === 12,
+                    removedOverlays.length + " removed, " + overlays().length + " overlays");
               let reply = null;
               listener({{ kind: "page-status" }}, {{}}, (r) => reply = r);
               check("控制視窗：狀態", reply && reply.active && reply.total === 12 && reply.done === 12 && reply.failed === 0, JSON.stringify(reply));
@@ -107,6 +118,7 @@ def make_page(content: str) -> str:
               check("停止後不留 anchor-name", ![...document.images].some((i) => i.style.getPropertyValue("anchor-name")));
               document.body.setAttribute("data-report", report.join(" | "));
               document.title = "DONE";
+              }}, 1200);  // 換章偵測每 0.5 秒看一次網址：等它跑過再檢查
             }}, 1500);
           }}, 600);
         }}, 1200);

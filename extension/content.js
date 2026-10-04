@@ -914,18 +914,27 @@
     alignNow(); // 版面變動（廣告插進來、閱讀器切換單雙頁）不一定有事件；被網頁拿掉的譯文也在這裡補回去
   }, 1000));
 
-  // 單頁應用換章：網址變了就把舊的清掉（翻好的結果還記著，回上一章時直接用）
-  let lastUrl = location.href;
+  // 這一章的識別：網址去掉最後的頁碼和 #。有些閱讀器捲動時會一直把頁碼寫進網址
+  // （MangaDex：/chapter/<章>/20 → /21 → /22），那不是換章
+  function chapterOf(href) {
+    try {
+      const url = new URL(href);
+      return url.origin + url.pathname.replace(/(\/\d+)+\/?$/, "") + url.search;
+    } catch {
+      return href;
+    }
+  }
+
+  // 單頁應用換章：重新計算這一章的進度。譯文不在這裡拆——舊一章的圖被拿掉、新一章的圖出現時，
+  // 本來就會各自拿掉／蓋上（以前在這裡全部拆掉，MangaDex 捲動時每翻一頁就全部變回原文）
+  let lastChapter = chapterOf(location.href);
   timers.push(setInterval(() => {
-    if (location.href !== lastUrl) {
-      lastUrl = location.href;
-      for (const page of pages.values()) {
-        removeOverlay(page);
-      }
-      pages.clear();
+    const chapter = chapterOf(location.href);
+    if (chapter !== lastChapter) {
+      lastChapter = chapter;
       sources = new Map(); // 新的一章重新計數（翻好的還記在 doneBySource）
       queue = [];
-      scheduleScan();
+      scan();
     }
   }, 500));
 
@@ -969,11 +978,11 @@
     const first = [...pages.keys()][0] || [...document.images].find((img) => img.getBoundingClientRect().width >= MIN_WIDTH);
     const scroller = scrollerOf(first);
     const startTop = scroller.scrollTop;
-    const startUrl = location.href;
+    const startChapter = chapterOf(location.href);
     const deadline = Date.now() + 30_000;
     let lastHeight = -1;
     let stable = 0;
-    while (Date.now() < deadline && fatal !== "stopped" && location.href === startUrl) {
+    while (Date.now() < deadline && fatal !== "stopped" && chapterOf(location.href) === startChapter) {
       const step = Math.max(200, scroller.clientHeight * 0.9);
       if (scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 4) {
         // 到底了：等一下看會不會再長出新的內容（無限捲動）
@@ -989,7 +998,7 @@
       await sleep(180);
       scan();
     }
-    if (location.href === startUrl) {
+    if (chapterOf(location.href) === startChapter) {
       scroller.scrollTo({ top: startTop, behavior: "instant" });
     }
     preloading = false;
