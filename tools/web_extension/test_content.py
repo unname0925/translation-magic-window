@@ -44,6 +44,7 @@ def make_page(content: str) -> str:
     let listener = null;
     window.chrome = {{ runtime: {{ onMessage: {{ addListener: (f) => listener = f, removeListener: () => listener = null }},
                                   sendMessage: async (message) => {{
+      if (message.kind !== "translate") return {{ type: "engines", engines: [], current: "" }};
       requests.push(message.url || "inline");
       await new Promise((r) => setTimeout(r, 50));
       return {{ type: "result", id: message.url, width: 600, height: 900, error: "", patchesDropped: 0,
@@ -145,6 +146,7 @@ def make_loader_page(content: str) -> str:
     let listener = null;
     window.chrome = {{ runtime: {{ onMessage: {{ addListener: (f) => listener = f, removeListener: () => listener = null }},
                                   sendMessage: async (message) => {{
+      if (message.kind !== "translate") return {{ type: "engines", engines: [], current: "" }};
       const id = message.url || ("inline-" + (counter++));
       requests.push(id);
       await new Promise((r) => setTimeout(r, 30));
@@ -166,6 +168,66 @@ def make_loader_page(content: str) -> str:
       check("控制面板在頁面上", Boolean(document.querySelector("tmw-panel")));
       document.body.setAttribute("data-report", report.join(" | "));
     }}, 20000);
+    </script>"""
+    return page
+
+
+def make_failure_page(content: str) -> str:
+    """第一次翻譯被限流、重試成功；閱讀器把一半的圖拿掉之後總數不能變少。"""
+    PIXEL = "data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="
+    page = f"""<!doctype html><meta charset=utf-8>
+    <style>
+      body {{ margin: 0; }}
+      #reader img {{ display: block; width: 600px; height: 900px; margin: 10px auto; }}
+    </style>
+    <div id=reader></div>
+    <script>
+    const reader = document.getElementById("reader");
+    for (let i = 0; i < 8; i++) {{
+      const img = document.createElement("img");
+      img.src = "{PIXEL}";
+      img.dataset.src = "https://cdn.example.invalid/f" + i + ".jpg";
+      reader.append(img);
+    }}
+    const attempts = {{}};
+    let listener = null;
+    window.chrome = {{ runtime: {{ onMessage: {{ addListener: (f) => listener = f, removeListener: () => listener = null }},
+                                  sendMessage: async (message) => {{
+      if (message.kind !== "translate") return {{ type: "engines", engines: [], current: "" }};
+      attempts[message.url] = (attempts[message.url] || 0) + 1;
+      await new Promise((r) => setTimeout(r, 20));
+      const items = [{{ rect: [100, 100, 300, 400], text: "譯文", vertical: true, foreground: "#000000",
+                        background: "#ffffff", size: "normal", lineThickness: 30, ruby: [] }}];
+      // 第一次：主程式回「結果」但翻譯引擎失敗（以前會被當成成功）
+      const error = attempts[message.url] === 1 ? "被限流或額度用完：HTTP 429" : "";
+      return {{ type: "result", id: message.url, width: 600, height: 900, error, notice: "",
+               patchesDropped: 0, items: error ? [] : items }};
+    }} }} }};
+    </script>
+    <script>{content}</script>
+    <script>
+    const report = [];
+    function check(name, ok, detail = "") {{ report.push((ok ? "PASS " : "FAIL ") + name + (detail ? " (" + detail + ")" : "")); }}
+    const status = () => {{ let r = null; listener({{ kind: "page-status" }}, {{}}, (x) => r = x); return r; }};
+    setTimeout(() => {{
+      let s = status();
+      check("翻譯引擎失敗算失敗、不算完成", s.failed === 8 && s.done === 0, JSON.stringify(s));
+      check("列出失敗的原因", s.reasons.length === 1 && s.reasons[0].includes("HTTP 429") && s.reasons[0].includes("8 張"),
+            JSON.stringify(s.reasons));
+      listener({{ kind: "retry" }}, {{}}, () => {{}});
+      setTimeout(() => {{
+        s = status();
+        check("重試真的重送、這次成功", s.done === 8 && s.failed === 0 && Object.values(attempts).every((n) => n === 2),
+              JSON.stringify(s) + " " + JSON.stringify(Object.values(attempts)));
+        // 閱讀器把離開畫面的一半拿掉
+        [...reader.querySelectorAll("img")].slice(4).forEach((img) => {{ img.nextElementSibling?.remove(); img.remove(); }});
+        setTimeout(() => {{
+          s = status();
+          check("圖片元素被拿掉，總數不變少", s.total === 8 && s.done === 8, JSON.stringify(s));
+          document.body.setAttribute("data-report", report.join(" | "));
+        }}, 2500);
+      }}, 3000);
+    }}, 4000);
     </script>"""
     return page
 
@@ -193,6 +255,7 @@ def main() -> int:
         "js-fallback": page.replace("window.chrome = {",
                                     "CSS.supports = () => false;\nwindow.chrome = {", 1),
         "page-loader": make_loader_page(content),
+        "failures": make_failure_page(content),
     }
     failed = 0
     with tempfile.TemporaryDirectory() as folder:

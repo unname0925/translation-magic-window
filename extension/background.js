@@ -12,7 +12,8 @@ const MAX_PIXELS = 4_000_000;
 
 let port = null;
 const waiting = new Map(); // id → [resolve…]：等主程式回覆
-const results = new Map(); // id → 回覆（這次瀏覽器執行期間的快取）
+const results = new Map(); // id → 成功的回覆（這次瀏覽器執行期間的快取；失敗的不記，重試才會真的重送）
+const engineWaiters = []; // 等主程式回「用過的翻譯引擎」
 // 主程式的狀態（控制視窗顯示）："unknown" | "connected" | "host-not-installed" | "app-unavailable" | 其他錯誤
 let appState = "unknown";
 const stateWaiters = [];
@@ -47,12 +48,18 @@ function onHostMessage(message) {
     setAppState("connected");
     return;
   }
+  if (message.type === "engines" || (message.type === "error" && message.message === "no-such-engine")) {
+    for (const resolve of engineWaiters.splice(0)) {
+      resolve(message);
+    }
+    return;
+  }
   if (message.type === "error" && !message.id) {
     setAppState(message.message);
     failAll(message.message); // 整條連線不能用（例如主程式叫不起來）
     return;
   }
-  if (message.type === "result") {
+  if (message.type === "result" && !message.error) {
     results.set(message.id, message);
   }
   const resolvers = waiting.get(message.id) || [];
@@ -63,6 +70,9 @@ function onHostMessage(message) {
 }
 
 function failAll(reason) {
+  for (const resolve of engineWaiters.splice(0)) {
+    resolve({ type: "error", message: reason });
+  }
   for (const [id, resolvers] of waiting) {
     for (const resolve of resolvers) {
       resolve({ type: "error", id, message: reason });
@@ -166,6 +176,20 @@ async function currentAppState() {
   return Promise.race([answer, new Promise((resolve) => setTimeout(() => resolve("app-unavailable"), 5000))]);
 }
 
+// 用過的翻譯引擎（控制面板的選單）；set 是要改用的第幾個（不給就只是查詢）
+function engines(set) {
+  return new Promise((resolve) => {
+    engineWaiters.push(resolve);
+    setTimeout(() => resolve({ type: "error", message: "app-unavailable" }), 10_000);
+    try {
+      connect().postMessage(set === undefined ? { type: "engines" } : { type: "set-engine", index: set });
+    } catch (error) {
+      port = null;
+      failAll(String(error));
+    }
+  });
+}
+
 async function start(tabId) {
   await chrome.scripting.executeScript({ target: { tabId }, files: ["content.js"] });
 }
@@ -206,6 +230,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     work = translate(request);
   } else if (request?.kind === "app-status") {
     work = currentAppState().then((state) => ({ state }));
+  } else if (request?.kind === "engines") {
+    work = engines();
+  } else if (request?.kind === "set-engine") {
+    work = engines(request.index);
   } else if (request?.kind === "start") {
     work = start(request.tabId).then(() => ({ ok: true }));
   } else if (request?.kind === "auto-site") {

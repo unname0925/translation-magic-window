@@ -159,6 +159,13 @@ SettingsLoad parseSettings(std::string_view json_text,
             }
         }
     }
+    if (const auto it = document.find("engineHistory"); it != document.end() && it->is_array()) {
+        for (const json& entry : *it) {
+            if (entry.is_object()) {
+                settings.engineHistory.push_back(readEngine(entry));
+            }
+        }
+    }
     if (const auto it = document.find("resultWindow"); it != document.end() && it->is_object()) {
         settings.resultWindow = readResultWindow(*it);
     }
@@ -226,9 +233,10 @@ nlohmann::json lensesJson(const std::vector<RectI>& lenses) {
 }  // namespace
 
 std::string serializeSettings(const Settings& settings, int schemaVersion) {
-    json engines = json::array();
-    for (const EngineSettings& engine : settings.engines) {
-        engines.push_back({{"id", engine.id},
+    const auto engineList = [](const std::vector<EngineSettings>& list) {
+        json out = json::array();
+        for (const EngineSettings& engine : list) {
+            out.push_back({{"id", engine.id},
                            {"endpoint", engine.endpoint},
                            {"model", engine.model},
                            {"encryptedApiKey", engine.encryptedApiKey},
@@ -236,7 +244,10 @@ std::string serializeSettings(const Settings& settings, int schemaVersion) {
                            {"headers", engine.headers},
                            {"bodyTemplate", engine.bodyTemplate},
                            {"responsePath", engine.responsePath}});
-    }
+        }
+        return out;
+    };
+    json engines = engineList(settings.engines);
     const json document = {
         {"schemaVersion", schemaVersion},
         {"verboseDiagnostics", settings.verboseDiagnostics},
@@ -250,6 +261,7 @@ std::string serializeSettings(const Settings& settings, int schemaVersion) {
         {"profile", settings.profile},
         {"profiles", profilesJson(settings.profiles)},
         {"engines", std::move(engines)},
+        {"engineHistory", engineList(settings.engineHistory)},
         {"resultWindow",
          {{"fontScale", settings.resultWindow.fontScale},
           {"alwaysOnTop", settings.resultWindow.alwaysOnTop},

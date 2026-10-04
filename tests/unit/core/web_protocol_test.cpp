@@ -103,6 +103,26 @@ TEST(ParseWebRequestTest, RejectsHugeImages) {
     EXPECT_EQ(parseWebRequest(json).type, WebRequest::Type::Invalid);
 }
 
+TEST(ParseWebRequestTest, EnginesAndSetEngine) {
+    EXPECT_EQ(parseWebRequest(R"({"type":"engines"})").type, WebRequest::Type::Engines);
+    const WebRequest set = parseWebRequest(R"({"type":"set-engine","index":2})");
+    EXPECT_EQ(set.type, WebRequest::Type::SetEngine);
+    EXPECT_EQ(set.index, 2);
+    EXPECT_EQ(parseWebRequest(R"({"type":"set-engine"})").type, WebRequest::Type::Invalid);
+    EXPECT_EQ(parseWebRequest(R"({"type":"set-engine","index":-1})").type,
+              WebRequest::Type::Invalid);
+}
+
+TEST(WebEnginesReplyTest, ListsLabelsWithTheirIndex) {
+    const std::vector<std::string> labels{"hy-mt2（Ollama）", "Google 翻譯（免費）"};
+    const nlohmann::json reply = nlohmann::json::parse(webEnginesReply(labels, "hy-mt2（Ollama）"));
+    EXPECT_EQ(reply["type"], "engines");
+    ASSERT_EQ(reply["engines"].size(), 2u);
+    EXPECT_EQ(reply["engines"][1]["index"], 1);
+    EXPECT_EQ(reply["engines"][1]["label"], "Google 翻譯（免費）");
+    EXPECT_EQ(reply["current"], "hy-mt2（Ollama）");
+}
+
 TEST(ParseWebRequestTest, RejectsGarbage) {
     EXPECT_EQ(parseWebRequest("not json").type, WebRequest::Type::Invalid);
     EXPECT_EQ(parseWebRequest(R"({"type":"explode"})").type, WebRequest::Type::Invalid);

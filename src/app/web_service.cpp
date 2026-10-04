@@ -49,6 +49,18 @@ void WebService::onMessage(int connection, std::string message) {
         case core::WebRequest::Type::Invalid:
             server_.send(connection, core::webErrorReply(request->id, request->error));
             return;
+        case core::WebRequest::Type::Engines:
+            callbacks_.post(guarded(alive_, [this, connection] { replyEngines(connection); }));
+            return;
+        case core::WebRequest::Type::SetEngine:
+            callbacks_.post(guarded(alive_, [this, connection, index = request->index] {
+                if (callbacks_.setEngine && !callbacks_.setEngine(index)) {
+                    server_.send(connection, core::webErrorReply("", "no-such-engine"));
+                    return;
+                }
+                replyEngines(connection);
+            }));
+            return;
         case core::WebRequest::Type::Cancel:
             callbacks_.post(
                 guarded(alive_, [this, connection, id = request->id] { cancel(connection, id); }));
@@ -58,6 +70,15 @@ void WebService::onMessage(int connection, std::string message) {
                 guarded(alive_, [this, connection, request] { enqueue(connection, request); }));
             return;
     }
+}
+
+void WebService::replyEngines(int connection) {
+    if (!callbacks_.engines) {
+        server_.send(connection, core::webEnginesReply({}, ""));
+        return;
+    }
+    const auto [labels, current] = callbacks_.engines();
+    server_.send(connection, core::webEnginesReply(labels, current));
 }
 
 void WebService::onDisconnect(int connection) {
@@ -157,7 +178,8 @@ void WebService::onResult(const core::PipelineResult& result) {
     };
     std::string reply;
     try {
-        reply = core::webResultReply(done.id, result.overlay, result.error, encode);
+        reply = core::webResultReply(done.id, result.overlay, result.error, encode,
+                                     core::kWebMaxReplyBytes, result.notice);
     } catch (const std::exception& error) {
         reply = core::webErrorReply(done.id, error.what());
     }

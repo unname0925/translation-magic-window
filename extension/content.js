@@ -6,7 +6,9 @@
 // - 依離畫面多近決定順序，每次送出前重新排；捲動、換章時新出現的圖自動補上
 // - 譯文放在緊跟著圖片的一個元素裡（和圖片在同一個捲動容器，捲動時由瀏覽器一起移動，不會落後），
 //   內容在 shadow DOM 裡，網頁的 CSS 碰不到；不改原本的圖
-// - 譯文依圖片網址記住：閱讀器把捲出畫面的圖拿掉、捲回來再建一個新的，直接蓋回去
+// - 進度依圖片網址記：閱讀器把捲出畫面的圖拿掉、捲回來再建一個新的，總數不會變少，
+//   有網址的圖照樣在背景翻完；建回來時直接蓋上譯文
+// - 失敗會記下原因（控制面板列出來）；翻譯引擎可以在控制面板換（主程式記得用過的引擎）
 // - 控制視窗（popup.js）用訊息問狀態、切換原文／譯文、重試、停止
 (() => {
   if (window.__tmwWebManga) {
@@ -60,6 +62,10 @@
     .row input[type=range] { flex: 1; }
     label { display: flex; align-items: center; gap: 5px; cursor: pointer; }
     .muted { color: #a8a8a8; }
+    select { flex: 1; min-width: 0; padding: 2px 4px; border: 1px solid #4a4a4a; border-radius: 4px;
+             background: #2b2c2f; color: #f1f1f1; font: inherit; }
+    .reasons { display: grid; gap: 2px; color: #f6c35b; font-size: 11px; }
+    .notice { color: #9ecbff; font-size: 11px; }
     .mini .body { display: none; }
     .mini { width: auto; }
     .mini .head { border-bottom: 0; }
@@ -72,6 +78,9 @@
     <div class="body">
       <div><span id="status">準備中…</span> <span id="detail" class="muted"></span></div>
       <div class="bar"><div id="progress"></div></div>
+      <div id="reasons" class="reasons"></div>
+      <div id="notice" class="notice"></div>
+      <div class="row"><span>翻譯</span><select id="engine" title="主程式用過的翻譯引擎"></select></div>
       <div class="buttons">
         <button class="action" id="toggle">顯示原文</button>
         <button class="action" id="retry">重試失敗的圖</button>
@@ -151,9 +160,15 @@
   addEventListener("resize", applyPanel, { passive: true });
   applyPanel();
 
-  const pages = new Map(); // 元素 → { source, state, result, anchor, layer }
-  const resultsBySource = new Map(); // 圖片網址 → 翻好的結果（元素被拿掉又建回來時直接用）
-  let queue = [];
+  const pages = new Map(); // 元素 → { source, result, anchor, layer }（譯文畫在哪）
+  // 這一章的每一張圖（依網址）：state 是 queued／working／waiting（等圖片載入）／done／failed，
+  // reason 是失敗的原因。元素被拿掉也留著：總數不會變少，有網址的照樣翻完
+  let sources = new Map();
+  const doneBySource = new Map(); // 翻好的結果（換章後回來、元素重建時直接用）；失敗的不記
+  const canvasIds = new WeakMap(); // canvas 沒有網址：每一個給一個編號
+  let canvasSerial = 0;
+  let lastNotice = ""; // 主程式沒有用首選引擎時的說明（例如改用 Google）
+  let queue = []; // 等著送出的圖片網址
   let running = 0;
   let visible = true;
   let fatal = "";
@@ -213,7 +228,10 @@
 
   function sourceOf(element) {
     if (!(element instanceof HTMLImageElement)) {
-      return "canvas";
+      if (!canvasIds.has(element)) {
+        canvasIds.set(element, ++canvasSerial);
+      }
+      return `canvas:${canvasIds.get(element)}`;
     }
     return loaded(element) ? element.currentSrc || element.src : lazyUrl(element);
   }
@@ -281,27 +299,43 @@
     return 0;
   }
 
+  function readable(element) {
+    return !(element instanceof HTMLImageElement) || loaded(element);
+  }
+
+  function track(source) {
+    const known = doneBySource.get(source);
+    const entry = known ? { state: "done", result: known, reason: "" } : { state: "queued", reason: "" };
+    sources.set(source, entry);
+    if (!known) {
+      queue.push(source);
+    }
+    return entry;
+  }
+
   function scan() {
     const elements = [...document.images, ...document.querySelectorAll("canvas")].filter(isCandidate);
     for (const element of mainColumn(elements)) {
       const source = sourceOf(element);
       const page = pages.get(element);
+      const entry = sources.get(source) || track(source);
+      entry.element = element; // 送出的先後依這個元素離畫面多近
+      if (entry.state === "waiting" && readable(element)) {
+        entry.state = "queued"; // 剛剛抓不到、現在載入了：從頁面讀
+        queue.push(source);
+      }
       if (page && page.source === source) {
         continue;
       }
       if (page) {
         removeOverlay(page); // 圖換了（換章、延遲載入換成另一張）
       }
-      const known = resultsBySource.get(source);
-      if (known) {
-        // 翻過了（閱讀器把這張拿掉又建回來）：直接蓋回去，不用排隊
-        const entry = { source, state: "done", result: known };
-        pages.set(element, entry);
-        showOverlay(element, entry);
-        continue;
+      const fresh = { source };
+      pages.set(element, fresh);
+      if (entry.state === "done") {
+        fresh.result = entry.result; // 翻過了（閱讀器把這張拿掉又建回來）：直接蓋回去
+        showOverlay(element, fresh);
       }
-      pages.set(element, { source, state: "queued" });
-      queue.push(element);
     }
     pump();
     updateBadge();
@@ -333,69 +367,116 @@
     return { width: canvas.width, height: canvas.height, pixels: btoa(binary) };
   }
 
-  async function request(element, source) {
-    if (isHttp(source)) {
-      const reply = await chrome.runtime.sendMessage({ kind: "translate", url: source });
-      if (!reply?.fetchFailed) {
-        return reply; // 成功，或是和抓圖無關的錯誤（例如主程式沒開）
-      }
-      if (element instanceof HTMLImageElement && !loaded(element)) {
-        return reply; // 還沒載入、背景也抓不到：等它載入了再從頁面讀（scan 會再排一次）
-      }
+  async function sendInPage(element) {
+    try {
+      return await chrome.runtime.sendMessage({ kind: "translate", image: readInPage(element) });
+    } catch (error) {
+      return { type: "error", message: error?.name === "SecurityError" ? "page-protected" : String(error?.message || error) };
     }
-    return chrome.runtime.sendMessage({ kind: "translate", image: readInPage(element) });
   }
 
-  async function process(element) {
-    const page = pages.get(element);
-    const source = page.source;
-    page.state = "working";
+  // 失敗的原因（給人看）
+  function reasonOf(reply) {
+    if (!reply) {
+      return "沒有回應";
+    }
+    if (reply.type === "result" && reply.error) {
+      return `翻譯失敗：${reply.error}`; // 主程式的說明，例如「被限流或額度用完：HTTP 429」
+    }
+    const message = reply.message || "";
+    const known = {
+      "host-not-installed": "找不到 Translation Magic Window（請先安裝）",
+      "app-unavailable": "Translation Magic Window 沒有回應",
+      "page-protected": "網頁不讓讀取這張圖（跨網域保護）",
+      disconnected: "和主程式的連線斷了",
+    };
+    if (known[message]) {
+      return known[message];
+    }
+    if (reply.fetchFailed) {
+      return `抓不到圖片（${message}）`;
+    }
+    if (/size|pixels/.test(message)) {
+      return `圖片格式不對（${message}）`;
+    }
+    return message || "不明的錯誤";
+  }
+
+  async function process(source) {
+    const entry = sources.get(source);
+    if (!entry) {
+      return;
+    }
+    entry.state = "working";
     updateBadge();
+    const element = entry.element;
     let reply;
     try {
-      reply = await request(element, source);
+      if (isHttp(source)) {
+        reply = await chrome.runtime.sendMessage({ kind: "translate", url: source });
+        if (reply?.fetchFailed) {
+          if (!element?.isConnected || !readable(element)) {
+            entry.state = "waiting"; // 背景抓不到、頁面也還沒載入：載入後 scan 會再排
+            entry.reason = "";
+            return;
+          }
+          reply = await sendInPage(element);
+        }
+      } else if (element?.isConnected) {
+        reply = await sendInPage(element);
+      } else {
+        entry.state = "waiting"; // canvas 被拿掉了：建回來時再讀
+        return;
+      }
     } catch (error) {
       reply = { type: "error", message: String(error?.message || error) };
     }
-    if (reply?.type === "result") {
-      resultsBySource.set(source, reply); // 元素換掉了也記住，之後建回來直接用
+    if (sources.get(source) !== entry) {
+      return; // 換章或停止了
     }
-    const now = pages.get(element);
-    if (now !== page) {
-      return; // 處理期間元素被拿掉或圖換了
+    if (reply?.message === "restarted") {
+      entry.state = "queued"; // 主程式改了設定、重建工作佇列：再送一次
+      queue.push(source);
+      return;
     }
-    if (reply?.type !== "result") {
-      if (reply?.fetchFailed && element instanceof HTMLImageElement && !loaded(element)) {
-        pages.delete(element); // 等它真的載入（load 事件會再掃到）
-        return;
-      }
-      if (reply?.message === "restarted") {
-        page.state = "queued"; // 主程式改了設定、重建工作佇列：再送一次
-        queue.push(element);
-        return;
-      }
-      page.state = "failed";
-      if (reply?.message === "host-not-installed" || reply?.message === "app-unavailable") {
-        fatal = reply.message;
+    if (reply?.notice) {
+      lastNotice = reply.notice;
+    }
+    if (reply?.type === "result" && !reply.error) {
+      entry.state = "done";
+      entry.result = reply;
+      entry.reason = "";
+      doneBySource.set(source, reply);
+      for (const [shown, page] of pages) {
+        if (page.source === source) {
+          page.result = reply;
+          showOverlay(shown, page);
+        }
       }
       return;
     }
-    page.state = "done";
-    page.result = reply;
-    showOverlay(element, page);
+    entry.state = "failed";
+    entry.reason = reasonOf(reply);
+    if (reply?.message === "host-not-installed" || reply?.message === "app-unavailable") {
+      fatal = reply.message;
+    }
   }
 
   function pump() {
     if (running >= IN_FLIGHT || fatal) {
       return;
     }
-    // 每次都依「現在」離畫面多近重新排：使用者捲到哪就先翻哪
-    queue = queue.filter((element) => element.isConnected && pages.get(element)?.state === "queued");
-    queue.sort((a, b) => distanceToViewport(a) - distanceToViewport(b));
+    // 每次都依「現在」離畫面多近重新排：使用者捲到哪就先翻哪；元素被拿掉的排最後
+    queue = [...new Set(queue)].filter((source) => sources.get(source)?.state === "queued");
+    const distance = (source) => {
+      const element = sources.get(source)?.element;
+      return element?.isConnected ? distanceToViewport(element) : Number.MAX_SAFE_INTEGER;
+    };
+    queue.sort((a, b) => distance(a) - distance(b));
     while (running < IN_FLIGHT && queue.length > 0) {
-      const element = queue.shift();
+      const source = queue.shift();
       running += 1;
-      process(element).finally(() => {
+      process(source).finally(() => {
         running -= 1;
         updateBadge();
         pump();
@@ -601,7 +682,7 @@
   function alignNow() {
     for (const [element, page] of pages) {
       if (!element.isConnected) {
-        // 閱讀器把這張拿掉了：譯文還記在 resultsBySource，建回來時直接用
+        // 閱讀器把這張拿掉了：進度和譯文還記在 sources／doneBySource，建回來時直接用
         removeOverlay(page);
         pages.delete(element);
         continue;
@@ -625,10 +706,25 @@
 
   // ---------------------------------------------------------------- 狀態
 
+  function counts() {
+    const all = [...sources.values()];
+    const done = all.filter((entry) => entry.state === "done").length;
+    const failed = all.filter((entry) => entry.state === "failed");
+    // 同樣的原因合在一起：「翻譯失敗：被限流或額度用完：HTTP 429（3 張）」
+    const reasons = new Map();
+    for (const entry of failed) {
+      reasons.set(entry.reason, (reasons.get(entry.reason) || 0) + 1);
+    }
+    return {
+      total: all.length,
+      done,
+      failed: failed.length,
+      reasons: [...reasons].map(([reason, count]) => `${reason}（${count} 張）`),
+    };
+  }
+
   function updateBadge() {
-    const states = [...pages.values()].map((page) => page.state);
-    const done = states.filter((state) => state === "done").length;
-    const failed = states.filter((state) => state === "failed").length;
+    const { total, done, failed, reasons } = counts();
     const finished = done + failed;
     let text;
     if (fatal === "host-not-installed") {
@@ -636,21 +732,65 @@
     } else if (fatal === "app-unavailable") {
       text = "Translation Magic Window 沒有回應，請確認它已經開啟";
     } else if (preloading) {
-      text = `載入整頁中…（找到 ${states.length} 張）`;
-    } else if (states.length === 0) {
+      text = `載入整頁中…（找到 ${total} 張）`;
+    } else if (total === 0) {
       text = "這一頁沒有找到漫畫圖片";
-    } else if (finished < states.length) {
-      text = `翻譯中 ${done} / ${states.length}`;
+    } else if (finished < total) {
+      text = `翻譯中 ${done} / ${total}`;
     } else {
       text = `完成 ${done} 張`;
     }
     $panel("status").textContent = text;
     $panel("detail").textContent = failed ? `${failed} 張失敗` : "";
-    $panel("progress").style.width = states.length ? `${(finished / states.length) * 100}%` : "0";
-    $panel("title").textContent = panelState.minimized && states.length ? `翻譯 ${done}/${states.length}` : "網頁漫畫翻譯";
+    $panel("progress").style.width = total ? `${(finished / total) * 100}%` : "0";
+    const list = $panel("reasons");
+    list.replaceChildren(...reasons.map((reason) => {
+      const line = document.createElement("div");
+      line.textContent = reason;
+      return line;
+    }));
+    $panel("notice").textContent = lastNotice;
+    $panel("title").textContent = panelState.minimized && total ? `翻譯 ${done}/${total}` : "網頁漫畫翻譯";
     $panel("retry").disabled = failed === 0;
     $panel("preload").disabled = preloading;
     $panel("toggle").textContent = visible ? "顯示原文" : "顯示譯文";
+  }
+
+  // ---------------------------------------------------------------- 翻譯引擎
+
+  // 主程式用過的翻譯引擎（core/engine_history.h），選一個就切換。現在用的那個選起來
+  async function loadEngines() {
+    let reply;
+    try {
+      reply = await chrome.runtime.sendMessage({ kind: "engines" });
+    } catch {
+      reply = null;
+    }
+    const select = $panel("engine");
+    const engines = Array.isArray(reply?.engines) ? reply.engines : [];
+    select.replaceChildren(...engines.map((engine) => {
+      const option = document.createElement("option");
+      option.value = String(engine.index);
+      option.textContent = engine.label;
+      option.selected = engine.label === reply.current;
+      return option;
+    }));
+    select.disabled = engines.length === 0;
+    select.title = reply?.current ? `現在用：${reply.current}` : "主程式用過的翻譯引擎";
+  }
+
+  async function chooseEngine() {
+    const index = Number($panel("engine").value);
+    $panel("engine").disabled = true;
+    $panel("notice").textContent = "切換翻譯引擎中…";
+    try {
+      await chrome.runtime.sendMessage({ kind: "set-engine", index });
+    } catch {
+      // 連不上主程式：loadEngines 會把選單還原
+    }
+    lastNotice = "";
+    await loadEngines();
+    retry(); // 換了引擎：失敗的圖用新的引擎再翻一次
   }
 
   // ---------------------------------------------------------------- 開始
@@ -695,6 +835,7 @@
         removeOverlay(page);
       }
       pages.clear();
+      sources = new Map(); // 新的一章重新計數（翻好的還記在 doneBySource）
       queue = [];
       scheduleScan();
     }
@@ -771,10 +912,11 @@
   // 失敗的圖重新排隊（例如主程式剛剛沒開）
   function retry() {
     fatal = "";
-    for (const [element, page] of pages) {
-      if (page.state === "failed") {
-        page.state = "queued";
-        queue.push(element);
+    for (const [source, entry] of sources) {
+      if (entry.state === "failed") {
+        entry.state = "queued";
+        entry.reason = "";
+        queue.push(source);
       }
     }
     pump();
@@ -798,6 +940,7 @@
       }
     }
     pages.clear();
+    sources = new Map();
     queue = [];
     fatal = "stopped"; // 還在路上的請求回來時不再處理
     panelHost.remove();
@@ -805,13 +948,15 @@
   }
 
   function status() {
-    const states = [...pages.values()].map((page) => page.state);
+    const { total, done, failed, reasons } = counts();
     return {
       active: true,
       visible,
-      total: states.length,
-      done: states.filter((state) => state === "done").length,
-      failed: states.filter((state) => state === "failed").length,
+      total,
+      done,
+      failed,
+      reasons,
+      notice: lastNotice,
       fatal: fatal && fatal !== "stopped" ? fatal : "",
       preloading,
       panelHidden: panelState.hidden,
@@ -843,6 +988,8 @@
   $panel("retry").addEventListener("click", retry);
   $panel("preload").addEventListener("click", preloadAll);
   $panel("stop").addEventListener("click", stop);
+  $panel("engine").addEventListener("change", chooseEngine);
+  loadEngines();
 
   window.__tmwWebManga = { toggle, retry, stop, status, preload: preloadAll };
   scan();

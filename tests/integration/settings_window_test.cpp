@@ -199,6 +199,35 @@ TEST_F(SettingsWindowTest, ClaudeCanBeChosenAsTheLlm) {
               QStringLiteral("anthropic"));
 }
 
+TEST_F(SettingsWindowTest, ARecentEngineFillsTheFieldsAndKeepsItsKey) {
+    // 最近用過的 Claude（有金鑰）：選了之後金鑰欄留空存檔，金鑰照樣沿用
+    core::Settings start;
+    core::EngineSettings ollama;
+    ollama.id = "openai-compatible";
+    ollama.endpoint = "http://127.0.0.1:11434/v1";
+    ollama.model = "hy-mt2";
+    core::EngineSettings claude;
+    claude.id = "anthropic";
+    claude.model = "claude-haiku-4-5";
+    claude.encryptedApiKey = platform::encryptSecret("sk-ant-秘密");
+    start.engines = {ollama};
+    start.engineHistory = {ollama, claude};
+    SettingsWindow window(start, platform::encryptSecret);
+    auto* history = window.findChild<QComboBox*>(QStringLiteral("engineHistory"));
+    ASSERT_NE(history, nullptr);
+    ASSERT_EQ(history->count(), 3) << "提示文字加兩筆";
+    history->setCurrentIndex(2);
+    emit history->activated(2);
+    EXPECT_EQ(field(window, "model")->text(), QStringLiteral("claude-haiku-4-5"));
+    save(window);
+
+    const core::Settings saved = platform::loadSettings(path()).settings;
+    ASSERT_FALSE(saved.engines.empty());
+    EXPECT_EQ(saved.engines[0].id, "anthropic");
+    EXPECT_EQ(platform::decryptSecret(saved.engines[0].encryptedApiKey),
+              std::optional<std::string>("sk-ant-秘密"));
+}
+
 // M2-10：快捷鍵可以在設定視窗改
 TEST_F(SettingsWindowTest, HotkeysShowTheSavedKeysAndSurviveARestart) {
     core::Settings start;

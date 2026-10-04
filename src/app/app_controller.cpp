@@ -20,6 +20,7 @@
 #include "app/translation_setup.h"
 #include "core/debug_overlay.h"
 #include "core/debug_report.h"
+#include "core/engine_history.h"
 #include "core/hotkey.h"
 #include "core/language.h"
 #include "core/opencc_converter.h"
@@ -921,6 +922,8 @@ void AppController::rebuildTranslation() {
 
     const std::filesystem::path opencc =
         core::OpenccConverter::defaultConfig(platform::executableDirectory() / L"opencc");
+    // 用過的引擎（設定視窗的「最近用過」、網頁漫畫控制面板的切換）：啟動、改設定、切換都會經過這裡
+    core::rememberCurrentEngine(settings_);
     TranslationSetup setup = makeTranslationService(settings_, clock_, opencc);
     for (const std::string& problem : setup.problems) {
         platform::logWarn(problem);
@@ -990,6 +993,26 @@ void AppController::setUpWeb() {
         }
     };
     callbacks.log = [](const std::string& message) { platform::logInfo(message); };
+    callbacks.engines = [this] {
+        std::vector<std::string> labels;
+        for (const core::EngineSettings& engine : settings_.engineHistory) {
+            labels.push_back(core::engineLabel(engine));
+        }
+        return std::pair{labels, settings_.engines.empty()
+                                     ? std::string()
+                                     : core::engineLabel(settings_.engines.front())};
+    };
+    callbacks.setEngine = [this](int index) {
+        if (index < 0 || !core::useEngineFromHistory(settings_, static_cast<std::size_t>(index))) {
+            return false;
+        }
+        platform::logInfo("網頁漫畫：翻譯引擎改用 " + core::engineLabel(settings_.engines.front()));
+        if (!settingsPath_.empty()) {
+            platform::saveSettings(settingsPath_, settings_);
+        }
+        rebuildTranslation();  // 進行中的頁會回報 restarted，擴充功能重新送
+        return true;
+    };
     web_ = std::make_unique<WebService>(platform::webPipeName(), std::move(callbacks));
     startWeb(0);
 }

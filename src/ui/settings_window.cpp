@@ -17,6 +17,7 @@
 #include <utility>
 
 #include "core/custom_http_check.h"
+#include "core/engine_history.h"
 #include "core/hotkey.h"
 #include "core/overlay_font.h"
 #include "ui/engine_choice.h"
@@ -94,6 +95,12 @@ SettingsWindow::SettingsWindow(core::Settings settings, Encrypt encrypt, QWidget
 
     auto* engines = new QGroupBox(QStringLiteral("翻譯引擎"), this);
     auto* engineLayout = new QVBoxLayout(engines);
+    history_ = new QComboBox(this);
+    history_->setObjectName(QStringLiteral("engineHistory"));
+    auto* historyRow = new QFormLayout;
+    historyRow->addRow(QStringLiteral("最近用過"), history_);
+    engineLayout->addLayout(historyRow);
+    connect(history_, &QComboBox::activated, this, [this](int index) { useHistory(index); });
     engineLayout->addWidget(googleOnly_);
     engineLayout->addWidget(useLlm_);
     engineLayout->addLayout(llmForm);
@@ -224,7 +231,42 @@ SettingsWindow::SettingsWindow(core::Settings settings, Encrypt encrypt, QWidget
     applyToWidgets();
 }
 
+void SettingsWindow::useHistory(int index) {
+    // 第 0 項是提示文字
+    if (index <= 0 || static_cast<std::size_t>(index) > settings_.engineHistory.size()) {
+        return;
+    }
+    const core::EngineSettings& engine =
+        settings_.engineHistory[static_cast<std::size_t>(index) - 1];
+    const bool google = engine.id == "google";
+    useLlm_->setChecked(!google);
+    googleOnly_->setChecked(google);
+    if (!google) {
+        const int kind = llmKind_->findData(QString::fromStdString(engine.id));
+        if (kind >= 0) {
+            llmKind_->setCurrentIndex(kind);
+        }
+        endpoint_->setText(QString::fromStdString(engine.endpoint));
+        model_->setText(QString::fromStdString(engine.model));
+        region_->setText(QString::fromStdString(engine.region));
+        headers_->setPlainText(QString::fromStdString(engine.headers));
+        bodyTemplate_->setPlainText(QString::fromStdString(engine.bodyTemplate));
+        responsePath_->setText(QString::fromStdString(engine.responsePath));
+    }
+    historyKey_ = engine.encryptedApiKey;
+    key_->clear();
+    updateEnabled();
+    updateLlmHints();
+}
+
 void SettingsWindow::applyToWidgets() {
+    history_->clear();
+    history_->addItem(QStringLiteral("（選一個用過的引擎，下面的欄位會自動填好）"));
+    for (const core::EngineSettings& engine : settings_.engineHistory) {
+        history_->addItem(QString::fromStdString(core::engineLabel(engine)));
+    }
+    history_->setEnabled(!settings_.engineHistory.empty());
+    historyKey_.clear();
     const EngineChoice choice = engineChoiceFrom(settings_);
     useLlm_->setChecked(choice.useLlm);
     googleOnly_->setChecked(!choice.useLlm);
@@ -348,7 +390,10 @@ void SettingsWindow::collectFromWidgets() {
 
     // 空白代表「不更改」，原本的金鑰會被沿用（enginesFor 處理）
     const std::string typed = key_->text().toStdString();
-    const std::string encrypted = typed.empty() || !encrypt_ ? std::string() : encrypt_(typed);
+    std::string encrypted = typed.empty() || !encrypt_ ? std::string() : encrypt_(typed);
+    if (encrypted.empty()) {
+        encrypted = historyKey_;  // 從「最近用過」選的那一筆的金鑰
+    }
 
     settings_.engines = enginesFor(choice, settings_, encrypted);
     settings_.verboseDiagnostics = verbose_->isChecked();

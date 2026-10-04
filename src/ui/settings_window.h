@@ -51,6 +51,11 @@ private:
     core::Settings settings_;
     Encrypt encrypt_;
 
+    // 最近用過的引擎（core/engine_history.h）：選一項就把下面的欄位填好
+    QComboBox* history_ = nullptr;
+    // 從「最近用過」選的那一筆的金鑰（加密過）：金鑰欄留空時用它，不必重打
+    std::string historyKey_;
+    void useHistory(int index);
     QRadioButton* googleOnly_ = nullptr;
     QRadioButton* useLlm_ = nullptr;
     QComboBox* llmKind_ = nullptr;  // 每一項的 data 是引擎的 id

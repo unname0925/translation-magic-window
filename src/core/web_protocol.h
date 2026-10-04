@@ -11,6 +11,8 @@
 //     pixels 是瀏覽器 getImageData 的 RGBA（每列緊密排列）。id
 //     由擴充功能決定（圖片內容的雜湊），原樣帶回
 //   {"type":"cancel","id":"…"}
+//   {"type":"engines"}                      用過的翻譯引擎和現在用的那個
+//   {"type":"set-engine","index":N}          改用用過的第 N 個（core/engine_history.h）
 // 主程式 → 擴充功能：
 //   {"type":"hello","protocol":1,"version":"0.1.0"}
 //   {"type":"result","id":"…","items":[…],"error":"","patchesDropped":0}
@@ -20,6 +22,8 @@
 //     lineThickness（原文一行的粗細，譯文的字不比它大；0 = 不知道）、ruby [{start, length, text}]、
 //     patch（背景修補的小圖，base64 PNG；沒有時是純色背景）
 //   {"type":"error","id":"…","message":"…"}
+//   {"type":"engines","engines":[{"index":0,"label":"…"}…],"current":"…"}
+//     result 另外有 notice：沒有用首選引擎時的說明（例如「改用 google（…：連不上）」）
 //
 // Native Messaging 規定主程式送給擴充功能的一則訊息最多 1 MB（反方向 64 MiB），所以結果太大時
 // 先丟掉最大的背景修補圖（那幾段改用純色背景），patchesDropped 記丟了幾張。
@@ -57,9 +61,10 @@ std::string base64Encode(std::span<const std::uint8_t> bytes);
 std::optional<std::vector<std::uint8_t>> base64Decode(std::string_view text);
 
 struct WebRequest {
-    enum class Type { Hello, Translate, Cancel, Invalid };
+    enum class Type { Hello, Translate, Cancel, Engines, SetEngine, Invalid };
     Type type = Type::Invalid;
     std::string id;
+    int index = -1;        // SetEngine：用過的第幾個
     ImageBgra image;       // Translate：RGBA 已經轉成 BGRA
     std::string language;  // Translate："auto"、"ja"…；沒給時是空字串
     std::string error;     // Invalid：哪裡不對（回給擴充功能看）
@@ -69,6 +74,8 @@ struct WebRequest {
 WebRequest parseWebRequest(std::string_view json);
 
 std::string webHelloReply(std::string_view version);
+// 用過的翻譯引擎（給人看的名稱，最近的在前面），current 是現在用的那個的名稱
+std::string webEnginesReply(std::span<const std::string> labels, std::string_view current);
 std::string webErrorReply(std::string_view id, std::string_view message);
 
 // 背景修補的小圖編成 PNG（core 不認得影像格式，由呼叫端提供）
@@ -77,6 +84,6 @@ using PngEncoder = std::function<std::vector<std::uint8_t>(const ImageBgra&)>;
 // 翻譯結果。編好之後超過 maxBytes 時，從最大的背景修補圖開始丟，直到放得下
 std::string webResultReply(std::string_view id, std::span<const OverlayItem> items,
                            std::string_view error, const PngEncoder& encodePng,
-                           std::size_t maxBytes = kWebMaxReplyBytes);
+                           std::size_t maxBytes = kWebMaxReplyBytes, std::string_view notice = {});
 
 }  // namespace tmw::core

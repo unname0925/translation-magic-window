@@ -8,6 +8,7 @@ add_executable(tmw_unit_tests
     core/debug_report_test.cpp
     core/geometry_test.cpp
     core/furigana_readings_test.cpp
+    core/engine_history_test.cpp
     core/glossary_test.cpp
     core/history_test.cpp
     core/hotkey_test.cpp

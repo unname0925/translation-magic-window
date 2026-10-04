@@ -22,6 +22,7 @@ add_library(tmw_core STATIC
     frame_source.h
     geometry.cpp
     geometry.h
+    engine_history.cpp
     glossary.cpp
     glossary.h
     history.cpp

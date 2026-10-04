@@ -14,6 +14,8 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "core/pipeline.h"
 #include "core/web_protocol.h"
@@ -36,6 +38,10 @@ public:
         std::function<void(core::PipelineJob)> submit;
         std::function<void(std::uint64_t generation)> cancel;  // 取消進行中的一頁
         std::function<void(const std::string&)> log;
+        // 用過的翻譯引擎（給人看的名稱，最近的在前面）和現在用的那個（UI 執行緒）
+        std::function<std::pair<std::vector<std::string>, std::string>()> engines;
+        // 改用用過的第 index 個（UI 執行緒）。不存在時回傳 false
+        std::function<bool(int index)> setEngine;
     };
 
     WebService(std::wstring pipeName, Callbacks callbacks);
@@ -75,6 +81,7 @@ private:
     void enqueue(int connection, std::shared_ptr<core::WebRequest> request);
     void cancel(int connection, const std::string& id);
     void dropConnection(int connection);
+    void replyEngines(int connection);
     void pump();
     void submitNext();
 

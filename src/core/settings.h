@@ -91,6 +91,8 @@ struct Settings {
     std::map<std::string, ProfileValues> profiles;
     // 翻譯引擎的順序就是引擎鏈的順序（design.md 4.5）
     std::vector<EngineSettings> engines;
+    // 用過的翻譯引擎，最近的在前面（core/engine_history.h）
+    std::vector<EngineSettings> engineHistory;
     ResultWindowSettings resultWindow;
     HotkeySettings hotkeys;
 

@@ -143,6 +143,21 @@ WebRequest parseWebRequest(std::string_view json) {
         out.type = WebRequest::Type::Hello;
         return out;
     }
+    if (type == "engines") {
+        WebRequest out;
+        out.type = WebRequest::Type::Engines;
+        return out;
+    }
+    if (type == "set-engine") {
+        if (!message.contains("index") || !message["index"].is_number_integer() ||
+            message["index"].get<int>() < 0) {
+            return invalid({}, "set-engine without index");
+        }
+        WebRequest out;
+        out.type = WebRequest::Type::SetEngine;
+        out.index = message["index"].get<int>();
+        return out;
+    }
     if (type == "cancel") {
         if (id.empty()) {
             return invalid({}, "cancel without id");
@@ -198,6 +213,16 @@ std::string webHelloReply(std::string_view version) {
         .dump();
 }
 
+std::string webEnginesReply(std::span<const std::string> labels, std::string_view current) {
+    nlohmann::json list = nlohmann::json::array();
+    for (std::size_t i = 0; i < labels.size(); ++i) {
+        list.push_back({{"index", i}, {"label", labels[i]}});
+    }
+    return nlohmann::json{
+        {"type", "engines"}, {"engines", std::move(list)}, {"current", std::string(current)}}
+        .dump(-1, ' ', false, nlohmann::json::error_handler_t::replace);
+}
+
 std::string webErrorReply(std::string_view id, std::string_view message) {
     return nlohmann::json{
         {"type", "error"}, {"id", std::string(id)}, {"message", std::string(message)}}
@@ -206,7 +231,7 @@ std::string webErrorReply(std::string_view id, std::string_view message) {
 
 std::string webResultReply(std::string_view id, std::span<const OverlayItem> items,
                            std::string_view error, const PngEncoder& encodePng,
-                           std::size_t maxBytes) {
+                           std::size_t maxBytes, std::string_view notice) {
     nlohmann::json list = nlohmann::json::array();
     std::vector<std::string> patches(items.size());
     for (std::size_t i = 0; i < items.size(); ++i) {
@@ -241,6 +266,7 @@ std::string webResultReply(std::string_view id, std::span<const OverlayItem> ite
                              {"id", std::string(id)},
                              {"items", list},
                              {"error", std::string(error)},
+                             {"notice", std::string(notice)},
                              {"patchesDropped", dropped}};
         for (std::size_t i = 0; i < patches.size(); ++i) {
             if (!patches[i].empty()) {
