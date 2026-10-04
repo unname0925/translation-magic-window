@@ -8,7 +8,8 @@
     "activeTab",
     "scripting",
     "nativeMessaging",
-    "storage"
+    "storage",
+    "declarativeNetRequestWithHostAccess"
   ],
   "optional_host_permissions": [
     "<all_urls>"

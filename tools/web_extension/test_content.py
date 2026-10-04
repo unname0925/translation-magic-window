@@ -232,6 +232,50 @@ def make_failure_page(content: str) -> str:
     return page
 
 
+def make_blocked_page(content: str) -> str:
+    """圖片伺服器有防盜連、背景抓不到：要算成「等圖片載入」、說明原因，並叫網頁直接載入。"""
+    PIXEL = "data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="
+    page = f"""<!doctype html><meta charset=utf-8>
+    <style>
+      body {{ margin: 0; }}
+      #reader img {{ display: block; width: 600px; height: 900px; margin: 10px auto; }}
+    </style>
+    <div id=reader></div>
+    <script>
+    const reader = document.getElementById("reader");
+    for (let i = 0; i < 5; i++) {{
+      const img = document.createElement("img");
+      img.src = "{PIXEL}";
+      img.dataset.src = "https://cdn.example.invalid/b" + i + ".jpg";
+      reader.append(img);
+    }}
+    const pagesSent = [];
+    let listener = null;
+    window.chrome = {{ runtime: {{ onMessage: {{ addListener: (f) => listener = f, removeListener: () => listener = null }},
+                                  sendMessage: async (message) => {{
+      if (message.kind !== "translate") return {{ type: "engines", engines: [], current: "" }};
+      pagesSent.push(message.page);
+      return {{ type: "error", fetchFailed: true, message: "HTTP 403" }};
+    }} }} }};
+    </script>
+    <script>{content}</script>
+    <script>
+    const report = [];
+    function check(name, ok, detail = "") {{ report.push((ok ? "PASS " : "FAIL ") + name + (detail ? " (" + detail + ")" : "")); }}
+    setTimeout(() => {{
+      let s = null;
+      listener({{ kind: "page-status" }}, {{}}, (x) => s = x);
+      check("背景抓不到的圖算成等圖片載入，不算失敗", s.waiting === 5 && s.failed === 0, JSON.stringify(s));
+      check("說明原因", s.reasons.some((r) => r.includes("HTTP 403") && r.includes("5 張")), JSON.stringify(s.reasons));
+      check("抓圖時附上這一頁的網址（防盜連）", pagesSent.length > 0 && pagesSent.every((p) => p === location.href));
+      check("叫網頁直接載入（網址搬到 src）",
+            [...reader.querySelectorAll("img")].every((img) => img.getAttribute("src") === img.dataset.src));
+      document.body.setAttribute("data-report", report.join(" | "));
+    }}, 3000);
+    </script>"""
+    return page
+
+
 def run(page: str, folder: Path, name: str) -> list[str]:
     path = folder / f"{name}.html"
     path.write_text(page, encoding="utf-8")
@@ -256,6 +300,7 @@ def main() -> int:
                                     "CSS.supports = () => false;\nwindow.chrome = {", 1),
         "page-loader": make_loader_page(content),
         "failures": make_failure_page(content),
+        "blocked": make_blocked_page(content),
     }
     failed = 0
     with tempfile.TemporaryDirectory() as folder:

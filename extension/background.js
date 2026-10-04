@@ -107,7 +107,37 @@ function pixelsOf(bitmap) {
   return { width, height, pixels: base64(data) };
 }
 
-async function fetchPixels(url) {
+// 很多漫畫網站的圖片伺服器有防盜連：只給帶著自己網站「來源頁」（Referer）的請求。
+// 擴充功能的 service worker 不能自己指定別的網站當來源，所以用 declarativeNetRequest
+// 只對「沒有分頁的請求」（擴充功能自己發的）、這個圖片主機，補上漫畫頁的網址。
+// 每個主機一條規則，換頁時換掉網址
+const refererRules = new Map(); // 主機 → 規則編號
+let nextRuleId = 1;
+
+async function setReferer(url, page) {
+  if (!page || !chrome.declarativeNetRequest) {
+    return;
+  }
+  const host = new URL(url).hostname;
+  const id = refererRules.get(host) ?? nextRuleId++;
+  refererRules.set(host, id);
+  await chrome.declarativeNetRequest.updateSessionRules({
+    removeRuleIds: [id],
+    addRules: [{
+      id,
+      priority: 1,
+      action: { type: "modifyHeaders", requestHeaders: [{ header: "referer", operation: "set", value: page }] },
+      condition: { requestDomains: [host], tabIds: [chrome.tabs.TAB_ID_NONE], resourceTypes: ["xmlhttprequest", "other"] },
+    }],
+  });
+}
+
+async function fetchPixels(url, page) {
+  try {
+    await setReferer(url, page);
+  } catch {
+    // 沒有權限加規則：照樣試，抓不到時 content.js 改在頁面裡讀
+  }
   const response = await fetch(url, { credentials: "include" });
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}`);
@@ -125,7 +155,7 @@ async function translate(request) {
   let image = request.image;
   if (!image) {
     try {
-      image = await fetchPixels(request.url);
+      image = await fetchPixels(request.url, request.page);
     } catch (error) {
       // 抓不到（沒有權限、防盜連、格式不支援）：content.js 改在頁面裡讀
       return { type: "error", fetchFailed: true, message: String(error?.message || error) };
@@ -190,9 +220,41 @@ function engines(set) {
   });
 }
 
+// 用過「翻譯這一頁」的分頁：換到別的網頁時自動再開（控制面板一直在），直到按「停止」或關掉瀏覽器。
+// 記在 storage.session：瀏覽器關掉就清空
+const ACTIVE_TABS = "activeTabs";
+
+async function activeTabs() {
+  return (await chrome.storage.session.get({ [ACTIVE_TABS]: [] }))[ACTIVE_TABS];
+}
+
+async function setActive(tabId, active) {
+  const tabs = (await activeTabs()).filter((id) => id !== tabId);
+  if (active) {
+    tabs.push(tabId);
+  }
+  await chrome.storage.session.set({ [ACTIVE_TABS]: tabs });
+}
+
 async function start(tabId) {
   await chrome.scripting.executeScript({ target: { tabId }, files: ["content.js"] });
+  await setActive(tabId, true);
 }
+
+chrome.tabs.onUpdated.addListener((tabId, info) => {
+  if (info.status !== "complete") {
+    return;
+  }
+  activeTabs().then((tabs) => {
+    if (tabs.includes(tabId)) {
+      // 沒有這個網站的權限（使用者拒絕了「讀取所有網站」）時注入不了：就算了
+      chrome.scripting.executeScript({ target: { tabId }, files: ["content.js"] }).catch(() => {});
+    }
+  });
+});
+chrome.tabs.onRemoved.addListener((tabId) => {
+  setActive(tabId, false);
+});
 
 // 「這個網站自動翻譯」的網站：網頁載入完成時自動注入 content.js
 const AUTO_SCRIPT = "tmw-auto";
@@ -234,6 +296,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     work = engines();
   } else if (request?.kind === "set-engine") {
     work = engines(request.index);
+  } else if (request?.kind === "stopped" && sender.tab) {
+    work = setActive(sender.tab.id, false).then(() => ({ ok: true }));
   } else if (request?.kind === "start") {
     work = start(request.tabId).then(() => ({ ok: true }));
   } else if (request?.kind === "auto-site") {

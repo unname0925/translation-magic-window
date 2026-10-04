@@ -42,7 +42,7 @@
   panelHost.style.cssText = "all:initial;position:fixed;left:0;top:0;width:0;height:0;z-index:2147483647;";
   const panelRoot = panelHost.attachShadow({ mode: "closed" });
   panelRoot.innerHTML = `<style>
-    .panel { position: fixed; width: 230px; border-radius: 8px; background: #202124; color: #f1f1f1;
+    .panel { position: fixed; width: 250px; max-width: calc(100vw - 16px); box-sizing: border-box; border-radius: 8px; background: #202124; color: #f1f1f1;
              font: 12px/1.5 "Microsoft JhengHei", "Noto Sans TC", sans-serif; box-shadow: 0 4px 16px rgba(0,0,0,.35);
              user-select: none; }
     .head { display: flex; align-items: center; gap: 6px; padding: 6px 8px; cursor: move; border-bottom: 1px solid #3c3c3c; }
@@ -50,7 +50,9 @@
     .icon { width: 20px; height: 20px; border: 0; border-radius: 4px; background: transparent; color: #ccc;
             font: 14px/1 sans-serif; cursor: pointer; }
     .icon:hover { background: #3c3c3c; color: #fff; }
-    .body { padding: 8px; display: grid; gap: 7px; }
+    .body { padding: 8px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 7px;
+            overflow-wrap: anywhere; }
+    .body > * { min-width: 0; }
     .bar { height: 4px; border-radius: 2px; background: #3c3c3c; overflow: hidden; }
     .bar > div { height: 100%; width: 0; background: #63a4e8; transition: width .3s; }
     .buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
@@ -58,11 +60,12 @@
                     color: #f1f1f1; font: inherit; cursor: pointer; }
     button.action:hover:not(:disabled) { border-color: #63a4e8; }
     button.action:disabled { opacity: .45; cursor: default; }
-    .row { display: flex; align-items: center; gap: 6px; }
+    .row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+    .head strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .row input[type=range] { flex: 1; }
     label { display: flex; align-items: center; gap: 5px; cursor: pointer; }
     .muted { color: #a8a8a8; }
-    select { flex: 1; min-width: 0; padding: 2px 4px; border: 1px solid #4a4a4a; border-radius: 4px;
+    select { flex: 1; min-width: 0; width: 100%; text-overflow: ellipsis; padding: 2px 4px; border: 1px solid #4a4a4a; border-radius: 4px;
              background: #2b2c2f; color: #f1f1f1; font: inherit; }
     .reasons { display: grid; gap: 2px; color: #f6c35b; font-size: 11px; }
     .notice { color: #9ecbff; font-size: 11px; }
@@ -367,6 +370,17 @@
     return { width: canvas.width, height: canvas.height, pixels: btoa(binary) };
   }
 
+  // 叫網頁現在就載入這張圖（不必等使用者捲到）：延遲載入的網址搬到 src，lazy 改成立刻載入
+  function forceLoad(element, source) {
+    if (!(element instanceof HTMLImageElement) || !element.isConnected) {
+      return;
+    }
+    element.loading = "eager";
+    if (isHttp(source) && element.currentSrc !== source && !loaded(element)) {
+      element.src = source;
+    }
+  }
+
   async function sendInPage(element) {
     try {
       return await chrome.runtime.sendMessage({ kind: "translate", image: readInPage(element) });
@@ -413,11 +427,13 @@
     let reply;
     try {
       if (isHttp(source)) {
-        reply = await chrome.runtime.sendMessage({ kind: "translate", url: source });
+        reply = await chrome.runtime.sendMessage({ kind: "translate", url: source, page: location.href });
         if (reply?.fetchFailed) {
           if (!element?.isConnected || !readable(element)) {
-            entry.state = "waiting"; // 背景抓不到、頁面也還沒載入：載入後 scan 會再排
-            entry.reason = "";
+            // 背景抓不到、頁面也還沒載入：叫網頁先載入它，載入後 scan 會再排
+            entry.state = "waiting";
+            entry.reason = `抓不到圖片（${reply.message}），等網頁載入`;
+            forceLoad(element, source);
             return;
           }
           reply = await sendInPage(element);
@@ -710,15 +726,17 @@
     const all = [...sources.values()];
     const done = all.filter((entry) => entry.state === "done").length;
     const failed = all.filter((entry) => entry.state === "failed");
+    const waiting = all.filter((entry) => entry.state === "waiting");
     // 同樣的原因合在一起：「翻譯失敗：被限流或額度用完：HTTP 429（3 張）」
     const reasons = new Map();
-    for (const entry of failed) {
+    for (const entry of [...failed, ...waiting]) {
       reasons.set(entry.reason, (reasons.get(entry.reason) || 0) + 1);
     }
     return {
       total: all.length,
       done,
       failed: failed.length,
+      waiting: waiting.length,
       reasons: [...reasons].map(([reason, count]) => `${reason}（${count} 張）`),
     };
   }
@@ -741,7 +759,9 @@
       text = `完成 ${done} 張`;
     }
     $panel("status").textContent = text;
-    $panel("detail").textContent = failed ? `${failed} 張失敗` : "";
+    const { waiting } = counts();
+    $panel("detail").textContent = [failed ? `${failed} 張失敗` : "", waiting ? `${waiting} 張等圖片載入` : ""]
+      .filter(Boolean).join("，");
     $panel("progress").style.width = total ? `${(finished / total) * 100}%` : "0";
     const list = $panel("reasons");
     list.replaceChildren(...reasons.map((reason) => {
@@ -944,17 +964,19 @@
     queue = [];
     fatal = "stopped"; // 還在路上的請求回來時不再處理
     panelHost.remove();
+    chrome.runtime.sendMessage({ kind: "stopped" }).catch(() => {}); // 換頁後不再自動開啟
     delete window.__tmwWebManga;
   }
 
   function status() {
-    const { total, done, failed, reasons } = counts();
+    const { total, done, failed, waiting, reasons } = counts();
     return {
       active: true,
       visible,
       total,
       done,
       failed,
+      waiting,
       reasons,
       notice: lastNotice,
       fatal: fatal && fatal !== "stopped" ? fatal : "",
