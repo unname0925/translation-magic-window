@@ -173,8 +173,9 @@ async function translate(request) {
     }
   }
   const { language } = await chrome.storage.local.get({ language: "auto" });
-  // 同一張圖用不同的辨識語言是不同的結果
-  const id = await sha256(`${language}:${image.width}x${image.height}:${image.pixels}`);
+  const soundEffects = request.soundEffects !== false;
+  // 同一張圖用不同的辨識語言、擬聲字翻不翻，是不同的結果
+  const id = await sha256(`${language}:${soundEffects ? "" : "no-sfx:"}${image.width}x${image.height}:${image.pixels}`);
   const cached = results.get(id);
   if (cached) {
     return { ...cached, width: image.width, height: image.height };
@@ -194,6 +195,7 @@ async function translate(request) {
         height: image.height,
         pixels: image.pixels,
         language,
+        soundEffects,
       });
     } catch (error) {
       port = null;

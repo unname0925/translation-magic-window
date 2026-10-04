@@ -688,6 +688,7 @@ void AppController::process(Lens& lens, const core::ProcessRequest& request) {
     job.manual = request.manual;
     job.usePrepared = request.prepared;
     job.language = settings_.ocrLanguage;
+    job.soundEffects = settings_.translateSoundEffects;
     job.glossary = currentGlossary();
     if (lens.overlay != nullptr) {
         job.inpainter = inpainter_;  // 只有譯文要蓋在原文上時才修補背景
@@ -943,8 +944,12 @@ void AppController::rebuildTranslation() {
     // 透鏡和網頁漫畫的推論輪流用顯示卡（core/gpu_lock.h）
     lockedOcr_ = std::make_unique<core::LockedOcrService>(*ocr_, gpu_);
     pipeline_ = std::make_unique<core::Pipeline>(*lockedOcr_, *translation_, pipelineOptions);
-    // 網頁漫畫用自己的一份（自己的上下文、語言記憶），推論和透鏡共用模型
-    webPipeline_ = std::make_unique<core::Pipeline>(*lockedOcr_, *translation_, pipelineOptions);
+    // 網頁漫畫用自己的一份（自己的上下文、語言記憶），推論和透鏡共用模型。
+    // 去掉貼邊的殘句是給透鏡用的（框邊切到一半的句子）；網頁送來的是整張圖，
+    // 貼著圖邊的旁白、擬聲字是完整的，不能丟
+    core::PipelineOptions webOptions = pipelineOptions;
+    webOptions.dropEdgeBlocks = false;
+    webPipeline_ = std::make_unique<core::Pipeline>(*lockedOcr_, *translation_, webOptions);
     // 網頁漫畫自己的工作佇列：一個辨識執行緒＋kWebTranslators
     // 個翻譯執行緒（core/web_pipeline_worker.h）
     webWorker_ = std::make_unique<core::WebPipelineWorker>(
@@ -1100,6 +1105,7 @@ void AppController::applySettings(const core::Settings& settings) {
     // 這兩項改的是目前情境的值（切走情境時會存回去）；處理管線在下面重建時套用
     settings_.dropEdgeBlocks = settings.dropEdgeBlocks;
     settings_.settleMs = settings.settleMs;
+    settings_.translateSoundEffects = settings.translateSoundEffects;  // 下一次處理就生效
     for (const std::unique_ptr<Lens>& lens : lenses_) {
         lens->trigger->setSettleTime(std::chrono::milliseconds(settings_.settleMs));
     }

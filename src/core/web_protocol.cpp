@@ -204,6 +204,9 @@ WebRequest parseWebRequest(std::string_view json) {
     if (message.contains("language") && message["language"].is_string()) {
         out.language = message["language"].get<std::string>();
     }
+    if (message.contains("soundEffects") && message["soundEffects"].is_boolean()) {
+        out.soundEffects = message["soundEffects"].get<bool>();
+    }
     return out;
 }
 
@@ -247,6 +250,9 @@ std::string webResultReply(std::string_view id, std::span<const OverlayItem> ite
         };
         if (item.outline) {
             entry["outline"] = hexColor(*item.outline);
+        }
+        if (item.soundEffect) {
+            entry["soundEffect"] = true;
         }
         nlohmann::json ruby = nlohmann::json::array();
         for (const OverlayRuby& annotation : item.ruby) {

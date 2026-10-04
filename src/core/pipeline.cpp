@@ -188,6 +188,10 @@ Pipeline::RecognizedPage Pipeline::recognize(const PipelineJob& job, std::stop_t
         blocks =
             dropEdgeBlocks(blocks, SizeI{job.frame.width, job.frame.height}, options_.edgeMargin);
     }
+    markSoundEffects(blocks, recognized.bubbles);
+    if (!job.soundEffects) {
+        std::erase_if(blocks, [](const TextBlock& block) { return block.soundEffect; });
+    }
     result.timings.layoutMs = millisecondsSince(layoutStart);
     if (job.prepareTicket != 0 && blocks.empty()) {
         return page;  // 預先做：不記「沒有文字」，正式處理時才記

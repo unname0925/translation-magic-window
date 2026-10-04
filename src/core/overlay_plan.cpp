@@ -333,6 +333,7 @@ std::vector<OverlayItem> planOverlay(const ImageBgra& frame,
         }
         item.size = group.block.size;
         item.lineThickness = lineThickness(group.block);
+        item.soundEffect = group.block.soundEffect;
         items.push_back(std::move(item));
     }
     return items;

@@ -369,6 +369,78 @@ def make_blob_page(content: str) -> str:
     return page
 
 
+def make_sound_page(content: str) -> str:
+    """擬聲字開關：關掉時擬聲字的譯文馬上藏起來、不重翻；之後新翻的圖不翻擬聲字；
+    再打開時，那些沒翻擬聲字的圖重送一次。"""
+    PIXEL = "data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="
+    page = f"""<!doctype html><meta charset=utf-8>
+    <style>
+      body {{ margin: 0; }}
+      #reader img {{ display: block; width: 600px; height: 900px; margin: 10px auto; }}
+    </style>
+    <div id=reader></div>
+    <script>
+    // 測試要看得到 shadow DOM 裡面（content.js 用 closed）
+    const attach = Element.prototype.attachShadow;
+    Element.prototype.attachShadow = function () {{ return attach.call(this, {{ mode: "open" }}); }};
+    const reader = document.getElementById("reader");
+    const addPage = (i) => {{
+      const img = document.createElement("img");
+      img.src = "{PIXEL}";
+      img.dataset.src = "https://cdn.example.invalid/page" + i + ".jpg";
+      reader.append(img);
+    }};
+    for (let i = 0; i < 3; i++) addPage(i);
+    const sent = [];
+    let listener = null;
+    window.chrome = {{ runtime: {{ onMessage: {{ addListener: (f) => listener = f, removeListener: () => listener = null }},
+                                  sendMessage: async (message) => {{
+      if (message.kind !== "translate") return {{ type: "engines", engines: [], current: "" }};
+      sent.push(message.url.slice(-9) + ":" + message.soundEffects);
+      await new Promise((r) => setTimeout(r, 30));
+      const items = [{{ rect: [100, 100, 300, 400], text: "對白", vertical: true, foreground: "#000000",
+                        background: "#ffffff", size: "normal", lineThickness: 30, ruby: [] }}];
+      if (message.soundEffects) {{
+        items.push({{ rect: [350, 500, 450, 700], text: "咚", vertical: true, foreground: "#000000",
+                      background: "#ffffff", size: "large", lineThickness: 60, ruby: [], soundEffect: true }});
+      }}
+      return {{ type: "result", id: message.url, width: 600, height: 900, error: "", notice: "",
+                patchesDropped: 0, items }};
+    }} }} }};
+    </script>
+    <script>{content}</script>
+    <script>
+    const report = [];
+    function check(name, ok, detail = "") {{ report.push((ok ? "PASS " : "FAIL ") + name + (detail ? " (" + detail + ")" : "")); }}
+    const shown = (selector) => [...document.querySelectorAll("tmw-overlay")]
+      .flatMap((o) => [...o.shadowRoot.querySelectorAll(selector)])
+      .filter((box) => getComputedStyle(box).display !== "none").length;
+    const toggle = () => document.querySelector("tmw-panel").shadowRoot.getElementById("soundEffects").click();
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    (async () => {{
+      await wait(2000);
+      check("預設翻譯擬聲字", shown(".item.sound") === 3 && sent.every((x) => x.endsWith(":true")),
+            shown(".item.sound") + " 個擬聲字, " + sent.join(","));
+      const before = sent.length;
+      toggle();
+      check("關掉時擬聲字馬上藏起來、對白還在、不重翻",
+            shown(".item.sound") === 0 && shown(".item:not(.sound)") === 3 && sent.length === before,
+            shown(".item.sound") + " 個擬聲字, " + shown(".item:not(.sound)") + " 句對白, 請求 " + sent.length);
+      addPage(3);
+      await wait(1500);
+      check("關掉之後新翻的圖不送擬聲字", sent.length === before + 1 && sent[sent.length - 1].endsWith(":false"),
+            sent.slice(before).join(","));
+      toggle();
+      await wait(1500);
+      check("再打開時沒翻擬聲字的那張重送、擬聲字都出現",
+            sent.length === before + 2 && sent[sent.length - 1] === "page3.jpg:true" && shown(".item.sound") === 4,
+            sent.slice(before).join(",") + ", " + shown(".item.sound") + " 個擬聲字");
+      document.body.setAttribute("data-report", report.join(" | "));
+    }})();
+    </script>"""
+    return page
+
+
 def run(page: str, folder: Path, name: str) -> list[str]:
     path = folder / f"{name}.html"
     path.write_text(page, encoding="utf-8")
@@ -395,6 +467,7 @@ def main() -> int:
         "failures": make_failure_page(content),
         "blocked": make_blocked_page(content),
         "blob-swap": make_blob_page(content),
+        "sound-effects": make_sound_page(content),
     }
     failed = 0
     with tempfile.TemporaryDirectory() as folder:

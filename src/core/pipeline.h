@@ -54,6 +54,9 @@ struct PipelineJob {
     std::uint64_t usePrepared = 0;
     // 一律當漫畫處理（找對話框、直排對白用 manga-ocr 重讀），不管透鏡的漫畫模式設定（網頁漫畫）
     bool manga = false;
+    // 要不要翻譯擬聲字（core/text_layout.h 的 looksLikeSoundEffect）。不翻時送翻譯之前就拿掉，
+    // 翻譯、背景修補都省下來
+    bool soundEffects = true;
 };
 
 struct PipelineTimings {

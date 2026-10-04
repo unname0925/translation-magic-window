@@ -223,6 +223,31 @@ TEST(EdgeTest, DetectsEveryEdge) {
     EXPECT_FALSE(touchesEdge(RectI::fromXYWH(50, 50, 100, 20), frame));
 }
 
+TEST(SoundEffectTest, ShortTextOutsideEveryBubble) {
+    const std::vector<RectI> bubbles{RectI{0, 0, 200, 200}};
+    TextBlock block;
+    block.rect = RectI{300, 50, 380, 250};
+    block.text = "ドドド！";  // 標點不算字數
+    EXPECT_TRUE(looksLikeSoundEffect(block, bubbles));
+    block.text = "轟";  // 花俏的擬聲字常被讀成漢字：不看是不是假名
+    EXPECT_TRUE(looksLikeSoundEffect(block, bubbles));
+}
+
+TEST(SoundEffectTest, NotInsideABubbleNorLongNorWithoutBubbles) {
+    const std::vector<RectI> bubbles{RectI{0, 0, 200, 200}};
+    TextBlock block;
+    block.rect = RectI{20, 20, 60, 120};
+    block.text = "え？";
+    EXPECT_FALSE(looksLikeSoundEffect(block, bubbles)) << "對話框裡的短句是對白";
+    block.rect = RectI{300, 50, 380, 250};
+    block.text = "ちょっと待って";
+    EXPECT_FALSE(looksLikeSoundEffect(block, bubbles)) << "長的不是擬聲字";
+    block.text = "ドン";
+    EXPECT_FALSE(looksLikeSoundEffect(block, {})) << "沒有對話框（不是漫畫）時無從判斷";
+    block.text = "！！";
+    EXPECT_FALSE(looksLikeSoundEffect(block, bubbles)) << "只有標點";
+}
+
 // 合併是「任意兩行相容就併成一群」，不是只看閱讀順序上相鄰的那兩行。
 // 被擬聲詞或 ルビ 插隊一次就接不回來的話，日文漫畫的句子會碎成一片（design.md 4.4）。
 TEST(MergeIntoBlocksTest, AnInterruptionDoesNotBreakTheRestOfTheChain) {

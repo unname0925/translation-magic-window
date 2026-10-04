@@ -83,6 +83,9 @@ struct Settings {
     std::string ocrLanguage = "auto";
     // 碰到透鏡邊緣、被切掉一部分的句子不翻（design.md 4.4）。遊戲情境預設關掉。
     bool dropEdgeBlocks = true;
+    // 透鏡要不要翻譯擬聲字（core/text_layout.h 的
+    // looksLikeSoundEffect；網頁漫畫在控制面板另外設定）
+    bool translateSoundEffects = true;
     // 畫面停下來多久才處理（毫秒，100～3000，design.md 4.3）
     int settleMs = 400;
     // 情境模式（M2-06，core/context_profile.h）：現在選的情境（空字串是沒選），

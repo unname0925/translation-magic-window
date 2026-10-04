@@ -76,6 +76,7 @@ private:
     QCheckBox* mangaMode_ = nullptr;
     QCheckBox* gameMode_ = nullptr;
     QCheckBox* translateEdges_ = nullptr;  // 勾起來代表 dropEdgeBlocks = false
+    QCheckBox* soundEffects_ = nullptr;
     QSpinBox* settleMs_ = nullptr;
     QLabel* profileNote_ = nullptr;  // 目前的情境
     QKeySequenceEdit* hotkeyTranslate_ = nullptr;

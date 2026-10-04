@@ -35,7 +35,8 @@
             overflow-wrap: anywhere; white-space: pre-wrap; }
     .vertical { writing-mode: vertical-rl; text-orientation: mixed; }
     rt { font-size: 0.45em; }
-    .hidden { display: none; }`;
+    .hidden { display: none; }
+    .no-sound .sound { display: none; }`;
 
   // 控制面板：浮在網頁上，可以拖動、調透明度、縮小；位置和透明度記在 chrome.storage
   const panelHost = document.createElement("tmw-panel");
@@ -91,6 +92,8 @@
         <button class="action" id="stop">停止並移除</button>
       </div>
       <label><input type="checkbox" id="autoPreload"> 開始時先載入整頁的圖</label>
+      <label title="對話框外的短字，例如「ドドド」。不翻時擬聲字不送翻譯，翻得比較快">
+        <input type="checkbox" id="soundEffects"> 翻譯擬聲字</label>
       <div class="row"><span>透明度</span><input type="range" id="opacity" min="20" max="100" step="5">
         <span id="opacityText" class="muted"></span></div>
     </div>
@@ -98,7 +101,8 @@
   document.documentElement.appendChild(panelHost);
   const panel = panelRoot.querySelector(".panel");
   const $panel = (id) => panelRoot.getElementById(id);
-  const panelState = { left: null, top: 24, opacity: 95, minimized: false, hidden: false, autoPreload: true };
+  const panelState = { left: null, top: 24, opacity: 95, minimized: false, hidden: false, autoPreload: true,
+                       soundEffects: true };
 
   function applyPanel() {
     panel.classList.toggle("mini", panelState.minimized);
@@ -112,11 +116,12 @@
     $panel("opacityText").textContent = `${panelState.opacity}%`;
     $panel("minimize").textContent = panelState.minimized ? "+" : "–";
     $panel("autoPreload").checked = panelState.autoPreload;
+    $panel("soundEffects").checked = panelState.soundEffects;
   }
 
   function savePanel() {
-    const { left, top, opacity, minimized, autoPreload } = panelState;
-    chrome.storage?.local.set({ panel: { left, top, opacity, minimized, autoPreload } }).catch(() => {});
+    const { left, top, opacity, minimized, autoPreload, soundEffects } = panelState;
+    chrome.storage?.local.set({ panel: { left, top, opacity, minimized, autoPreload, soundEffects } }).catch(() => {});
   }
 
   // 拖動標題列
@@ -159,6 +164,11 @@
   $panel("autoPreload").addEventListener("change", () => {
     panelState.autoPreload = $panel("autoPreload").checked;
     savePanel();
+  });
+  $panel("soundEffects").addEventListener("change", () => {
+    panelState.soundEffects = $panel("soundEffects").checked;
+    savePanel();
+    applySoundEffects();
   });
   addEventListener("resize", applyPanel, { passive: true });
   applyPanel();
@@ -442,11 +452,11 @@
     }
   }
 
-  async function sendInPage(element) {
+  async function sendInPage(element, soundEffects) {
     try {
       const encoded = await encodedInPage(element);
       if (encoded) {
-        const reply = await chrome.runtime.sendMessage({ kind: "translate", encoded });
+        const reply = await chrome.runtime.sendMessage({ kind: "translate", encoded, soundEffects });
         if (!reply?.fetchFailed) {
           return reply;
         }
@@ -454,7 +464,7 @@
       if (!element.isConnected) {
         return { type: "error", message: "圖片被網頁拿掉了" };
       }
-      return await chrome.runtime.sendMessage({ kind: "translate", image: readInPage(element) });
+      return await chrome.runtime.sendMessage({ kind: "translate", image: readInPage(element), soundEffects });
     } catch (error) {
       return { type: "error", message: error?.name === "SecurityError" ? "page-protected" : String(error?.message || error) };
     }
@@ -495,10 +505,11 @@
     entry.state = "working";
     updateBadge();
     const element = entry.element;
+    const soundEffects = panelState.soundEffects; // 不翻擬聲字時主程式不送它們去翻譯
     let reply;
     try {
       if (isHttp(source)) {
-        reply = await chrome.runtime.sendMessage({ kind: "translate", url: source, page: location.href });
+        reply = await chrome.runtime.sendMessage({ kind: "translate", url: source, page: location.href, soundEffects });
         if (reply?.fetchFailed) {
           if (!element?.isConnected || !readable(element)) {
             // 背景抓不到、頁面也還沒載入：叫網頁先載入它，載入後 scan 會再排
@@ -507,10 +518,10 @@
             forceLoad(element, source);
             return;
           }
-          reply = await sendInPage(element);
+          reply = await sendInPage(element, soundEffects);
         }
       } else if (element?.isConnected) {
-        reply = await sendInPage(element);
+        reply = await sendInPage(element, soundEffects);
       } else {
         entry.state = "waiting"; // canvas 被拿掉了：建回來時再讀
         return;
@@ -532,6 +543,7 @@
     if (reply?.type === "result" && !reply.error) {
       entry.state = "done";
       entry.result = reply;
+      entry.soundEffects = soundEffects;
       entry.reason = "";
       doneBySource.set(source, reply);
       for (const [shown, page] of pages) {
@@ -606,10 +618,11 @@
   function buildLayer(result) {
     const layer = document.createElement("div");
     layer.className = visible ? "layer" : "layer hidden";
+    layer.classList.toggle("no-sound", !panelState.soundEffects);
     for (const item of result.items) {
       const [left, top, right, bottom] = item.rect;
       const box = document.createElement("div");
-      box.className = "item";
+      box.className = item.soundEffect ? "item sound" : "item";
       box.style.left = `${(left / result.width) * 100}%`;
       box.style.top = `${(top / result.height) * 100}%`;
       box.style.width = `${((right - left) / result.width) * 100}%`;
@@ -645,6 +658,9 @@
     [...page.layer.querySelectorAll(".item")].forEach((box, index) => {
       const item = page.result.items[index];
       const text = box.querySelector(".text");
+      if (box.clientWidth === 0) {
+        return; // 藏起來的擬聲字：打開開關時再量（applySoundEffects）
+      }
       const limit = item.lineThickness > 0 ? item.lineThickness * scale * 1.05 : 200;
       let low = 6;
       let high = Math.max(low, Math.min(limit, 200));
@@ -981,6 +997,25 @@
     for (const page of pages.values()) {
       page.layer?.classList.toggle("hidden", !visible);
     }
+    updateBadge();
+  }
+
+  // 擬聲字開關：關掉時馬上藏起來；打開時重新量字級，當初沒翻擬聲字的圖再送一次
+  function applySoundEffects() {
+    for (const page of pages.values()) {
+      page.layer?.classList.toggle("no-sound", !panelState.soundEffects);
+      page.fitted = false;
+    }
+    if (panelState.soundEffects) {
+      for (const [source, entry] of sources) {
+        if (entry.state === "done" && entry.soundEffects === false) {
+          entry.state = "queued";
+          queue.push(source);
+        }
+      }
+      pump();
+    }
+    alignAll();
     updateBadge();
   }
 

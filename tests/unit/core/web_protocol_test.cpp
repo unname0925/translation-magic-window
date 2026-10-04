@@ -80,6 +80,18 @@ TEST(ParseWebRequestTest, TranslateTurnsRgbaIntoBgra) {
     EXPECT_EQ(request.image.pixels, (std::vector<std::uint8_t>{0, 0, 255, 255, 255, 0, 0, 255}));
 }
 
+TEST(ParseWebRequestTest, SoundEffectsDefaultToTranslated) {
+    const std::vector<std::uint8_t> rgba(4, 0);
+    nlohmann::json message{{"type", "translate"},
+                           {"id", "a"},
+                           {"width", 1},
+                           {"height", 1},
+                           {"pixels", base64Encode(rgba)}};
+    EXPECT_TRUE(parseWebRequest(message.dump()).soundEffects);
+    message["soundEffects"] = false;
+    EXPECT_FALSE(parseWebRequest(message.dump()).soundEffects);
+}
+
 TEST(ParseWebRequestTest, PixelsMustMatchTheSize) {
     const std::string json = nlohmann::json{
         {"type", "translate"},

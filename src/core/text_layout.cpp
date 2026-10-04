@@ -409,6 +409,37 @@ std::vector<TextBlock> mergeIntoBlocks(std::span<const OcrLine> lines,
     return buildBlocks(std::move(clustered.sorted), key);
 }
 
+namespace {
+
+// 算字數用：字母、數字、假名（含長音「ー」）、漢字、諺文。標點、符號、空白不算
+bool countsAsLetter(char32_t c) {
+    return (c >= U'0' && c <= U'9') || (c >= U'a' && c <= U'z') || (c >= U'A' && c <= U'Z') ||
+           (c >= 0x3005 && c <= 0x3007) || (c >= 0x3041 && c <= 0x30FA) ||
+           (c >= 0x30FC && c <= 0x30FF) || (c >= 0x3400 && c <= 0x9FFF) ||
+           (c >= 0xAC00 && c <= 0xD7AF) || (c >= 0xFF10 && c <= 0xFF19) ||
+           (c >= 0xFF21 && c <= 0xFF3A) || (c >= 0xFF41 && c <= 0xFF5A) ||
+           (c >= 0xFF66 && c <= 0xFF9F);
+}
+
+}  // namespace
+
+bool looksLikeSoundEffect(const TextBlock& block, std::span<const RectI> bubbles) {
+    if (bubbles.empty() || bubbleOf(block.rect, bubbles)) {
+        return false;
+    }
+    int letters = 0;
+    for (std::size_t i = 0; i < block.text.size();) {
+        letters += countsAsLetter(nextCodePoint(block.text, i)) ? 1 : 0;
+    }
+    return letters > 0 && letters <= kSoundEffectMaxLetters;
+}
+
+void markSoundEffects(std::vector<TextBlock>& blocks, std::span<const RectI> bubbles) {
+    for (TextBlock& block : blocks) {
+        block.soundEffect = looksLikeSoundEffect(block, bubbles);
+    }
+}
+
 bool touchesEdge(const RectI& rect, const SizeI& frame, int margin) {
     return rect.left <= margin || rect.top <= margin || rect.right >= frame.width - margin ||
            rect.bottom >= frame.height - margin;

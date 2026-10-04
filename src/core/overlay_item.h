@@ -37,6 +37,8 @@ struct OverlayItem {
     // 原文一行的粗細（像素，各行的中位數）。譯文的字不比它大：短短的譯文放進大框時，
     // 不會被放大成標題。0 = 不知道，只受框的大小限制。
     int lineThickness = 0;
+    // 原文看起來是擬聲字（網頁的控制面板可以馬上把它藏起來，不必重翻）
+    bool soundEffect = false;
 
     friend bool operator==(const OverlayItem&, const OverlayItem&) = default;
 };

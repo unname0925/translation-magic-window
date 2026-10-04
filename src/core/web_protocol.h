@@ -64,10 +64,11 @@ struct WebRequest {
     enum class Type { Hello, Translate, Cancel, Engines, SetEngine, Invalid };
     Type type = Type::Invalid;
     std::string id;
-    int index = -1;        // SetEngine：用過的第幾個
-    ImageBgra image;       // Translate：RGBA 已經轉成 BGRA
-    std::string language;  // Translate："auto"、"ja"…；沒給時是空字串
-    std::string error;     // Invalid：哪裡不對（回給擴充功能看）
+    int index = -1;            // SetEngine：用過的第幾個
+    ImageBgra image;           // Translate：RGBA 已經轉成 BGRA
+    std::string language;      // Translate："auto"、"ja"…；沒給時是空字串
+    bool soundEffects = true;  // Translate：要不要翻譯擬聲字（沒給時翻）
+    std::string error;         // Invalid：哪裡不對（回給擴充功能看）
 };
 
 // 解析擴充功能送來的一則訊息（JSON 本體，不含長度）。格式不對時 type 是 Invalid

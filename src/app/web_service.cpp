@@ -146,6 +146,7 @@ void WebService::submitNext() {
     if (!next.request->language.empty() && next.request->language != "auto") {
         job.language = next.request->language;  // 擴充功能指定的語言優先
     }
+    job.soundEffects = next.request->soundEffects;  // 控制面板的開關
     running_[job.generation] = Running{next.connection, std::move(next.id)};
     callbacks_.submit(std::move(job));
 }

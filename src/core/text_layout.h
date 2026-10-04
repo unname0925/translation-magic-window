@@ -62,6 +62,8 @@ struct TextBlock {
     std::vector<RubyAnnotation> ruby;
     std::vector<OcrLine> lines;
     TextSize size = TextSize::Normal;  // classifyTextSize 填入
+    // 看起來是擬聲字（markSoundEffects 填入）。使用者可以選擇不翻譯
+    bool soundEffect = false;
 
     friend bool operator==(const TextBlock&, const TextBlock&) = default;
 };
@@ -103,6 +105,16 @@ std::vector<TextBlock> mergeIntoBlocks(std::span<const OcrLine> lines,
 
 // 這一行屬於哪個對話框：重疊最多、而且蓋住這一行至少一半面積的那個。沒有就回傳 nullopt。
 std::optional<std::size_t> bubbleOf(const RectI& line, std::span<const RectI> bubbles);
+
+// 擬聲字的判斷：有找到對話框（漫畫）時，不在任何對話框裡、而且很短（字母、數字、假名、
+// 漢字不超過 kSoundEffectMaxLetters 個）的區塊。
+// 不看「是不是假名」：花俏的擬聲字常被 OCR 讀成漢字或符號。
+// 在測試集（日文漫畫 10 頁）上：擬聲詞 39 個認出 35 個，對白 66 句沒有一句被誤判；
+// 另外背景裡的小字（招牌、裝飾字）也會被當成擬聲字。
+inline constexpr int kSoundEffectMaxLetters = 4;
+bool looksLikeSoundEffect(const TextBlock& block, std::span<const RectI> bubbles);
+// 沒有對話框時不標（無從判斷，全部當成一般文字）
+void markSoundEffects(std::vector<TextBlock>& blocks, std::span<const RectI> bubbles);
 
 // 依語言把多行接成一段文字：
 // - 英文、韓文：用空格接；英文行尾的連字號（trans- / lation）要接回同一個字

@@ -129,6 +129,10 @@ SettingsWindow::SettingsWindow(core::Settings settings, Encrypt encrypt, QWidget
             "也翻譯碰到透鏡邊緣的句子（捲動網頁時會翻到殘句；遊戲對話框常貼著邊時要打開）"),
         this);
     translateEdges_->setObjectName(QStringLiteral("translateEdges"));
+    soundEffects_ = new QCheckBox(
+        QStringLiteral("翻譯擬聲字（漫畫對話框外的短字，例如「ドドド」；網頁漫畫在控制面板設定）"),
+        this);
+    soundEffects_->setObjectName(QStringLiteral("soundEffects"));
     settleMs_ = new QSpinBox(this);
     settleMs_->setObjectName(QStringLiteral("settleMs"));
     settleMs_->setRange(100, 3000);
@@ -190,6 +194,7 @@ SettingsWindow::SettingsWindow(core::Settings settings, Encrypt encrypt, QWidget
     layout->addWidget(mangaMode_);
     layout->addWidget(gameMode_);
     layout->addWidget(translateEdges_);
+    layout->addWidget(soundEffects_);
     layout->addWidget(verbose_);
     layout->addWidget(checkUpdates_);
     layout->addWidget(hotkeys);
@@ -284,6 +289,7 @@ void SettingsWindow::applyToWidgets() {
     mangaMode_->setChecked(settings_.mangaMode);
     gameMode_->setChecked(settings_.gameMode);
     translateEdges_->setChecked(!settings_.dropEdgeBlocks);
+    soundEffects_->setChecked(settings_.translateSoundEffects);
     settleMs_->setValue(settings_.settleMs);
     profileNote_->setText(
         settings_.profile.empty()
@@ -401,6 +407,7 @@ void SettingsWindow::collectFromWidgets() {
     settings_.mangaMode = mangaMode_->isChecked();
     settings_.gameMode = gameMode_->isChecked();
     settings_.dropEdgeBlocks = !translateEdges_->isChecked();
+    settings_.translateSoundEffects = soundEffects_->isChecked();
     settings_.settleMs = settleMs_->value();
     settings_.ocrLanguage = ocrLanguage_->currentData().toString().toStdString();
     settings_.overlayFont = overlayFont_->currentData().toString().toStdString();

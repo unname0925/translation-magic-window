@@ -130,6 +130,7 @@ SettingsLoad parseSettings(std::string_view json_text,
     }
     read(document, "ocrLanguage", settings.ocrLanguage);
     read(document, "dropEdgeBlocks", settings.dropEdgeBlocks);
+    read(document, "translateSoundEffects", settings.translateSoundEffects);
     readInt(document, "settleMs", settings.settleMs);
     settings.settleMs = std::clamp(settings.settleMs, 100, 3000);
     read(document, "profile", settings.profile);
@@ -257,6 +258,7 @@ std::string serializeSettings(const Settings& settings, int schemaVersion) {
         {"overlayFont", settings.overlayFont},
         {"ocrLanguage", settings.ocrLanguage},
         {"dropEdgeBlocks", settings.dropEdgeBlocks},
+        {"translateSoundEffects", settings.translateSoundEffects},
         {"settleMs", settings.settleMs},
         {"profile", settings.profile},
         {"profiles", profilesJson(settings.profiles)},
