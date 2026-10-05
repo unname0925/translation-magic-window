@@ -462,6 +462,22 @@ TEST_F(PipelineTest, MarksSoundEffectsAndSkipsThemWhenAsked) {
     EXPECT_TRUE(kept.groups[1].block.soundEffect) << "對話框外的短字";
 }
 
+TEST_F(PipelineTest, OverlayOnlyJobsDoNotTranslateWhatWillNotBeCovered) {
+    // 網頁漫畫沒有結果視窗：蓋不上去的段落（OCR 很沒把握的）翻了也看不到
+    OcrLine unsure = line(20, 150, 200, 174, "pattern");
+    unsure.score = 0.2f;
+    ocr_.lines = {line(20, 20, 200, 44, "Hello there"), unsure};
+    PipelineJob web = job();
+    web.overlayOnly = true;
+    const PipelineResult result = run(web);
+    ASSERT_EQ(result.groups.size(), 1u);
+    EXPECT_EQ(result.groups[0].block.text, "Hello there");
+    EXPECT_EQ(result.overlayDrops.lowScore, 1) << "記錄裡要看得到少了一段";
+    for (const auto& batch : engine_->batches) {
+        EXPECT_EQ(std::count(batch.begin(), batch.end(), "pattern"), 0);
+    }
+}
+
 // 速度優化 4：畫面還在等穩定時先做 OCR，穩定之後直接沿用
 class PreparedOcrTest : public PipelineTest {
 protected:

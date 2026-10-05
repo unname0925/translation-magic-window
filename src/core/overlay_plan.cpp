@@ -27,6 +27,9 @@ constexpr double kMinLooseUniformity = 0.9;
 constexpr float kMinScoreForLoose = 0.9f;
 // - OCR 分數這麼低的多半是把圖示、花紋讀成了字（遊戲的按鈕讀成「迴」），不蓋
 constexpr float kMinScore = 0.5f;
+// 對話框偵測器框到的文字（TextBlock::inBubble）：花俏的字體、ルビ 常讓 PP-OCR 的分數偏低，
+// 文字也已經交給 manga-ocr 重讀。網頁漫畫 34 頁實測，框到的段落分數最低 0.36
+constexpr float kMinScoreInBubble = 0.3f;
 // 背景修補（M4-01）只給至少這麼多個字的段落：「！」「2-」這種不是要翻的文字
 constexpr int kMinLettersForInpainting = 2;
 // 譯文和補出來的背景至少要有這麼多亮度對比（WCAG 對大字的要求）
@@ -268,7 +271,7 @@ bool worthCovering(const ImageBgra& frame, const RectI& rect, Rgba background, f
 }
 
 bool worthInpainting(const TextBlock& block) {
-    if (block.score < kMinScoreForLoose) {
+    if (block.score < kMinScoreForLoose && !block.inBubble) {
         return false;  // 擬聲詞、把花紋讀成字的：修補了也只是抹掉原圖
     }
     int letters = 0;
@@ -278,25 +281,59 @@ bool worthInpainting(const TextBlock& block) {
     return letters >= kMinLettersForInpainting;
 }
 
+namespace {
+
+// 要蓋住的範圍：原文的框往外多留一點邊，不超出畫面
+RectI paddedRect(const ImageBgra& frame, const RectI& source) {
+    return RectI{std::max(0, source.left - kPadding), std::max(0, source.top - kPadding),
+                 std::min(frame.width, source.right + kPadding),
+                 std::min(frame.height, source.bottom + kPadding)};
+}
+
+float minimumScore(const TextBlock& block) {
+    return block.inBubble ? kMinScoreInBubble : kMinScore;
+}
+
+}  // namespace
+
+CoverDecision coverDecision(const ImageBgra& frame, const TextBlock& block, bool canInpaint) {
+    if (block.score < minimumScore(block)) {
+        return CoverDecision::LowScore;
+    }
+    if (block.inBubble) {
+        return CoverDecision::Cover;
+    }
+    const RectI rect = paddedRect(frame, block.rect);
+    const Rgba background = sampleBackground(frame, rect);
+    if (backgroundUniformity(frame, rect, background) >= kMinUniformity ||
+        (canInpaint && worthInpainting(block)) ||
+        worthCovering(frame, rect, background, block.score)) {
+        return CoverDecision::Cover;
+    }
+    return CoverDecision::BusyBackground;
+}
+
 std::vector<OverlayItem> planOverlay(const ImageBgra& frame,
-                                     std::span<const TranslatedBlock> groups,
-                                     IInpainter* inpainter) {
+                                     std::span<const TranslatedBlock> groups, IInpainter* inpainter,
+                                     OverlayDrops* drops) {
+    OverlayDrops ignored;
+    OverlayDrops& dropped = drops != nullptr ? *drops : ignored;
     std::vector<OverlayItem> items;
     for (const TranslatedBlock& group : groups) {
         if (group.translation.empty()) {
+            ++dropped.untranslated;
             continue;  // 翻譯失敗：不蓋，原文照樣看得到
         }
         OverlayItem item;
         const RectI& source = group.block.rect;
-        item.rect = RectI{std::max(0, source.left - kPadding), std::max(0, source.top - kPadding),
-                          std::min(frame.width, source.right + kPadding),
-                          std::min(frame.height, source.bottom + kPadding)};
+        item.rect = paddedRect(frame, source);
         OverlayText text = overlayText(group.translation);
         item.text = std::move(text.text);
         item.ruby = std::move(text.ruby);
         item.vertical = group.block.orientation == Orientation::Vertical;
         item.background = sampleBackground(frame, item.rect);
-        if (group.block.score < kMinScore) {
+        if (group.block.score < minimumScore(group.block)) {
+            ++dropped.lowScore;
             continue;
         }
         const bool plain =
@@ -307,8 +344,11 @@ std::vector<OverlayItem> planOverlay(const ImageBgra& frame,
                 item.patch = std::move(*patch);
             }
         }
-        if (item.patch.empty() &&
+        // 對話框裡的字一定蓋：雲朵、爆炸形的對話框，框的四角會切到邊線和背後的圖，
+        // 量起來「背景不是純色」，以前整段被丟掉（網頁漫畫 34 頁裡有 41 段）
+        if (item.patch.empty() && !group.block.inBubble &&
             !worthCovering(frame, item.rect, item.background, group.block.score)) {
+            ++(group.block.score < kMinScore ? dropped.lowScore : dropped.busyBackground);
             continue;
         }
         // 照著原文的顏色畫（M4-02）；估計不出來（墨水太少、看不清楚）時用黑字或白字

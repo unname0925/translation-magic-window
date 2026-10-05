@@ -49,17 +49,24 @@ OverlayText overlayText(std::string_view translation);
 // 覆蓋層排除在擷取之外，螢幕截圖看不到它。兩張圖大小要一樣，否則 below 不變。
 void compositeOver(ImageBgra& below, const ImageBgra& above);
 
-// 背景不是純色時，值不值得用修補把原文抹掉：OCR 很有把握，而且至少有兩個字
-// （擬聲詞、「！」、把花紋讀成的字不修補，免得抹掉原圖）
+// 背景不是純色時，值不值得用修補把原文抹掉：OCR 很有把握（或對話框偵測器框到的文字），
+// 而且至少有兩個字（擬聲詞、「！」、把花紋讀成的字不修補，免得抹掉原圖）
 bool worthInpainting(const TextBlock& block);
+
+// 翻譯之前就能判斷的：這一段會不會蓋上去（和 planOverlay 同樣的規則，只差在要修補的
+// 假設會補成功）。網頁漫畫沒有結果視窗，蓋不上去的段落翻了也看不到，不送翻譯
+enum class CoverDecision { Cover, LowScore, BusyBackground };
+CoverDecision coverDecision(const ImageBgra& frame, const TextBlock& block, bool canInpaint);
 
 // 每一段譯文要怎麼蓋。
 // - 背景是純色：用背景色填滿
 // - 背景不是純色、有 inpainter、而且 worthInpainting：抹掉原文補成周圍的樣子（OverlayItem::patch）
 // - 其餘照 worthCovering：遊戲的半透明對話框用純色，擬聲詞和畫在圖上的字不蓋
 // 沒有譯文的段落（翻譯失敗）不蓋，原文照樣看得到。
+// 沒蓋的段落依原因計數在 drops（OverlayDrops，core/overlay_item.h）
 std::vector<OverlayItem> planOverlay(const ImageBgra& frame,
                                      std::span<const TranslatedBlock> groups,
-                                     IInpainter* inpainter = nullptr);
+                                     IInpainter* inpainter = nullptr,
+                                     OverlayDrops* drops = nullptr);
 
 }  // namespace tmw::core

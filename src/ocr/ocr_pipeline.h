@@ -1,9 +1,12 @@
 #pragma once
 
 #include <filesystem>
+#include <map>
+#include <memory>
 #include <opencv2/core.hpp>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "core/language.h"
@@ -34,6 +37,11 @@ struct OcrTimings {
 // 一個工作階段只有「第一次看到的大小」跑得快，之後每換一種大小，那個大小的每一次推論
 // 都永久慢 3～5 倍（M1-03，design.md 第 5 節）。暖機和產品都用這個值，才不會各用各的。
 cv::Size lensDetectionInput();
+
+// 整頁（網頁漫畫的一頁）用的偵測輸入大小：直的頁用直的、橫的（跨頁）用橫的。
+// 透鏡的 960×544 是橫的，直的一頁塞進去只剩約三分之一大小，字欄黏在一起、小字不見：
+// 網頁漫畫 34 頁實測，偵測到的行 579 → 870（照原圖大小是 926）。
+cv::Size pageDetectionInput(cv::Size image);
 
 struct OcrOptions {
     DetectionOptions detection;
@@ -77,7 +85,10 @@ public:
     // script 是 Unknown 時先跑主模型；主模型讀空的行夠多（core::worthTryingKorean）才再跑
     // 韓文模型，整張一起決定用哪一邊（core::chooseScript）。
     // 指定 Korean 或 Japanese／English 就只跑那一個，省掉一半的辨識時間。
-    OcrRun run(const cv::Mat& bgr, core::Language script, OcrTimings* timings = nullptr);
+    // wholePage：整張漫畫頁（網頁漫畫），用 pageDetectionInput 的大小偵測。另外的工作階段，
+    // 第一次用到才建立，不影響透鏡用的那一個（DirectML 一個工作階段只有一種大小跑得快）
+    OcrRun run(const cv::Mat& bgr, core::Language script, OcrTimings* timings = nullptr,
+               bool wholePage = false);
 
     // 有沒有載入韓文模型
     bool hasKoreanModel() const { return korean_.has_value(); }
@@ -98,8 +109,13 @@ private:
                                          const std::vector<DetectedBox>& boxes,
                                          const std::vector<cv::Mat>& crops);
 
+    // 整頁用的偵測器，依輸入大小（直的、橫的）各一個
+    TextDetector& pageDetector(cv::Size image);
+
     OcrOptions options_;
     TextDetector detector_;
+    std::filesystem::path detectionDirectory_;
+    std::map<std::pair<int, int>, std::unique_ptr<TextDetector>> pageDetectors_;
     // 主模型（日文／英文）。指定韓文時先不載入，第一次用到時才建立（mainRecognizer）。
     // 只有處理用的那一個執行緒會呼叫 run，所以不需要鎖。
     std::filesystem::path mainDirectory_;

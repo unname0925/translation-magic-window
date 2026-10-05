@@ -130,6 +130,27 @@ void WebService::pump() {
     }
 }
 
+namespace {
+
+// 「，沒蓋 3 段（沒有譯文 1、OCR 分數低 2）」；全部蓋上時是空字串
+std::string dropSummary(const core::OverlayDrops& drops) {
+    if (drops.total() == 0) {
+        return {};
+    }
+    std::string parts;
+    const auto add = [&parts](const char* name, int count) {
+        if (count > 0) {
+            parts += (parts.empty() ? "" : "、") + std::string(name) + " " + std::to_string(count);
+        }
+    };
+    add("沒有譯文", drops.untranslated);
+    add("OCR 分數低", drops.lowScore);
+    add("背景不適合蓋", drops.busyBackground);
+    return "，沒蓋 " + std::to_string(drops.total()) + " 段（" + parts + "）";
+}
+
+}  // namespace
+
 void WebService::submitNext() {
     Pending next = std::move(queue_.front());
     queue_.pop_front();
@@ -147,6 +168,7 @@ void WebService::submitNext() {
         job.language = next.request->language;  // 擴充功能指定的語言優先
     }
     job.soundEffects = next.request->soundEffects;  // 控制面板的開關
+    job.overlayOnly = true;                         // 沒有結果視窗：蓋不上去的段落不必翻譯
     running_[job.generation] = Running{next.connection, std::move(next.id)};
     callbacks_.submit(std::move(job));
 }
@@ -172,6 +194,7 @@ void WebService::onResult(const core::PipelineResult& result) {
                        std::to_string(static_cast<int>(t.rereadMs)) + "）、翻譯 " +
                        std::to_string(static_cast<int>(t.translationMs)) + " ms、覆蓋層 " +
                        std::to_string(static_cast<int>(t.overlayMs)) + " ms" +
+                       dropSummary(result.overlayDrops) +
                        (result.error.empty() ? "" : "，翻譯失敗：" + result.error));
     }
     const core::PngEncoder encode = [](const core::ImageBgra& image) {

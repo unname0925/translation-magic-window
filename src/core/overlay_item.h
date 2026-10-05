@@ -43,4 +43,13 @@ struct OverlayItem {
     friend bool operator==(const OverlayItem&, const OverlayItem&) = default;
 };
 
+// planOverlay 沒蓋的段落依原因計數（記錄裡看得到譯文為什麼少了幾段）
+struct OverlayDrops {
+    int untranslated = 0;    // 沒有譯文（翻譯失敗、引擎回傳空的）
+    int lowScore = 0;        // OCR 分數太低
+    int busyBackground = 0;  // 背景不是純色、沒有修補，不值得蓋
+
+    int total() const { return untranslated + lowScore + busyBackground; }
+};
+
 }  // namespace tmw::core

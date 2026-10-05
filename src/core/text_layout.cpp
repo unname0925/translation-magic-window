@@ -436,6 +436,7 @@ bool looksLikeSoundEffect(const TextBlock& block, std::span<const RectI> bubbles
 
 void markSoundEffects(std::vector<TextBlock>& blocks, std::span<const RectI> bubbles) {
     for (TextBlock& block : blocks) {
+        block.inBubble = bubbleOf(block.rect, bubbles).has_value();
         block.soundEffect = looksLikeSoundEffect(block, bubbles);
     }
 }

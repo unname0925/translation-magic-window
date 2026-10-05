@@ -80,16 +80,16 @@ core::OcrResult OcrService::recognize(const core::ImageBgra& frame, core::Langua
 
 core::OcrResult OcrService::recognizeManga(const core::ImageBgra& frame, core::Language script,
                                            std::stop_token cancel) {
-    return recognizeWith(frame, script, cancel, loadMangaModels());
+    return recognizeWith(frame, script, cancel, loadMangaModels(), true);
 }
 
 core::OcrResult OcrService::recognizeWith(const core::ImageBgra& frame, core::Language script,
-                                          std::stop_token cancel, bool bubbles) {
+                                          std::stop_token cancel, bool bubbles, bool wholePage) {
     if (frame.empty() || cancel.stop_requested()) {
         return {};
     }
     const cv::Mat bgr = toBgr(frame);
-    const OcrRun run = pipeline_.run(bgr, script, &lastTimings_);
+    const OcrRun run = pipeline_.run(bgr, script, &lastTimings_, wholePage);
     if (cancel.stop_requested()) {
         return {};
     }

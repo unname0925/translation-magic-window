@@ -57,6 +57,9 @@ struct PipelineJob {
     // 要不要翻譯擬聲字（core/text_layout.h 的 looksLikeSoundEffect）。不翻時送翻譯之前就拿掉，
     // 翻譯、背景修補都省下來
     bool soundEffects = true;
+    // 只看覆蓋層（網頁漫畫：沒有結果視窗）：蓋不上去的段落（core/overlay_plan.h 的
+    // coverDecision）不翻譯，省下翻譯的時間。透鏡的結果視窗會列出每一段，所以透鏡不用
+    bool overlayOnly = false;
 };
 
 struct PipelineTimings {
@@ -101,6 +104,7 @@ struct PipelineResult {
     // 譯文要怎麼蓋在原文上（M3）：座標和 groups 一樣相對於畫面左上角。
     // 背景色要從畫面取，畫面不會跟著結果帶出去，所以在這裡先規劃好。
     std::vector<OverlayItem> overlay;
+    OverlayDrops overlayDrops;  // groups 裡沒有蓋上去的，依原因計數
 
     bool empty() const { return groups.empty(); }
 };
@@ -133,8 +137,9 @@ public:
     virtual OcrResult recognize(const ImageBgra& frame, Language script,
                                 std::stop_token cancel) = 0;
 
-    // 和 recognize 相同，但不管透鏡的漫畫模式設定，一律當漫畫找對話框（網頁漫畫整頁翻譯）。
-    // 沒有漫畫模式的模型時和 recognize 相同
+    // 和 recognize 相同，但不管透鏡的漫畫模式設定，一律當漫畫找對話框（網頁漫畫整頁翻譯）；
+    // frame 是一整頁，偵測用整頁的大小（ocr::pageDetectionInput）。
+    // 沒有漫畫模式的模型時一樣用整頁的大小，只是不找對話框
     virtual OcrResult recognizeManga(const ImageBgra& frame, Language script,
                                      std::stop_token cancel) {
         return recognize(frame, script, cancel);

@@ -106,6 +106,29 @@ TEST(OverlayPlanTest, TextDrawnOnTheArtworkIsLeftAlone) {
     EXPECT_TRUE(planOverlay(frame, groups).empty()) << "純色蓋上去會是一塊突兀的色塊";
 }
 
+TEST(OverlayPlanTest, TextTheComicDetectorFoundIsCoveredOnABusyBackground) {
+    // 雲朵形的對話框：框的四角切到邊線和背後的圖，量起來不是純色
+    ImageBgra frame = solidFrame(200, 200, Rgba{255, 255, 255, 255});
+    for (int y = 0; y < 200; ++y) {
+        for (int x = 0; x < 200; ++x) {
+            if (((x / 3) + (y / 3)) % 2 == 0) {
+                std::uint8_t* p = frame.pixel(x, y);
+                p[0] = p[1] = p[2] = 0;
+            }
+        }
+    }
+    TranslatedBlock line = block(RectI{50, 50, 120, 90}, "你在笑什麼", Orientation::Horizontal);
+    line.block.score = 0.7f;
+    ASSERT_TRUE(planOverlay(frame, std::span(&line, 1)).empty()) << "前提：沒框到時不蓋";
+    line.block.inBubble = true;
+    OverlayDrops drops;
+    EXPECT_EQ(planOverlay(frame, std::span(&line, 1), nullptr, &drops).size(), 1u);
+    EXPECT_EQ(drops.total(), 0);
+    line.block.score = 0.2f;
+    EXPECT_TRUE(planOverlay(frame, std::span(&line, 1), nullptr, &drops).empty());
+    EXPECT_EQ(drops.lowScore, 1) << "框到了，分數太低的照樣不蓋";
+}
+
 TEST(OverlayPlanTest, TranslucentGameTextBoxesAreCoveredWhenTheTextIsClear) {
     // 半透明的對話框：很暗，但透出底下的畫面，顏色有一點起伏
     ImageBgra frame = solidFrame(200, 200, Rgba{15, 12, 10, 255});

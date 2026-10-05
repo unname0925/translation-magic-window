@@ -13,6 +13,11 @@
 namespace tmw::ocr {
 namespace {
 
+// 整頁偵測的輸入（直的頁；橫的頁長寬對調）。網頁漫畫 34 頁實測（偵測到的行／照原圖大小）：
+// 768×1088 是 94%，1088×1536 是 100%
+constexpr int kPageDetectionShort = 768;
+constexpr int kPageDetectionLong = 1088;
+
 double millisecondsSince(std::chrono::steady_clock::time_point start) {
     return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start)
         .count();
@@ -49,6 +54,7 @@ OcrPipeline::OcrPipeline(const std::filesystem::path& detectionModelDir,
                          const OcrOptions& options)
     : options_(options),
       detector_(detectionModelDir, device, options.detection),
+      detectionDirectory_(detectionModelDir),
       mainDirectory_(recognitionModelDir),
       device_(device) {
     if (!koreanRecognitionModelDir.empty()) {
@@ -75,6 +81,22 @@ TextRecognizer& OcrPipeline::mainRecognizer() {
 
 cv::Size lensDetectionInput() {
     return {960, 544};
+}
+
+cv::Size pageDetectionInput(cv::Size image) {
+    const cv::Size portrait{kPageDetectionShort, kPageDetectionLong};
+    return image.height >= image.width ? portrait : cv::Size{portrait.height, portrait.width};
+}
+
+TextDetector& OcrPipeline::pageDetector(cv::Size image) {
+    const cv::Size input = pageDetectionInput(image);
+    std::unique_ptr<TextDetector>& slot = pageDetectors_[{input.width, input.height}];
+    if (slot == nullptr) {
+        DetectionOptions options = options_.detection;
+        options.fixedInput = input;
+        slot = std::make_unique<TextDetector>(detectionDirectory_, device_, options);
+    }
+    return *slot;
 }
 
 void OcrPipeline::warmUp() {
@@ -130,9 +152,10 @@ std::vector<TextLine> OcrPipeline::run(const cv::Mat& bgr, OcrTimings* timings) 
     return run(bgr, core::Language::Unknown, timings).lines;
 }
 
-OcrRun OcrPipeline::run(const cv::Mat& bgr, core::Language script, OcrTimings* timings) {
+OcrRun OcrPipeline::run(const cv::Mat& bgr, core::Language script, OcrTimings* timings,
+                        bool wholePage) {
     const auto detectionStart = std::chrono::steady_clock::now();
-    std::vector<DetectedBox> boxes = detector_.detect(bgr);
+    std::vector<DetectedBox> boxes = (wholePage ? pageDetector(bgr.size()) : detector_).detect(bgr);
     sortBoxes(boxes);
     const double detectionMs = millisecondsSince(detectionStart);
 

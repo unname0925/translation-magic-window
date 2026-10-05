@@ -62,6 +62,9 @@ struct TextBlock {
     std::vector<RubyAnnotation> ruby;
     std::vector<OcrLine> lines;
     TextSize size = TextSize::Normal;  // classifyTextSize 填入
+    // 漫畫對話框偵測器（comic-text-detector）框到的文字（markSoundEffects 填入）。
+    // 它是專門找漫畫文字的模型，框到的幾乎都是真的對白、旁白：背景不是純色、OCR 分數不高也照樣蓋
+    bool inBubble = false;
     // 看起來是擬聲字（markSoundEffects 填入）。使用者可以選擇不翻譯
     bool soundEffect = false;
 
@@ -113,7 +116,7 @@ std::optional<std::size_t> bubbleOf(const RectI& line, std::span<const RectI> bu
 // 另外背景裡的小字（招牌、裝飾字）也會被當成擬聲字。
 inline constexpr int kSoundEffectMaxLetters = 4;
 bool looksLikeSoundEffect(const TextBlock& block, std::span<const RectI> bubbles);
-// 沒有對話框時不標（無從判斷，全部當成一般文字）
+// 填入 inBubble 和 soundEffect。沒有對話框時都是 false（無從判斷，全部當成一般文字）
 void markSoundEffects(std::vector<TextBlock>& blocks, std::span<const RectI> bubbles);
 
 // 依語言把多行接成一段文字：

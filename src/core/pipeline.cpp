@@ -192,6 +192,23 @@ Pipeline::RecognizedPage Pipeline::recognize(const PipelineJob& job, std::stop_t
     if (!job.soundEffects) {
         std::erase_if(blocks, [](const TextBlock& block) { return block.soundEffect; });
     }
+    if (job.overlayOnly) {
+        // 花紋、雨線被讀成字的這類段落，以前都先翻譯、蓋的時候才丟掉
+        // （網頁漫畫 34 頁實測 306 段裡有 62 段）
+        std::erase_if(blocks, [&](const TextBlock& block) {
+            switch (coverDecision(job.frame, block, job.inpainter != nullptr)) {
+                case CoverDecision::LowScore:
+                    ++result.overlayDrops.lowScore;
+                    return true;
+                case CoverDecision::BusyBackground:
+                    ++result.overlayDrops.busyBackground;
+                    return true;
+                case CoverDecision::Cover:
+                    break;
+            }
+            return false;
+        });
+    }
     result.timings.layoutMs = millisecondsSince(layoutStart);
     if (job.prepareTicket != 0 && blocks.empty()) {
         return page;  // 預先做：不記「沒有文字」，正式處理時才記
@@ -296,7 +313,8 @@ PipelineResult Pipeline::finish(RecognizedPage page, const PipelineJob& job,
         result.groups.push_back(TranslatedBlock{std::move(blocks[i]), std::move(translations[i])});
     }
     const auto overlayStart = std::chrono::steady_clock::now();
-    result.overlay = planOverlay(job.frame, result.groups, job.inpainter.get());
+    result.overlay =
+        planOverlay(job.frame, result.groups, job.inpainter.get(), &result.overlayDrops);
     result.timings.overlayMs = millisecondsSince(overlayStart);
 
     if (result.error.empty()) {

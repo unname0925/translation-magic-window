@@ -67,8 +67,9 @@ public:
 private:
     // 載入漫畫模式的模型（已經載入就直接回傳）。comic-text-detector 不在或載入失敗時回傳 false
     bool loadMangaModels();
+    // wholePage：整張漫畫頁（網頁漫畫），用整頁的偵測大小（OcrPipeline::run）
     core::OcrResult recognizeWith(const core::ImageBgra& frame, core::Language script,
-                                  std::stop_token cancel, bool bubbles);
+                                  std::stop_token cancel, bool bubbles, bool wholePage = false);
 
     std::filesystem::path modelsDirectory_;
     // 選模型時用的裝置（resolveDevice）。一定要排在 pipeline_ 前面：成員依宣告順序初始化
