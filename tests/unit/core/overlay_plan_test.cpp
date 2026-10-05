@@ -27,6 +27,7 @@ TranslatedBlock block(RectI rect, std::string translation, Orientation orientati
     out.block.rect = rect;
     out.block.orientation = orientation;
     out.block.score = 0.95f;
+    out.block.text = translation;  // 原文：沒有字的段落（符號）不蓋，測試用譯文代替
     out.translation = std::move(translation);
     return out;
 }
@@ -227,12 +228,28 @@ TEST(OverlayPlanTest, SoundEffectsAndPunctuationAreNotInpainted) {
     FakeInpainter inpainter;
     TranslatedBlock effect = block(RectI{40, 40, 120, 120}, "沙沙", Orientation::Vertical);
     effect.block.text = "ザワザワ";
-    effect.block.score = 0.6f;  // 擬聲詞：OCR 沒什麼把握
+    effect.block.score = 0.55f;  // 擬聲詞：OCR 沒什麼把握
     TranslatedBlock bang = block(RectI{140, 40, 180, 120}, "！", Orientation::Vertical);
     bang.block.text = "！";
     const std::vector<TranslatedBlock> groups{effect, bang};
     EXPECT_TRUE(planOverlay(frame, groups, &inpainter).empty());
     EXPECT_EQ(inpainter.calls, 0) << "修補一次要 0.1 秒，不值得的段落連試都不試";
+}
+
+TEST(OverlayPlanTest, SymbolsReadAsTextAreLeftAlone) {
+    // 把愛心、閃光讀成一兩個字：框很小（不到畫面的 0.15%），或根本沒有字
+    const ImageBgra frame = solidFrame(1000, 1500, Rgba{255, 255, 255, 255});
+    TranslatedBlock heart = block(RectI{100, 100, 140, 150}, "心", Orientation::Vertical);
+    TranslatedBlock dots = block(RectI{300, 100, 340, 300}, "……", Orientation::Vertical);
+    TranslatedBlock line = block(RectI{500, 100, 560, 400}, "你在笑什麼", Orientation::Vertical);
+    TranslatedBlock shortLine = block(RectI{700, 100, 760, 200}, "欸？", Orientation::Vertical);
+    const std::vector<TranslatedBlock> groups{heart, dots, line, shortLine};
+    OverlayDrops drops;
+    const std::vector<OverlayItem> items = planOverlay(frame, groups, nullptr, &drops);
+    ASSERT_EQ(items.size(), 2u) << "一般的句子、框夠大的短句照樣蓋";
+    EXPECT_EQ(drops.symbols, 2);
+    EXPECT_EQ(coverDecision(frame, heart.block, false), CoverDecision::Symbols);
+    EXPECT_EQ(coverDecision(frame, line.block, false), CoverDecision::Cover);
 }
 
 TEST(OverlayPlanTest, PlainBackgroundsAreNotInpainted) {

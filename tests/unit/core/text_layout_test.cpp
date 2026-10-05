@@ -229,8 +229,10 @@ TEST(SoundEffectTest, ShortTextOutsideEveryBubble) {
     block.rect = RectI{300, 50, 380, 250};
     block.text = "ドドド！";  // 標點不算字數
     EXPECT_TRUE(looksLikeSoundEffect(block, bubbles));
-    block.text = "轟";  // 花俏的擬聲字常被讀成漢字：不看是不是假名
+    block.text = "ザッ";
     EXPECT_TRUE(looksLikeSoundEffect(block, bubbles));
+    block.text = "祖父";  // 漢字的標籤（家譜圖上的稱謂）不是擬聲字
+    EXPECT_FALSE(looksLikeSoundEffect(block, bubbles));
 }
 
 TEST(SoundEffectTest, NotInsideABubbleNorLongNorWithoutBubbles) {

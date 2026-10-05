@@ -198,7 +198,7 @@ def to_page(draft: dict, pair: str) -> gt.Page:
 
 def pairs(category: str) -> dict[str, str]:
     """日文和英文漫畫是同一部漫畫的同一頁（依檔名排序後一一對應）。"""
-    language, content = category.split("-")
+    language, content = category.split("-")[:2]  # 第三段是子集名稱（例如 ja-manga-missed）
     other = {"ja": "en", "en": "ja"}.get(language)
     if content != "manga" or other is None or not (PRIVATE / f"{other}-{content}").exists():
         return {}
@@ -215,7 +215,7 @@ def main() -> None:
     categories = args.categories or sorted(p.name for p in PRIVATE.iterdir() if p.is_dir())
     manga_ocr = None
     for category in categories:
-        language, content = category.split("-")
+        language, content = category.split("-")[:2]  # 第三段是子集名稱（例如 ja-manga-missed）
         ocr_file = DRAFTS / f"{category}.ppocr.json"
         ocr = {image["image"]: image for image in
                json.loads(ocr_file.read_text(encoding="utf-8"))["images"]}

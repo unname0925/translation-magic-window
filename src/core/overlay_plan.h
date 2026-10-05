@@ -49,13 +49,13 @@ OverlayText overlayText(std::string_view translation);
 // 覆蓋層排除在擷取之外，螢幕截圖看不到它。兩張圖大小要一樣，否則 below 不變。
 void compositeOver(ImageBgra& below, const ImageBgra& above);
 
-// 背景不是純色時，值不值得用修補把原文抹掉：OCR 很有把握（或對話框偵測器框到的文字），
-// 而且至少有兩個字（擬聲詞、「！」、把花紋讀成的字不修補，免得抹掉原圖）
+// 背景不是純色時，值不值得用修補把原文抹掉：OCR 有把握（或對話框偵測器框到的文字），
+// 而且至少有兩個字（「！」、把花紋讀成的字不修補，免得抹掉原圖）
 bool worthInpainting(const TextBlock& block);
 
 // 翻譯之前就能判斷的：這一段會不會蓋上去（和 planOverlay 同樣的規則，只差在要修補的
 // 假設會補成功）。網頁漫畫沒有結果視窗，蓋不上去的段落翻了也看不到，不送翻譯
-enum class CoverDecision { Cover, LowScore, BusyBackground };
+enum class CoverDecision { Cover, Symbols, LowScore, BusyBackground };
 CoverDecision coverDecision(const ImageBgra& frame, const TextBlock& block, bool canInpaint);
 
 // 每一段譯文要怎麼蓋。

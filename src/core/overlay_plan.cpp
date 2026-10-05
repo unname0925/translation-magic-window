@@ -32,6 +32,14 @@ constexpr float kMinScore = 0.5f;
 constexpr float kMinScoreInBubble = 0.3f;
 // 背景修補（M4-01）只給至少這麼多個字的段落：「！」「2-」這種不是要翻的文字
 constexpr int kMinLettersForInpainting = 2;
+// 背景不是純色、對話框偵測器也沒框到的段落（手寫的碎碎念、標籤），至少要這麼有把握才修補。
+// 以前和 kMinScoreForLoose 一樣是 0.9，網頁漫畫 34 頁裡分數 0.6～0.9 的手寫對白都沒蓋；
+// 把符號讀成字的小框另外由 looksLikeSymbols 擋掉
+constexpr float kMinScoreForInpainting = 0.6f;
+// 原文沒有字，或不超過這麼多個字、框又小於畫面的這個比例：多半是把愛心、閃光這類小符號
+// 讀成了字。網頁漫畫 34 頁實測，蓋錯的 16 個框裡 14 個是這種；真正的短對白框都比較大
+constexpr int kMaxLettersForSymbols = 3;
+constexpr double kMaxSymbolAreaRatio = 0.0015;
 // 譯文和補出來的背景至少要有這麼多亮度對比（WCAG 對大字的要求）
 constexpr double kMinPatchContrast = 3.0;
 
@@ -40,6 +48,22 @@ bool isLetterLike(char32_t c) {
     return (c >= U'a' && c <= U'z') || (c >= U'A' && c <= U'Z') || (c >= 0x3041 && c <= 0x30FA) ||
            (c >= 0x3400 && c <= 0x9FFF) || (c >= 0xAC00 && c <= 0xD7AF) ||
            (c >= 0xFF21 && c <= 0xFF3A) || (c >= 0xFF41 && c <= 0xFF5A);
+}
+
+int letterCount(const std::string& text) {
+    int letters = 0;
+    for (std::size_t i = 0; i < text.size();) {
+        letters += isLetterLike(nextCodePoint(text, i)) ? 1 : 0;
+    }
+    return letters;
+}
+
+bool looksLikeSymbols(const ImageBgra& frame, const TextBlock& block) {
+    const int letters = letterCount(block.text);
+    const double area = static_cast<double>(block.rect.width()) * block.rect.height();
+    const double frameArea = static_cast<double>(frame.width) * frame.height;
+    return letters == 0 ||
+           (letters <= kMaxLettersForSymbols && area < kMaxSymbolAreaRatio * frameArea);
 }
 
 Rgba averageColor(const ImageBgra& image) {
@@ -271,14 +295,10 @@ bool worthCovering(const ImageBgra& frame, const RectI& rect, Rgba background, f
 }
 
 bool worthInpainting(const TextBlock& block) {
-    if (block.score < kMinScoreForLoose && !block.inBubble) {
-        return false;  // 擬聲詞、把花紋讀成字的：修補了也只是抹掉原圖
+    if (block.score < kMinScoreForInpainting && !block.inBubble) {
+        return false;  // 把花紋讀成字的：修補了也只是抹掉原圖
     }
-    int letters = 0;
-    for (std::size_t i = 0; i < block.text.size();) {
-        letters += isLetterLike(nextCodePoint(block.text, i)) ? 1 : 0;
-    }
-    return letters >= kMinLettersForInpainting;
+    return letterCount(block.text) >= kMinLettersForInpainting;
 }
 
 namespace {
@@ -297,6 +317,9 @@ float minimumScore(const TextBlock& block) {
 }  // namespace
 
 CoverDecision coverDecision(const ImageBgra& frame, const TextBlock& block, bool canInpaint) {
+    if (looksLikeSymbols(frame, block)) {
+        return CoverDecision::Symbols;
+    }
     if (block.score < minimumScore(block)) {
         return CoverDecision::LowScore;
     }
@@ -323,6 +346,10 @@ std::vector<OverlayItem> planOverlay(const ImageBgra& frame,
         if (group.translation.empty()) {
             ++dropped.untranslated;
             continue;  // 翻譯失敗：不蓋，原文照樣看得到
+        }
+        if (looksLikeSymbols(frame, group.block)) {
+            ++dropped.symbols;
+            continue;
         }
         OverlayItem item;
         const RectI& source = group.block.rect;

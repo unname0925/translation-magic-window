@@ -197,6 +197,9 @@ Pipeline::RecognizedPage Pipeline::recognize(const PipelineJob& job, std::stop_t
         // （網頁漫畫 34 頁實測 306 段裡有 62 段）
         std::erase_if(blocks, [&](const TextBlock& block) {
             switch (coverDecision(job.frame, block, job.inpainter != nullptr)) {
+                case CoverDecision::Symbols:
+                    ++result.overlayDrops.symbols;
+                    return true;
                 case CoverDecision::LowScore:
                     ++result.overlayDrops.lowScore;
                     return true;

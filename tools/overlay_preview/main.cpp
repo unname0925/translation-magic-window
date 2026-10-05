@@ -1,12 +1,14 @@
 // tmw_overlay_preview：對圖片跑完整的流程（OCR → 翻譯 → 覆蓋層），把「譯文蓋在原文上」的樣子
 // 存成 PNG（M3）。覆蓋層排除在螢幕擷取之外，截圖看不到它，要檢查效果就用這個。
 //
-//   tmw_overlay_preview [--settings <settings.json>] [--manga] [--language ja|en|ko|auto]
-//                       [--font noto-sans|noto-serif|huninn]
+//   tmw_overlay_preview [--settings <settings.json>] [--manga] [--page] [--numbers-only]
+//                       [--language ja|en|ko|auto] [--font noto-sans|noto-serif|huninn]
 //                       --output <資料夾> <圖片> [<圖片> ...]
 //
 // --settings：用這個設定檔的翻譯引擎（金鑰要是這台電腦、這個使用者加密的）。
 //             不給的話用 Google（不用金鑰）。
+// --page：當成網頁漫畫的一整頁（和瀏覽器擴充功能送來的一樣：整頁的偵測大小、一律找對話框）。
+// --numbers-only：只印位置和判斷用的數字，不印原文和譯文（有版權的漫畫拿來查問題時用）。
 // 每張圖輸出 <名字>.overlay.png，並把每一段的原文、譯文、蓋不蓋（和判斷用的數字）印出來。
 
 #include <windows.h>
@@ -30,6 +32,7 @@
 #include "core/overlay_font.h"
 #include "core/overlay_plan.h"
 #include "core/pipeline.h"
+#include "core/utf8.h"
 #include "ocr/lama_inpainter.h"
 #include "ocr/ocr_service.h"
 #include "platform/app_paths.h"
@@ -46,6 +49,8 @@ using namespace tmw;
 struct Options {
     std::optional<std::filesystem::path> settings;
     bool manga = false;
+    bool page = false;
+    bool numbersOnly = false;
     std::string language = "auto";
     std::string font;  // core/overlay_font 的 id
     std::filesystem::path output;
@@ -54,7 +59,8 @@ struct Options {
 
 int usage() {
     std::fputs(
-        "usage: tmw_overlay_preview [--settings <settings.json>] [--manga]\n"
+        "usage: tmw_overlay_preview [--settings <settings.json>] [--manga] [--page]\n"
+        "                           [--numbers-only]\n"
         "                           [--language ja|en|ko|auto] [--font "
         "noto-sans|noto-serif|huninn]\n"
         "                           --output <dir> <image> ...\n",
@@ -75,6 +81,10 @@ std::optional<Options> parse(int argc, wchar_t** argv) {
             options.settings = value;
         } else if (option == L"--manga") {
             options.manga = true;
+        } else if (option == L"--page") {
+            options.page = true;
+        } else if (option == L"--numbers-only") {
+            options.numbersOnly = true;
         } else if (option == L"--language") {
             const wchar_t* value = next();
             if (value == nullptr) {
@@ -167,6 +177,7 @@ int run(const Options& options) {
         job.region = core::RectI{0, 0, job.frame.width, job.frame.height};
         job.language = options.language;
         job.inpainter = inpainter;
+        job.manga = options.page;
         pipeline.forget(job.lens);  // 每張圖各自獨立，不拿上一張當上下文
         const core::PipelineResult result = pipeline.run(job, std::stop_token{});
         std::printf("\n== %s（%zu 段）\n", platform::pathToUtf8(path.filename()).c_str(),
@@ -180,12 +191,45 @@ int run(const Options& options) {
             const core::RectI padded{r.left - 3, r.top - 3, r.right + 3, r.bottom + 3};
             const core::Rgba bg = core::sampleBackground(job.frame, padded);
             // 外圍的純度（差 24／72 以內）和 OCR 分數：調整 overlay_plan 的門檻時看這幾個數字
+            const char* decision = "蓋";
+            switch (core::coverDecision(job.frame, group.block, inpainter != nullptr)) {
+                case core::CoverDecision::Symbols:
+                    decision = "不蓋：像是符號";
+                    break;
+                case core::CoverDecision::LowScore:
+                    decision = "不蓋：分數低";
+                    break;
+                case core::CoverDecision::BusyBackground:
+                    decision = "不蓋：背景雜";
+                    break;
+                case core::CoverDecision::Cover:
+                    break;
+            }
+            // 假名佔字母的比例（擬聲字多半是假名，標籤、旁註多半是漢字）
+            int letters = 0;
+            int kana = 0;
+            for (std::size_t i = 0; i < group.block.text.size();) {
+                const char32_t c = core::nextCodePoint(group.block.text, i);
+                const bool isKana = (c >= 0x3041 && c <= 0x30FF);
+                const bool isLetter = isKana || (c >= 0x3400 && c <= 0x9FFF) ||
+                                      (c >= U'A' && c <= U'Z') || (c >= U'a' && c <= U'z');
+                letters += isLetter ? 1 : 0;
+                kana += isKana ? 1 : 0;
+            }
+            static constexpr const char* kSizes[] = {"小", "中", "大"};
             std::printf(
-                "- [%s 純度 %.2f/%.2f 分數 %.2f 位置 %d,%d,%d,%d] %s\n  → %s\n",
-                core::worthCovering(job.frame, padded, bg, group.block.score) ? "蓋" : "不蓋",
+                "- [%s%s%s 純度 %.2f/%.2f 分數 %.2f 位置 %d,%d,%d,%d 字數 %d 假名 %.2f 字級 %s]",
+                decision, group.block.inBubble ? " 對話框內" : "",
+                group.block.soundEffect ? " 擬聲字" : "",
                 core::backgroundUniformity(job.frame, padded, bg),
                 core::backgroundUniformity(job.frame, padded, bg, 2, 72), group.block.score, r.left,
-                r.top, r.right, r.bottom, group.block.text.c_str(), group.translation.c_str());
+                r.top, r.right, r.bottom, letters, letters > 0 ? 1.0 * kana / letters : 0.0,
+                kSizes[static_cast<int>(group.block.size)]);
+            if (options.numbersOnly) {
+                std::printf("\n");
+            } else {
+                std::printf(" %s\n  → %s\n", group.block.text.c_str(), group.translation.c_str());
+            }
         }
         std::printf(
             "耗時：OCR %.0f ms（偵測 %.0f、辨識 %.0f、對話框 %.0f、manga-ocr %.0f）"
@@ -202,7 +246,7 @@ int run(const Options& options) {
                        std::to_string(item.outline->g) + "," + std::to_string(item.outline->b))
                           .c_str()
                     : "",
-                item.text.c_str());
+                options.numbersOnly ? "" : item.text.c_str());
         }
         core::ImageBgra shown = job.frame;
         core::compositeOver(

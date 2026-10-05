@@ -109,11 +109,12 @@ std::vector<TextBlock> mergeIntoBlocks(std::span<const OcrLine> lines,
 // 這一行屬於哪個對話框：重疊最多、而且蓋住這一行至少一半面積的那個。沒有就回傳 nullopt。
 std::optional<std::size_t> bubbleOf(const RectI& line, std::span<const RectI> bubbles);
 
-// 擬聲字的判斷：有找到對話框（漫畫）時，不在任何對話框裡、而且很短（字母、數字、假名、
-// 漢字不超過 kSoundEffectMaxLetters 個）的區塊。
-// 不看「是不是假名」：花俏的擬聲字常被 OCR 讀成漢字或符號。
-// 在測試集（日文漫畫 10 頁）上：擬聲詞 39 個認出 35 個，對白 66 句沒有一句被誤判；
-// 另外背景裡的小字（招牌、裝飾字）也會被當成擬聲字。
+// 擬聲字的判斷：有找到對話框（漫畫）時，不在任何對話框裡、很短（字母、數字、假名、
+// 漢字不超過 kSoundEffectMaxLetters 個），而且至少一半是假名的區塊。
+// 假名這條擋掉漢字的標籤和旁註（家譜圖上的稱謂之類）。花俏的擬聲字常被 OCR 讀成漢字，
+// 這些認不出來，但它們背景雜、分數低，本來就不會蓋上譯文，開關影響不到。
+// 網頁漫畫 34 頁（有蓋上譯文的段落）：擬聲詞 13 個認出 11 個，誤判 7 個（多半是對話框外
+// 很短的驚呼）；不看假名時是 9 個認出、誤判 20 個（標籤、旁註都被當成擬聲字）。
 inline constexpr int kSoundEffectMaxLetters = 4;
 bool looksLikeSoundEffect(const TextBlock& block, std::span<const RectI> bubbles);
 // 填入 inBubble 和 soundEffect。沒有對話框時都是 false（無從判斷，全部當成一般文字）

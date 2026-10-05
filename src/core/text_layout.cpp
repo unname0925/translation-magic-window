@@ -428,10 +428,16 @@ bool looksLikeSoundEffect(const TextBlock& block, std::span<const RectI> bubbles
         return false;
     }
     int letters = 0;
+    int kana = 0;
     for (std::size_t i = 0; i < block.text.size();) {
-        letters += countsAsLetter(nextCodePoint(block.text, i)) ? 1 : 0;
+        const char32_t c = nextCodePoint(block.text, i);
+        letters += countsAsLetter(c) ? 1 : 0;
+        kana += ((c >= 0x3041 && c <= 0x30FA) || (c >= 0x30FC && c <= 0x30FF) ||
+                 (c >= 0xFF66 && c <= 0xFF9F))
+                    ? 1
+                    : 0;
     }
-    return letters > 0 && letters <= kSoundEffectMaxLetters;
+    return letters > 0 && letters <= kSoundEffectMaxLetters && kana * 2 >= letters;
 }
 
 void markSoundEffects(std::vector<TextBlock>& blocks, std::span<const RectI> bubbles) {

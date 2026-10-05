@@ -144,6 +144,7 @@ std::string dropSummary(const core::OverlayDrops& drops) {
         }
     };
     add("沒有譯文", drops.untranslated);
+    add("像是符號", drops.symbols);
     add("OCR 分數低", drops.lowScore);
     add("背景不適合蓋", drops.busyBackground);
     return "，沒蓋 " + std::to_string(drops.total()) + " 段（" + parts + "）";

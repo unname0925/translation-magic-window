@@ -445,14 +445,14 @@ TEST_F(PipelineTest, GroupsByTheBubblesTheOcrReports) {
 
 TEST_F(PipelineTest, MarksSoundEffectsAndSkipsThemWhenAsked) {
     ocr_.bubbles = {RectI{10, 10, 220, 190}};
-    ocr_.lines = {line(20, 20, 200, 44, "Hello there"), line(300, 150, 360, 174, "BAM")};
+    ocr_.lines = {line(20, 20, 200, 44, "Hello there"), line(300, 150, 360, 174, "ドン")};
     PipelineJob skipping = job();
     skipping.soundEffects = false;
     const PipelineResult result = run(skipping);
     ASSERT_EQ(result.groups.size(), 1u);
     EXPECT_EQ(result.groups[0].block.text, "Hello there");
     for (const auto& batch : engine_->batches) {
-        EXPECT_EQ(std::count(batch.begin(), batch.end(), "BAM"), 0) << "擬聲字不送翻譯";
+        EXPECT_EQ(std::count(batch.begin(), batch.end(), "ドン"), 0) << "擬聲字不送翻譯";
     }
 
     pipeline_.forget(1);
