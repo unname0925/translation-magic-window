@@ -75,6 +75,9 @@ bool MouseSimulator::drag(core::PointI from, core::PointI to, DWORD targetThread
         // 讓對方的拖動迴圈處理這次移動
         pumpMessages(15ms);
     }
+    // 放開之前多等一下：電腦忙的時候，對方還沒處理完最後一次移動就收到放開，
+    // 視窗會停在半路（實測差了 2～8 像素，測試偶爾失敗）
+    pumpMessages(150ms);
     if (!release()) {
         return false;
     }
