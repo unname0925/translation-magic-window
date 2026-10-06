@@ -34,6 +34,10 @@ WebService::~WebService() {
     server_.stop();
 }
 
+void WebService::enableCache(std::filesystem::path directory, std::uint64_t maxBytes) {
+    cache_ = std::make_unique<core::WebResultCache>(std::move(directory), maxBytes);
+}
+
 bool WebService::start() {
     return server_.start();
 }
@@ -66,6 +70,7 @@ void WebService::onMessage(int connection, std::string message) {
                 guarded(alive_, [this, connection, id = request->id] { cancel(connection, id); }));
             return;
         case core::WebRequest::Type::Translate:
+            request->pixelHash = core::hashPixels(request->image);  // 查硬碟快取用，在這裡算
             callbacks_.post(
                 guarded(alive_, [this, connection, request] { enqueue(connection, request); }));
             return;
@@ -90,8 +95,24 @@ void WebService::enqueue(int connection, std::shared_ptr<core::WebRequest> reque
     std::erase_if(queue_, [&](const Pending& pending) {
         return pending.connection == connection && pending.id == request->id;
     });
+    std::string key;
+    if (cache_ != nullptr && callbacks_.cacheTag) {
+        key = core::WebResultCache::makeKey(request->pixelHash, request->image.width,
+                                            request->image.height, request->language,
+                                            request->soundEffects, callbacks_.cacheTag());
+        if (const std::optional<std::string> stored = cache_->find(key)) {
+            const std::string reply = core::webReplyWithId(*stored, request->id);
+            if (!reply.empty()) {
+                if (callbacks_.log) {
+                    callbacks_.log("網頁：硬碟快取裡有這張，直接送回");
+                }
+                server_.send(connection, reply);
+                return;
+            }
+        }
+    }
     std::string id = request->id;
-    queue_.push_back(Pending{connection, std::move(id), std::move(request)});
+    queue_.push_back(Pending{connection, std::move(id), std::move(request), std::move(key)});
     pump();
 }
 
@@ -132,6 +153,11 @@ void WebService::pump() {
 
 namespace {
 
+// webErrorReply 編出來的（結果太大之類）不是結果，不存
+bool webReplyFailed(const std::string& reply) {
+    return reply.find("\"type\":\"error\"") != std::string::npos;
+}
+
 // 「，沒蓋 3 段（沒有譯文 1、OCR 分數低 2）」；全部蓋上時是空字串
 std::string dropSummary(const core::OverlayDrops& drops) {
     if (drops.total() == 0) {
@@ -170,7 +196,8 @@ void WebService::submitNext() {
     }
     job.soundEffects = next.request->soundEffects;  // 控制面板的開關
     job.overlayOnly = true;                         // 沒有結果視窗：蓋不上去的段落不必翻譯
-    running_[job.generation] = Running{next.connection, std::move(next.id)};
+    running_[job.generation] =
+        Running{next.connection, std::move(next.id), std::move(next.cacheKey)};
     callbacks_.submit(std::move(job));
 }
 
@@ -207,6 +234,11 @@ void WebService::onResult(const core::PipelineResult& result) {
                                      core::kWebMaxReplyBytes, result.notice);
     } catch (const std::exception& error) {
         reply = core::webErrorReply(done.id, error.what());
+    }
+    // 只存完整的結果：翻譯失敗、或改用了備援引擎（notice）的不存，下次再翻一次
+    if (cache_ != nullptr && !done.cacheKey.empty() && result.error.empty() &&
+        result.notice.empty() && !webReplyFailed(reply)) {
+        cache_->store(done.cacheKey, reply);
     }
     if (!server_.send(done.connection, reply) && callbacks_.log) {
         callbacks_.log("網頁：擴充功能已經斷線，結果丟棄");

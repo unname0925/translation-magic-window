@@ -232,6 +232,15 @@ std::string webErrorReply(std::string_view id, std::string_view message) {
         .dump(-1, ' ', false, nlohmann::json::error_handler_t::replace);
 }
 
+std::string webReplyWithId(std::string_view reply, std::string_view id) {
+    nlohmann::json parsed = nlohmann::json::parse(reply, nullptr, false);
+    if (parsed.is_discarded() || !parsed.is_object() || parsed.value("type", "") != "result") {
+        return {};
+    }
+    parsed["id"] = std::string(id);
+    return parsed.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace);
+}
+
 std::string webResultReply(std::string_view id, std::span<const OverlayItem> items,
                            std::string_view error, const PngEncoder& encodePng,
                            std::size_t maxBytes, std::string_view notice) {

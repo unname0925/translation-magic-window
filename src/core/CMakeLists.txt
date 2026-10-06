@@ -71,6 +71,7 @@ add_library(tmw_core STATIC
     utf8.cpp
     web_pipeline_worker.cpp
     web_protocol.cpp
+    web_result_cache.cpp
     utf8.h)
 target_include_directories(tmw_core PUBLIC "${PROJECT_SOURCE_DIR}/src")
 target_compile_features(tmw_core PUBLIC cxx_std_20)

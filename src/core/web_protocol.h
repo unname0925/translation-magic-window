@@ -64,11 +64,12 @@ struct WebRequest {
     enum class Type { Hello, Translate, Cancel, Engines, SetEngine, Invalid };
     Type type = Type::Invalid;
     std::string id;
-    int index = -1;            // SetEngine：用過的第幾個
-    ImageBgra image;           // Translate：RGBA 已經轉成 BGRA
-    std::string language;      // Translate："auto"、"ja"…；沒給時是空字串
-    bool soundEffects = true;  // Translate：要不要翻譯擬聲字（沒給時翻）
-    std::string error;         // Invalid：哪裡不對（回給擴充功能看）
+    int index = -1;               // SetEngine：用過的第幾個
+    ImageBgra image;              // Translate：RGBA 已經轉成 BGRA
+    std::string language;         // Translate："auto"、"ja"…；沒給時是空字串
+    bool soundEffects = true;     // Translate：要不要翻譯擬聲字（沒給時翻）
+    std::uint64_t pixelHash = 0;  // Translate：像素的雜湊（WebService 填，查硬碟快取用）
+    std::string error;            // Invalid：哪裡不對（回給擴充功能看）
 };
 
 // 解析擴充功能送來的一則訊息（JSON 本體，不含長度）。格式不對時 type 是 Invalid
@@ -81,6 +82,9 @@ std::string webErrorReply(std::string_view id, std::string_view message);
 
 // 背景修補的小圖編成 PNG（core 不認得影像格式，由呼叫端提供）
 using PngEncoder = std::function<std::vector<std::uint8_t>(const ImageBgra&)>;
+
+// 存起來的結果換成這次請求的 id（硬碟快取，core/web_result_cache.h）。不是結果訊息時回傳空字串
+std::string webReplyWithId(std::string_view reply, std::string_view id);
 
 // 翻譯結果。編好之後超過 maxBytes 時，從最大的背景修補圖開始丟，直到放得下
 std::string webResultReply(std::string_view id, std::span<const OverlayItem> items,

@@ -9,6 +9,7 @@
 
 #include <cstdint>
 #include <deque>
+#include <filesystem>
 #include <functional>
 #include <map>
 #include <memory>
@@ -19,6 +20,7 @@
 
 #include "core/pipeline.h"
 #include "core/web_protocol.h"
+#include "core/web_result_cache.h"
 #include "platform/web_pipe.h"
 
 namespace tmw::app {
@@ -42,6 +44,9 @@ public:
         std::function<std::pair<std::vector<std::string>, std::string>()> engines;
         // 改用用過的第 index 個（UI 執行緒）。不存在時回傳 false
         std::function<bool(int index)> setEngine;
+        // 硬碟快取的鍵要加上的「現在的設定」：翻譯引擎、程式版本這類換了結果就不同的東西
+        // （UI 執行緒）。沒有時不用快取
+        std::function<std::string()> cacheTag;
     };
 
     WebService(std::wstring pipeName, Callbacks callbacks);
@@ -61,6 +66,9 @@ public:
     // UI 執行緒：工作佇列要重建了（改設定），進行中的頁不會有結果：回報錯誤讓擴充功能重試
     void abandonRunning(const std::string& reason);
 
+    // 把翻譯結果存在硬碟上（core/web_result_cache.h），同一張圖下次直接送回去
+    void enableCache(std::filesystem::path directory, std::uint64_t maxBytes);
+
     // 測試用：還有幾張在排隊（不含進行中的）
     std::size_t queued() const { return queue_.size(); }
 
@@ -69,10 +77,12 @@ private:
         int connection = 0;
         std::string id;
         std::shared_ptr<core::WebRequest> request;
+        std::string cacheKey;  // 空的：不用快取
     };
     struct Running {
         int connection = 0;
         std::string id;
+        std::string cacheKey;
     };
 
     void onMessage(int connection, std::string message);
@@ -90,6 +100,7 @@ private:
     std::deque<Pending> queue_;
     std::map<std::uint64_t, Running> running_;  // generation → 誰要的
     std::uint64_t nextGeneration_ = 0;
+    std::unique_ptr<core::WebResultCache> cache_;
     // 交回 UI 執行緒的工作拿弱參照：這個物件不在了就不執行
     std::shared_ptr<bool> alive_;
 };

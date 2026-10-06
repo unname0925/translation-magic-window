@@ -1028,7 +1028,20 @@ void AppController::setUpWeb() {
         rebuildTranslation();  // 進行中的頁會回報 restarted，擴充功能重新送
         return true;
     };
+    // 硬碟快取的鍵：換了翻譯引擎、程式版本、辨識語言或專有名詞表，同一張圖的結果就不同
+    callbacks.cacheTag = [this] {
+        std::string tag = TMW_VERSION;
+        for (const core::EngineSettings& engine : settings_.engines) {
+            tag += "|" + core::engineLabel(engine);
+        }
+        tag += "|" + settings_.ocrLanguage;
+        currentGlossary();  // 改過就重新讀，glossaryTime_ 跟著更新
+        tag += "|" + std::to_string(glossaryTime_.time_since_epoch().count());
+        return tag;
+    };
     web_ = std::make_unique<WebService>(platform::webPipeName(), std::move(callbacks));
+    // 一頁的結果約 10 KB～1 MB（背景修補的小圖佔大部分），300 MB 大約是幾十章
+    web_->enableCache(dataDirectory_ / L"web-cache", 300ull * 1024 * 1024);
     startWeb(0);
 }
 
