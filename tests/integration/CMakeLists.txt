@@ -14,6 +14,8 @@ add_executable(tmw_integration_tests
     screen_capture_test.cpp
     support/app_process.cpp
     support/app_process.h
+    support/fake_llm_server.cpp
+    support/fake_llm_server.h
     support/mouse_input.cpp
     support/mouse_input.h
     support/test_window.cpp
@@ -26,6 +28,7 @@ target_link_libraries(tmw_integration_tests PRIVATE
     tmw_core
     tmw_options
     dwmapi
+    ws2_32
     GTest::gtest)
 tmw_copy_asan_runtime(tmw_integration_tests)
 tmw_copy_onnxruntime(tmw_integration_tests)

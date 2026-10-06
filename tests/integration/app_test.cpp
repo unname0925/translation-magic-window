@@ -28,6 +28,7 @@
 #include "platform/screen_capture.h"
 #include "platform/translation_overlay_window.h"
 #include "support/app_process.h"
+#include "support/fake_llm_server.h"
 #include "support/mouse_input.h"
 #include "support/test_window.h"
 
@@ -95,6 +96,7 @@ protected:
         ASSERT_FALSE(AppProcess::isAnyInstanceRunning())
             << "主程式正在執行。整合測試要啟動自己的執行個體，請先從系統匣結束它";
         dataDirectory_ = makeTemporaryDataDirectory();
+        prepareDataDirectory(dataDirectory_);
         app_ = std::make_unique<AppProcess>(
             std::vector<std::wstring>{L"--data-dir", dataDirectory_.wstring()});
         lens_ = app_->waitForWindow(platform::LensWindow::kClassName, kLaunchTimeout);
@@ -117,6 +119,9 @@ protected:
         std::error_code ignored;
         std::filesystem::remove_all(dataDirectory_, ignored);
     }
+
+    // 主程式啟動前：可以先放好設定檔之類的東西
+    virtual void prepareDataDirectory(const std::filesystem::path&) {}
 
     LensGeometry lensGeometry() const {
         LensGeometry geometry;
@@ -194,10 +199,22 @@ TEST_F(AppTest, TranslateNowOpensTheResultWindowWithACard) {
     EXPECT_TRUE(IsWindowVisible(results));
 }
 
+// 翻譯交給本機的假伺服器（FakeLlmServer）：不連網，不會因為 Google 限流（HTTP 429）而失敗
+class OfflineTranslationAppTest : public AppTest {
+protected:
+    void prepareDataDirectory(const std::filesystem::path& directory) override {
+        const std::string settings = R"({"engines":[{"id":"openai-compatible","endpoint":")" +
+                                     server_.endpoint() + R"(","model":"fake"}]})";
+        std::ofstream(directory / L"settings.json", std::ios::binary) << settings;
+    }
+
+    test::FakeLlmServer server_;
+};
+
 // M3-01、M3-04：在原位顯示譯文。譯文要蓋在透鏡裡面、不能被擷取進去（否則下一次 OCR
 // 讀到的是譯文），底下的畫面一變就要先藏起來，不能留下錯位的譯文。
-// 需要網路（預設的引擎是 Google）；畫出來的樣子由 OverlayRendererTest 負責。
-TEST_F(AppTest, TranslationIsDrawnOverTheTextAndHiddenWhenItChanges) {
+// 畫出來的樣子由 OverlayRendererTest 負責。
+TEST_F(OfflineTranslationAppTest, TranslationIsDrawnOverTheTextAndHiddenWhenItChanges) {
     // 先暫停：文字一放上去自動翻譯就會開始，要先打開覆蓋層、取好「沒有譯文」的畫面
     ASSERT_TRUE(app_->postCommand(app::kCommandTogglePause));
     ASSERT_TRUE(app_->postCommand(app::kCommandToggleOverlay));
@@ -221,7 +238,8 @@ TEST_F(AppTest, TranslationIsDrawnOverTheTextAndHiddenWhenItChanges) {
 
     ASSERT_TRUE(app_->postCommand(app::kCommandTogglePause));
     ASSERT_TRUE(waitUntil([&] { return IsWindowVisible(overlay) != FALSE; }, 60000ms))
-        << "譯文一直沒有蓋上去（沒有網路時翻譯會失敗）。主程式的記錄：\n"
+        << "譯文一直沒有蓋上去（假的翻譯伺服器收到 " << server_.requests()
+        << " 次請求）。主程式的記錄：\n"
         << appLog();
 
     const core::RectI where = windowRectOf(overlay);
