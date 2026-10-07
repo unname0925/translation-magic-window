@@ -150,6 +150,53 @@ async function fetchPixels(url, page) {
   }
 }
 
+// 讀不到像素的圖（被跨網域保護的 canvas 之類）：截下分頁目前的畫面，裁出那張圖。
+// 瀏覽器限制每秒最多截兩次，所以排隊、每次至少隔 600 毫秒。截好的像素先放著，
+// content.js 把面板、譯文恢復顯示之後再用 token 要求翻譯
+const captures = new Map(); // token → { width, height, pixels }
+let captureToken = 0;
+let captureChain = Promise.resolve();
+let lastCapture = 0;
+
+function capture(request, sender) {
+  const run = async () => {
+    if (!sender.tab?.active) {
+      return { type: "error", message: "tab-hidden" }; // 使用者切到別的分頁了：截到的不是這一頁
+    }
+    const wait = lastCapture + 600 - Date.now();
+    if (wait > 0) {
+      await new Promise((resolve) => setTimeout(resolve, wait));
+    }
+    lastCapture = Date.now();
+    const dataUrl = await chrome.tabs.captureVisibleTab(sender.tab.windowId, { format: "png" });
+    const shot = await createImageBitmap(await (await fetch(dataUrl)).blob());
+    try {
+      const scale = request.scale || 1;
+      const left = Math.max(0, Math.round(request.rect.x * scale));
+      const top = Math.max(0, Math.round(request.rect.y * scale));
+      const width = Math.min(shot.width - left, Math.round(request.rect.width * scale));
+      const height = Math.min(shot.height - top, Math.round(request.rect.height * scale));
+      if (width <= 0 || height <= 0) {
+        return { type: "error", message: "capture-empty" };
+      }
+      const crop = await createImageBitmap(shot, left, top, width, height);
+      try {
+        const token = ++captureToken;
+        captures.set(token, pixelsOf(crop));
+        setTimeout(() => captures.delete(token), 60_000); // 沒來拿就丟掉
+        return { type: "captured", token };
+      } finally {
+        crop.close();
+      }
+    } finally {
+      shot.close();
+    }
+  };
+  const result = captureChain.then(run, run);
+  captureChain = result.catch(() => {});
+  return result;
+}
+
 // 頁面送來的壓縮檔（data: 網址）：在這裡解碼，不佔網頁的主執行緒
 async function decodePixels(encoded) {
   const bitmap = await createImageBitmap(await (await fetch(encoded)).blob());
@@ -164,6 +211,13 @@ async function decodePixels(encoded) {
 // 或 {image:{width,height,pixels}} 是頁面裡已經讀好的
 async function translate(request) {
   let image = request.image;
+  if (request.captured) {
+    image = captures.get(request.captured);
+    captures.delete(request.captured);
+    if (!image) {
+      return { type: "error", message: "capture-expired" };
+    }
+  }
   if (!image) {
     try {
       image = request.encoded ? await decodePixels(request.encoded) : await fetchPixels(request.url, request.page);
@@ -303,6 +357,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   let work = null;
   if (request?.kind === "translate" && sender.tab) {
     work = translate(request);
+  } else if (request?.kind === "capture" && sender.tab) {
+    work = capture(request, sender);
   } else if (request?.kind === "app-status") {
     work = currentAppState().then((state) => ({ state }));
   } else if (request?.kind === "engines") {

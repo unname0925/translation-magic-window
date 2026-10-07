@@ -408,7 +408,8 @@
       const page = pages.get(element);
       const entry = sources.get(source) || track(source);
       entry.element = element; // 送出的先後依這個元素離畫面多近
-      if (entry.state === "waiting" && readable(element)) {
+      // 要截圖的（讀不到像素）等整張都在畫面上才排
+      if (entry.state === "waiting" && readable(element) && (!entry.needsCapture || fullyVisible(element))) {
         entry.state = "queued"; // 剛剛抓不到、現在載入了：從頁面讀
         queue.push(source);
       }
@@ -490,6 +491,47 @@
     }
   }
 
+  // 整張都在畫面上（截圖才截得到）
+  function fullyVisible(element) {
+    const rect = element.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0 && rect.left >= -1 && rect.top >= -1 &&
+           rect.right <= innerWidth + 1 && rect.bottom <= innerHeight + 1;
+  }
+
+  // 下一個畫格；分頁在背景時 requestAnimationFrame 不會觸發，最多等 100 毫秒
+  const nextFrame = () => new Promise((resolve) => {
+    requestAnimationFrame(() => resolve());
+    setTimeout(resolve, 100);
+  });
+
+  // 截下分頁目前的畫面、裁出這張圖（background.js 的 capture）。截圖前把蓋在這張圖上的
+  // 控制面板和別張圖的譯文暫時藏起來，免得截進去；截完馬上恢復，再要求翻譯
+  async function captureAndSend(element, soundEffects) {
+    const rect = element.getBoundingClientRect();
+    const overlaps = (other) => {
+      const r = other.getBoundingClientRect();
+      return r.right > rect.left && r.left < rect.right && r.bottom > rect.top && r.top < rect.bottom;
+    };
+    const hidden = [panel, ...[...pages.values()].map((page) => page.anchor).filter(Boolean)].filter(overlaps);
+    hidden.forEach((node) => node.style.setProperty("visibility", "hidden", "important"));
+    let shot;
+    try {
+      await nextFrame();
+      await nextFrame(); // 等藏起來的畫面真的畫出來
+      shot = await chrome.runtime.sendMessage({
+        kind: "capture",
+        rect: { x: rect.left, y: rect.top, width: rect.width, height: rect.height },
+        scale: devicePixelRatio,
+      });
+    } finally {
+      hidden.forEach((node) => node.style.removeProperty("visibility"));
+    }
+    if (shot?.type !== "captured") {
+      return shot || { type: "error", message: "capture-failed" };
+    }
+    return await chrome.runtime.sendMessage({ kind: "translate", captured: shot.token, soundEffects });
+  }
+
   async function sendInPage(element, soundEffects) {
     try {
       const encoded = await encodedInPage(element);
@@ -521,6 +563,9 @@
       "host-not-installed": "找不到 Translation Magic Window（請先安裝）",
       "app-unavailable": "Translation Magic Window 沒有回應",
       "page-protected": "網頁不讓讀取這張圖（跨網域保護）",
+      "tab-hidden": "分頁不在前面，截不到圖：切回來時再翻",
+      "capture-empty": "截圖裁不到這張圖",
+      "capture-expired": "截好的圖等太久被丟掉了",
       disconnected: "和主程式的連線斷了",
     };
     if (known[message]) {
@@ -546,7 +591,10 @@
     const soundEffects = panelState.soundEffects; // 不翻擬聲字時主程式不送它們去翻譯
     let reply;
     try {
-      if (isHttp(source)) {
+      if (entry.needsCapture) {
+        reply = element?.isConnected && fullyVisible(element) ? await captureAndSend(element, soundEffects)
+                                                              : { type: "error", message: "page-protected" };
+      } else if (isHttp(source)) {
         reply = await chrome.runtime.sendMessage({ kind: "translate", url: source, page: location.href, soundEffects });
         if (reply?.fetchFailed) {
           if (!element?.isConnected || !readable(element)) {
@@ -573,6 +621,20 @@
     if (reply?.message === "restarted") {
       entry.state = "queued"; // 主程式改了設定、重建工作佇列：再送一次
       queue.push(source);
+      return;
+    }
+    // 讀不到像素（canvas 被跨網域保護）、或截圖時分頁不在前面：改用截圖，等整張都在畫面上
+    if ((reply?.message === "page-protected" || reply?.message === "tab-hidden") && element?.isConnected) {
+      entry.needsCapture = true;
+      if (fullyVisible(element) && reply.message === "page-protected" && !entry.triedCapture) {
+        entry.triedCapture = true;
+        entry.state = "queued";
+        queue.push(source);
+        return;
+      }
+      entry.triedCapture = false;
+      entry.state = "waiting";
+      entry.reason = "網頁不讓讀取這張圖：捲到整張都在畫面上時用截圖翻譯";
       return;
     }
     if (reply?.notice) {
@@ -1007,6 +1069,14 @@
       resized.observe(element); // 重複 observe 同一個元素不會有事
     }
     alignNow(); // 版面變動（廣告插進來、閱讀器切換單雙頁）不一定有事件；被網頁拿掉的譯文也在這裡補回去
+    // 等著截圖的圖已經整張在畫面上：有些閱讀器用 transform 移動內容，捲動時不會有 scroll 事件
+    for (const entry of sources.values()) {
+      if (entry.state === "waiting" && entry.needsCapture && entry.element?.isConnected &&
+          fullyVisible(entry.element)) {
+        scheduleScan();
+        break;
+      }
+    }
   }, 1000));
 
   // 這一章的識別：網址去掉最後的頁碼和 #。有些閱讀器捲動時會一直把頁碼寫進網址

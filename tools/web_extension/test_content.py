@@ -505,6 +505,81 @@ def make_skip_page(content: str) -> str:
     return page
 
 
+def make_capture_page(content: str) -> str:
+    """讀不到像素的 canvas（跨網域保護）：整張在畫面上的馬上用截圖翻；不在畫面上的先等，
+    捲到整張出現時再截。截圖時藏起來的東西事後都要恢復。"""
+    page = f"""<!doctype html><meta charset=utf-8>
+    <style>
+      body {{ margin: 0; }}
+      #reader canvas {{ display: block; width: 600px; height: 700px; margin: 10px auto; }}
+    </style>
+    <div id=reader></div>
+    <script>
+    // 模擬被污染的 canvas：從標了 data-tainted 的 canvas 畫過來的畫布，讀像素時丟出 SecurityError
+    const draw = CanvasRenderingContext2D.prototype.drawImage;
+    CanvasRenderingContext2D.prototype.drawImage = function (source, ...rest) {{
+      if (source.dataset?.tainted) this.canvas.__tainted = true;
+      return draw.call(this, source, ...rest);
+    }};
+    const read = CanvasRenderingContext2D.prototype.getImageData;
+    CanvasRenderingContext2D.prototype.getImageData = function (...args) {{
+      if (this.canvas.__tainted) throw new DOMException("tainted", "SecurityError");
+      return read.apply(this, args);
+    }};
+    const reader = document.getElementById("reader");
+    for (let i = 0; i < 2; i++) {{
+      const canvas = document.createElement("canvas");
+      canvas.width = 600; canvas.height = 700;
+      canvas.dataset.tainted = "1";
+      const c = canvas.getContext("2d");
+      c.fillStyle = "#fff"; c.fillRect(0, 0, 600, 700);
+      c.fillStyle = "#000"; c.fillRect(100 + i * 50, 100, 80, 300);
+      reader.append(canvas);
+    }}
+    const spacer = document.createElement("div"); spacer.style.height = "1500px"; document.body.append(spacer);
+    const captures = [];
+    let translated = 0;
+    let listener = null;
+    window.chrome = {{ runtime: {{ onMessage: {{ addListener: (f) => listener = f, removeListener: () => listener = null }},
+                                  sendMessage: async (message) => {{
+      if (message.kind === "capture") {{
+        captures.push(Math.round(message.rect.y));
+        return {{ type: "captured", token: captures.length }};
+      }}
+      if (message.kind !== "translate") return {{ type: "engines", engines: [], current: "" }};
+      if (!message.captured) return {{ type: "error", message: "should have been captured" }};
+      translated++;
+      await new Promise((r) => setTimeout(r, 30));
+      return {{ type: "result", id: "c" + translated, width: 600, height: 700, error: "", notice: "", patchesDropped: 0,
+                items: [{{ rect: [100, 100, 300, 400], text: "譯文", vertical: true, foreground: "#000000",
+                           background: "#ffffff", size: "normal", lineThickness: 30, ruby: [] }}] }};
+    }} }} }};
+    </script>
+    <script>{content}</script>
+    <script>
+    const report = [];
+    function check(name, ok, detail = "") {{ report.push((ok ? "PASS " : "FAIL ") + name + (detail ? " (" + detail + ")" : "")); }}
+    const overlays = () => document.querySelectorAll("tmw-overlay").length;
+    const status = () => {{ let r = null; listener({{ kind: "page-status" }}, {{}}, (x) => r = x); return r; }};
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    (async () => {{
+      await wait(2000);
+      check("畫面上的那張用截圖翻好", overlays() === 1 && captures.length === 1 && translated === 1,
+            overlays() + " overlays, " + captures.length + " captures");
+      check("不在畫面上的那張等著、說明原因", status().waiting === 1 && status().reasons.some((r) => r.includes("截圖")),
+            JSON.stringify(status().reasons));
+      scrollTo(0, 700);
+      for (let i = 0; i < 50 && overlays() < 2; i++) await wait(100);  // 掃描、截圖、翻譯：最多等 5 秒
+      check("捲到整張出現時再截", overlays() === 2 && captures.length === 2 && translated === 2,
+            overlays() + " overlays, " + captures.length + " captures");
+      const leftHidden = [...document.querySelectorAll("tmw-overlay")].some((o) => o.style.visibility === "hidden");
+      check("截圖時藏起來的東西都恢復了", !leftHidden);
+      document.body.setAttribute("data-report", report.join(" | "));
+    }})();
+    </script>"""
+    return page
+
+
 def run(page: str, folder: Path, name: str) -> list[str]:
     path = folder / f"{name}.html"
     path.write_text(page, encoding="utf-8")
@@ -533,6 +608,7 @@ def main() -> int:
         "blob-swap": make_blob_page(content),
         "sound-effects": make_sound_page(content),
         "skip": make_skip_page(content),
+        "capture": make_capture_page(content),
     }
     failed = 0
     with tempfile.TemporaryDirectory() as folder:
