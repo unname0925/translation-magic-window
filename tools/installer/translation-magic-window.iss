@@ -57,6 +57,12 @@ Source: "{#Stage}\manga\*"; DestDir: "{app}"; Components: manga; Flags: ignoreve
 Source: "{#Stage}\inpaint\*"; DestDir: "{app}"; Components: inpaint; Flags: ignoreversion recursesubdirs createallsubdirs solidbreak
 Source: "{#Stage}\fonts\*"; DestDir: "{app}"; Components: fonts; Flags: ignoreversion recursesubdirs createallsubdirs solidbreak
 
+[Registry]
+; 網頁漫畫擴充功能：Chrome、Edge 從這裡找到主機（tmw_web_host.exe 旁邊的 manifest）。
+; 只寫目前使用者的機碼，不需要系統管理員權限；解除安裝時刪掉
+Root: HKCU; Subkey: "Software\Google\Chrome\NativeMessagingHosts\io.github.unname0925.tmw"; ValueType: string; ValueName: ""; ValueData: "{app}\io.github.unname0925.tmw.json"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Microsoft\Edge\NativeMessagingHosts\io.github.unname0925.tmw"; ValueType: string; ValueName: ""; ValueData: "{app}\io.github.unname0925.tmw.json"; Flags: uninsdeletekey
+
 [Icons]
 Name: "{group}\Translation Magic Window"; Filename: "{app}\TranslationMagicWindow.exe"
 Name: "{group}\使用說明"; Filename: "{app}\docs\user-guide.md"

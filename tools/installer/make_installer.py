@@ -14,7 +14,10 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import glob
+import hashlib
+import json
 import re
 import shutil
 import subprocess
@@ -27,6 +30,7 @@ HERE = Path(__file__).resolve().parent
 # 主程式執行時需要的檔案（相對於建置的 bin/Release）
 PROGRAM_FILES = [
     "TranslationMagicWindow.exe",
+    "tmw_web_host.exe",  # 網頁漫畫：瀏覽器擴充功能透過它連到主程式（Native Messaging）
     "Qt6Core.dll", "Qt6Gui.dll", "Qt6Widgets.dll", "platforms/qwindows.dll",
     "onnxruntime.dll", "onnxruntime_providers_shared.dll",
 ]
@@ -47,6 +51,28 @@ MODELS = {
 }
 DOCS = {"LICENSE": "LICENSE.txt", "THIRD_PARTY_NOTICES.txt": "THIRD_PARTY_NOTICES.txt",
         "docs/user-guide.md": "docs/user-guide.md", "docs/privacy.md": "docs/privacy.md"}
+
+
+# 網頁漫畫擴充功能的 Native Messaging 主機（和 tools/web_extension/register_host.py 相同）
+HOST_NAME = "io.github.unname0925.tmw"
+
+
+def extension_id(manifest_path: Path) -> str:
+    """擴充功能的 ID：manifest 裡公鑰（DER）的 SHA-256 前 16 個位元組，每 4 位元換成 a～p（瀏覽器的算法）。"""
+    key = json.loads(manifest_path.read_text(encoding="utf-8"))["key"]
+    digest = hashlib.sha256(base64.b64decode(key)).hexdigest()[:32]
+    return "".join(chr(ord("a") + int(c, 16)) for c in digest)
+
+
+def host_manifest(extension_ids: list[str]) -> str:
+    """主機的 manifest：放在 tmw_web_host.exe 旁邊，path 寫相對的。只有 allowed_origins 的擴充功能連得上。"""
+    return json.dumps({
+        "name": HOST_NAME,
+        "description": "Translation Magic Window：網頁漫畫整頁翻譯",
+        "path": "tmw_web_host.exe",
+        "type": "stdio",
+        "allowed_origins": [f"chrome-extension://{ident}/" for ident in extension_ids],
+    }, ensure_ascii=False, indent=2) + "\n"
 
 
 def project_version() -> str:
@@ -112,6 +138,11 @@ def main(argv: list[str] | None = None) -> int:
         copy(crt / name, main_dir / name, missing)
     for source, target in DOCS.items():
         copy(REPO_ROOT / source, main_dir / target, missing)
+    # 安裝程式把這個檔案的路徑寫進 Chrome、Edge 的登錄機碼（.iss 的 [Registry]）
+    ident = extension_id(REPO_ROOT / "extension" / "manifest.json")
+    main_dir.mkdir(parents=True, exist_ok=True)
+    (main_dir / f"{HOST_NAME}.json").write_text(host_manifest([ident]), encoding="utf-8")
+    print(f"擴充功能 ID：{ident}")
     for component, entries in MODELS.items():
         for entry in entries:
             copy(args.models / entry, stage / component / "models" / entry, missing)
