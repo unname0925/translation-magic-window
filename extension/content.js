@@ -529,14 +529,14 @@
     if (shot?.type !== "captured") {
       return shot || { type: "error", message: "capture-failed" };
     }
-    return await chrome.runtime.sendMessage({ kind: "translate", captured: shot.token, soundEffects });
+    return await chrome.runtime.sendMessage({ kind: "translate", site: location.origin, captured: shot.token, soundEffects });
   }
 
   async function sendInPage(element, soundEffects) {
     try {
       const encoded = await encodedInPage(element);
       if (encoded) {
-        const reply = await chrome.runtime.sendMessage({ kind: "translate", encoded, soundEffects });
+        const reply = await chrome.runtime.sendMessage({ kind: "translate", site: location.origin, encoded, soundEffects });
         if (!reply?.fetchFailed) {
           return reply;
         }
@@ -544,7 +544,7 @@
       if (!element.isConnected) {
         return { type: "error", message: "圖片被網頁拿掉了" };
       }
-      return await chrome.runtime.sendMessage({ kind: "translate", image: readInPage(element), soundEffects });
+      return await chrome.runtime.sendMessage({ kind: "translate", site: location.origin, image: readInPage(element), soundEffects });
     } catch (error) {
       return { type: "error", message: error?.name === "SecurityError" ? "page-protected" : String(error?.message || error) };
     }
@@ -595,7 +595,7 @@
         reply = element?.isConnected && fullyVisible(element) ? await captureAndSend(element, soundEffects)
                                                               : { type: "error", message: "page-protected" };
       } else if (isHttp(source)) {
-        reply = await chrome.runtime.sendMessage({ kind: "translate", url: source, page: location.href, soundEffects });
+        reply = await chrome.runtime.sendMessage({ kind: "translate", site: location.origin, url: source, page: location.href, soundEffects });
         if (reply?.fetchFailed) {
           if (!element?.isConnected || !readable(element)) {
             // 背景抓不到、頁面也還沒載入：叫網頁先載入它，載入後 scan 會再排

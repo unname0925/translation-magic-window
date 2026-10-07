@@ -9,6 +9,8 @@
 //             不給的話用 Google（不用金鑰）。
 // --page：當成網頁漫畫的一整頁（和瀏覽器擴充功能送來的一樣：整頁的偵測大小、一律找對話框）。
 // --numbers-only：只印位置和判斷用的數字，不印原文和譯文（有版權的漫畫拿來查問題時用）。
+// --chapter：照順序當成同一章，上一頁的譯文留著當下一頁的上下文（和實際閱讀時一樣）。
+// --json <檔案>：每段的原文、譯文寫成 JSON（量用詞一致性用；有版權的文字只寫進檔案）。
 // 每張圖輸出 <名字>.overlay.png，並把每一段的原文、譯文、蓋不蓋（和判斷用的數字）印出來。
 
 #include <windows.h>
@@ -20,6 +22,7 @@
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <nlohmann/json.hpp>
 #include <optional>
 #include <stop_token>
 #include <string>
@@ -51,6 +54,8 @@ struct Options {
     bool manga = false;
     bool page = false;
     bool numbersOnly = false;
+    bool chapter = false;
+    std::filesystem::path json;
     std::string language = "auto";
     std::string font;  // core/overlay_font 的 id
     std::filesystem::path output;
@@ -85,6 +90,14 @@ std::optional<Options> parse(int argc, wchar_t** argv) {
             options.page = true;
         } else if (option == L"--numbers-only") {
             options.numbersOnly = true;
+        } else if (option == L"--chapter") {
+            options.chapter = true;
+        } else if (option == L"--json") {
+            const wchar_t* value = next();
+            if (value == nullptr) {
+                return std::nullopt;
+            }
+            options.json = value;
         } else if (option == L"--language") {
             const wchar_t* value = next();
             if (value == nullptr) {
@@ -154,6 +167,9 @@ int run(const Options& options) {
     }
     core::PipelineOptions pipelineOptions;
     pipelineOptions.furigana = loadFurigana(models);
+    if (options.chapter) {
+        pipelineOptions.terms = std::make_shared<core::TermMemory>();  // 和網頁漫畫一樣用名詞記憶
+    }
     core::Pipeline pipeline(ocr, *translation.service, pipelineOptions);
     // 背景修補（M4-01）：和主程式一樣，只在 OCR 用顯示卡、而且有模型時
     std::shared_ptr<core::IInpainter> inpainter;
@@ -171,6 +187,7 @@ int run(const Options& options) {
 
     std::filesystem::create_directories(options.output);
     int failures = 0;
+    nlohmann::json pages = nlohmann::json::array();  // --json
     for (const std::filesystem::path& path : options.images) {
         core::PipelineJob job;
         job.frame = platform::loadImage(path);
@@ -178,8 +195,18 @@ int run(const Options& options) {
         job.language = options.language;
         job.inpainter = inpainter;
         job.manga = options.page;
-        pipeline.forget(job.lens);  // 每張圖各自獨立，不拿上一張當上下文
+        job.termScope = options.chapter ? "preview" : "";
+        if (!options.chapter) {
+            pipeline.forget(job.lens);  // 每張圖各自獨立，不拿上一張當上下文
+        }
         const core::PipelineResult result = pipeline.run(job, std::stop_token{});
+        nlohmann::json groups = nlohmann::json::array();
+        for (const core::TranslatedBlock& group : result.groups) {
+            groups.push_back({{"source", group.block.text}, {"translation", group.translation}});
+        }
+        pages.push_back({{"image", platform::pathToUtf8(path.filename())},
+                         {"groups", std::move(groups)},
+                         {"glossary", result.glossary}});
         std::printf("\n== %s（%zu 段）\n", platform::pathToUtf8(path.filename()).c_str(),
                     result.groups.size());
         if (!result.error.empty()) {
@@ -255,6 +282,10 @@ int run(const Options& options) {
             options.output / (path.stem().wstring() + L".overlay.png");
         platform::savePng(shown, target);
         std::printf("→ %s\n", platform::pathToUtf8(target).c_str());
+    }
+    if (!options.json.empty()) {
+        std::ofstream(options.json, std::ios::binary)
+            << pages.dump(1, ' ', false, nlohmann::json::error_handler_t::replace);
     }
     return failures == 0 ? 0 : 1;
 }

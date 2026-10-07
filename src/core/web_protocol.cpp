@@ -204,6 +204,9 @@ WebRequest parseWebRequest(std::string_view json) {
     if (message.contains("language") && message["language"].is_string()) {
         out.language = message["language"].get<std::string>();
     }
+    if (message.contains("site") && message["site"].is_string()) {
+        out.site = message["site"].get<std::string>();
+    }
     if (message.contains("soundEffects") && message["soundEffects"].is_boolean()) {
         out.soundEffects = message["soundEffects"].get<bool>();
     }

@@ -195,7 +195,8 @@ void WebService::submitNext() {
         job.language = next.request->language;  // 擴充功能指定的語言優先
     }
     job.soundEffects = next.request->soundEffects;  // 控制面板的開關
-    job.overlayOnly = true;                         // 沒有結果視窗：蓋不上去的段落不必翻譯
+    job.termScope = next.request->site.empty() ? std::string("web") : next.request->site;
+    job.overlayOnly = true;  // 沒有結果視窗：蓋不上去的段落不必翻譯
     running_[job.generation] =
         Running{next.connection, std::move(next.id), std::move(next.cacheKey)};
     callbacks_.submit(std::move(job));

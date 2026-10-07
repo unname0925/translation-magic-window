@@ -949,6 +949,8 @@ void AppController::rebuildTranslation() {
     // 貼著圖邊的旁白、擬聲字是完整的，不能丟
     core::PipelineOptions webOptions = pipelineOptions;
     webOptions.dropEdgeBlocks = false;
+    // 名詞記憶（core/term_memory.h）：同一個網站的名字每一頁、每一章都用同一個譯名
+    webOptions.terms = std::make_shared<core::TermMemory>(dataDirectory_ / L"terms.json");
     webPipeline_ = std::make_unique<core::Pipeline>(*lockedOcr_, *translation_, webOptions);
     // 網頁漫畫自己的工作佇列：一個辨識執行緒＋kWebTranslators
     // 個翻譯執行緒（core/web_pipeline_worker.h）

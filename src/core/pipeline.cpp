@@ -281,6 +281,16 @@ Pipeline::RecognizedPage Pipeline::recognize(const PipelineJob& job, std::stop_t
         request.glossary = glossaryFor(sources, *job.glossary);
     }
 
+    if (options_.terms != nullptr && !job.termScope.empty()) {
+        std::string pageText;
+        for (const TextBlock& block : blocks) {
+            if (!block.soundEffect) {  // 擬聲字裡的片假名不是名字
+                pageText += block.text;
+                pageText += '\n';
+            }
+        }
+        page.terms = findTerms(pageText);
+    }
     page.blocks = std::move(blocks);
     page.sources = std::move(sources);
     page.request = std::move(request);
@@ -288,15 +298,48 @@ Pipeline::RecognizedPage Pipeline::recognize(const PipelineJob& job, std::stop_t
     return page;
 }
 
+void Pipeline::applyTerms(const std::vector<std::string>& terms, const PipelineJob& job,
+                          TranslateRequest& request, std::stop_token cancel) {
+    const std::vector<std::string> unknown = options_.terms->missing(job.termScope, terms);
+    if (!unknown.empty()) {
+        // 名字單獨翻：不帶上下文；使用者的專有名詞表照樣用
+        TranslateRequest names;
+        names.srcLang = request.srcLang;
+        names.dstLang = request.dstLang;
+        if (job.glossary != nullptr) {
+            names.glossary = glossaryFor(unknown, *job.glossary);
+        }
+        try {
+            const std::vector<std::string> translated =
+                translation_.translate(unknown, names, cancel);
+            std::map<std::string, std::string> learned;
+            for (std::size_t i = 0; i < unknown.size() && i < translated.size(); ++i) {
+                learned.emplace(unknown[i], translated[i]);
+            }
+            options_.terms->remember(job.termScope, learned);
+        } catch (const TranslatorError&) {
+            // 翻不了就算了：這一頁照常翻，名字下次再記
+        }
+    }
+    // 使用者的專有名詞表優先（emplace 不蓋掉已經有的）
+    for (auto& [term, translation] : options_.terms->lookup(job.termScope, terms)) {
+        request.glossary.emplace(term, std::move(translation));
+    }
+}
+
 PipelineResult Pipeline::finish(RecognizedPage page, const PipelineJob& job,
                                 std::stop_token cancel) {
     PipelineResult result = std::move(page.result);
     std::vector<TextBlock> blocks = std::move(page.blocks);
     const std::vector<std::string> sources = std::move(page.sources);
-    const TranslateRequest request = std::move(page.request);
+    TranslateRequest request = std::move(page.request);
     if (cancel.stop_requested()) {
         return result;
     }
+    if (!page.terms.empty()) {
+        applyTerms(page.terms, job, request, cancel);
+    }
+    result.glossary = request.glossary;
     const auto translationStart = std::chrono::steady_clock::now();
     std::vector<std::string> translations;
     try {

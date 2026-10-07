@@ -70,6 +70,7 @@ add_library(tmw_core STATIC
     trigger_state_machine.h
     utf8.cpp
     web_pipeline_worker.cpp
+    term_memory.cpp
     web_protocol.cpp
     web_result_cache.cpp
     utf8.h)

@@ -250,6 +250,7 @@ async function translate(request) {
         pixels: image.pixels,
         language,
         soundEffects,
+        site: request.site || "", // 主程式的名詞記憶依網站分開
       });
     } catch (error) {
       port = null;

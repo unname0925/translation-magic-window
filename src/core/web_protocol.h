@@ -68,6 +68,7 @@ struct WebRequest {
     ImageBgra image;              // Translate：RGBA 已經轉成 BGRA
     std::string language;         // Translate："auto"、"ja"…；沒給時是空字串
     bool soundEffects = true;     // Translate：要不要翻譯擬聲字（沒給時翻）
+    std::string site;             // Translate：哪個網站（名詞記憶依網站分開，core/term_memory.h）
     std::uint64_t pixelHash = 0;  // Translate：像素的雜湊（WebService 填，查硬碟快取用）
     std::string error;            // Invalid：哪裡不對（回給擴充功能看）
 };

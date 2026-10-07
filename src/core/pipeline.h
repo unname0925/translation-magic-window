@@ -26,6 +26,7 @@
 #include "core/language.h"
 #include "core/overlay_item.h"
 #include "core/ruby.h"
+#include "core/term_memory.h"
 #include "core/text_layout.h"
 #include "core/translation_service.h"
 
@@ -60,6 +61,8 @@ struct PipelineJob {
     // 只看覆蓋層（網頁漫畫：沒有結果視窗）：蓋不上去的段落（core/overlay_plan.h 的
     // coverDecision）不翻譯，省下翻譯的時間。透鏡的結果視窗會列出每一段，所以透鏡不用
     bool overlayOnly = false;
+    // 名詞記憶的範圍（core/term_memory.h；網頁漫畫是網站）。空字串：不用名詞記憶
+    std::string termScope;
 };
 
 struct PipelineTimings {
@@ -105,6 +108,8 @@ struct PipelineResult {
     // 背景色要從畫面取，畫面不會跟著結果帶出去，所以在這裡先規劃好。
     std::vector<OverlayItem> overlay;
     OverlayDrops overlayDrops;  // groups 裡沒有蓋上去的，依原因計數
+    // 這次翻譯實際送出的專有名詞表（使用者的 glossary.txt 加上名詞記憶），查問題用
+    Glossary glossary;
 
     bool empty() const { return groups.empty(); }
 };
@@ -173,6 +178,8 @@ struct PipelineOptions {
     std::size_t contextGroups = 4;
     // ルビ的一般讀音表（M2-13）。沒有時（讀音表還沒產生）用「讀音是片假名」判斷特殊讀音
     std::shared_ptr<const FuriganaReadings> furigana;
+    // 名詞記憶：同一個名字每一頁都用同一個譯名（PipelineJob::termScope 不是空的才用）
+    std::shared_ptr<TermMemory> terms;
 };
 
 // 一次處理。可以從任何執行緒呼叫，但同一個 Pipeline 不要同時跑兩次
@@ -193,6 +200,7 @@ public:
         std::vector<TextBlock> blocks;
         std::vector<std::string> sources;
         TranslateRequest request;
+        std::vector<std::string> terms;  // 這一頁原文裡看起來像名字的詞（名詞記憶用）
     };
     RecognizedPage recognize(const PipelineJob& job, std::stop_token cancel);
     PipelineResult finish(RecognizedPage page, const PipelineJob& job, std::stop_token cancel);
@@ -200,6 +208,12 @@ public:
     // 忘掉「上一次的結果」，下一次一定會被當成新的內容（例如透鏡被拖到別的地方）
     void forget(int lens);
 
+private:
+    // 這一頁的名字還沒記過的，先一起翻譯一次記下來；再把記過的譯名加進專有名詞表
+    void applyTerms(const std::vector<std::string>& terms, const PipelineJob& job,
+                    TranslateRequest& request, std::stop_token cancel);
+
+public:
 private:
     struct LensMemory {
         std::string text;                                         // 上一次的原文（接起來）
