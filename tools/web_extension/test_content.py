@@ -563,7 +563,9 @@ def make_capture_page(content: str) -> str:
     const status = () => {{ let r = null; listener({{ kind: "page-status" }}, {{}}, (x) => r = x); return r; }};
     const wait = (ms) => new Promise((r) => setTimeout(r, ms));
     (async () => {{
-      await wait(2000);
+      // 「開始時先載入整頁」會先自動捲到底再捲回來，捲完才截：最多等 8 秒
+      for (let i = 0; i < 80 && overlays() < 1; i++) await wait(100);
+      await wait(300);
       check("畫面上的那張用截圖翻好", overlays() === 1 && captures.length === 1 && translated === 1,
             overlays() + " overlays, " + captures.length + " captures");
       check("不在畫面上的那張等著、說明原因", status().waiting === 1 && status().reasons.some((r) => r.includes("截圖")),
@@ -572,8 +574,79 @@ def make_capture_page(content: str) -> str:
       for (let i = 0; i < 50 && overlays() < 2; i++) await wait(100);  // 掃描、截圖、翻譯：最多等 5 秒
       check("捲到整張出現時再截", overlays() === 2 && captures.length === 2 && translated === 2,
             overlays() + " overlays, " + captures.length + " captures");
-      const leftHidden = [...document.querySelectorAll("tmw-overlay")].some((o) => o.style.visibility === "hidden");
+      const leftHidden = [...document.querySelectorAll("tmw-overlay, tmw-panel")].some(
+        (o) => o.style.visibility === "hidden" || o.style.opacity === "0");
       check("截圖時藏起來的東西都恢復了", !leftHidden);
+      document.body.setAttribute("data-report", report.join(" | "));
+    }})();
+    </script>"""
+    return page
+
+
+def make_tall_capture_page(content: str) -> str:
+    """比畫面高、讀不到像素的 canvas（像 soraraw 的直排模式）：看得到的那一段先截圖翻譯、
+    捲動時再截下一段，各段的譯文拼成整張；全部段落都翻過才算完成。"""
+    page = f"""<!doctype html><meta charset=utf-8>
+    <style>
+      body {{ margin: 0; }}
+      #reader canvas {{ display: block; width: 600px; height: 1600px; margin: 0 auto; }}
+    </style>
+    <div id=reader></div>
+    <script>
+    const draw = CanvasRenderingContext2D.prototype.drawImage;
+    CanvasRenderingContext2D.prototype.drawImage = function (source, ...rest) {{
+      if (source.dataset?.tainted) this.canvas.__tainted = true;
+      return draw.call(this, source, ...rest);
+    }};
+    const read = CanvasRenderingContext2D.prototype.getImageData;
+    CanvasRenderingContext2D.prototype.getImageData = function (...args) {{
+      if (this.canvas.__tainted) throw new DOMException("tainted", "SecurityError");
+      return read.apply(this, args);
+    }};
+    const reader = document.getElementById("reader");
+    const canvas = document.createElement("canvas");
+    canvas.width = 600; canvas.height = 1600; canvas.dataset.tainted = "1";
+    canvas.getContext("2d").fillRect(0, 0, 10, 10);
+    reader.append(canvas);
+    const spacer = document.createElement("div"); spacer.style.height = "800px"; document.body.append(spacer);
+    const captures = [];
+    let listener = null;
+    window.chrome = {{ runtime: {{ onMessage: {{ addListener: (f) => listener = f, removeListener: () => listener = null }},
+                                  sendMessage: async (message) => {{
+      if (message.kind === "capture") {{
+        captures.push({{ w: Math.round(message.rect.width), h: Math.round(message.rect.height) }});
+        return {{ type: "captured", token: captures.length }};
+      }}
+      if (message.kind !== "translate") return {{ type: "engines", engines: [], current: "" }};
+      const shot = captures[message.captured - 1];
+      await new Promise((r) => setTimeout(r, 20));
+      // 每一段的正中間一個對話框（離上下邊緣很遠，不會被當成切到一半的）
+      const mid = Math.round(shot.h / 2);
+      return {{ type: "result", id: "t" + message.captured, width: shot.w, height: shot.h, error: "", notice: "",
+                patchesDropped: 0, items: [{{ rect: [200, mid - 60, 400, mid + 60], text: "譯文", vertical: true,
+                foreground: "#000000", background: "#ffffff", size: "normal", lineThickness: 30, ruby: [] }}] }};
+    }} }} }};
+    </script>
+    <script>{content}</script>
+    <script>
+    const report = [];
+    function check(name, ok, detail = "") {{ report.push((ok ? "PASS " : "FAIL ") + name + (detail ? " (" + detail + ")" : "")); }}
+    const boxes = () => [...document.querySelectorAll("tmw-overlay")].reduce(
+      (n, o) => n + (o.shadowRoot ? o.shadowRoot.querySelectorAll(".item").length : 0), 0);
+    const status = () => {{ let r = null; listener({{ kind: "page-status" }}, {{}}, (x) => r = x); return r; }};
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    const attach = Element.prototype.attachShadow;
+    (async () => {{
+      for (let i = 0; i < 80 && captures.length < 1; i++) await wait(100);
+      await wait(800);
+      check("先翻看得到的那一段、說明會分段", captures.length === 1 && status().done === 0 &&
+            status().reasons.some((r) => r.includes("比畫面高")), captures.length + " captures, " + JSON.stringify(status().reasons));
+      for (const y of [700, 1400]) {{
+        scrollTo(0, y);
+        for (let i = 0; i < 50 && status().done === 0 && captures.length < (y === 700 ? 2 : 3); i++) await wait(100);
+        await wait(500);
+      }}
+      check("捲完之後整張翻完", status().done === 1 && captures.length >= 2, captures.length + " captures, done " + status().done);
       document.body.setAttribute("data-report", report.join(" | "));
     }})();
     </script>"""
@@ -609,6 +682,7 @@ def main() -> int:
         "sound-effects": make_sound_page(content),
         "skip": make_skip_page(content),
         "capture": make_capture_page(content),
+        "capture-tall": make_tall_capture_page(content),
     }
     failed = 0
     with tempfile.TemporaryDirectory() as folder:

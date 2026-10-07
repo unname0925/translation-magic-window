@@ -357,7 +357,9 @@ PipelineResult Pipeline::finish(RecognizedPage page, const PipelineJob& job,
         return result;
     }
     if (!page.terms.empty()) {
+        const auto termsStart = std::chrono::steady_clock::now();
         applyTerms(page.terms, job, request, cancel);
+        result.timings.termsMs = millisecondsSince(termsStart);
     }
     result.glossary = request.glossary;
     if (job.pageIndex >= 0) {

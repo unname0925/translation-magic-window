@@ -31,6 +31,7 @@
             box-sizing: border-box; overflow: hidden; }
     .patch { position: absolute; inset: 0; width: 100%; height: 100%; }
     .text { position: relative; margin: 0; padding: 0; line-height: 1.15; text-align: center;
+            line-break: strict;
             font-family: "Microsoft JhengHei", "Noto Sans TC", sans-serif; font-weight: 600;
             overflow-wrap: anywhere; white-space: pre-wrap; }
     .vertical { writing-mode: vertical-rl; text-orientation: mixed; }
@@ -183,6 +184,9 @@
   const canvasIds = new WeakMap(); // canvas 沒有網址：每一個給一個編號
   let canvasSerial = 0;
   let lastNotice = ""; // 主程式沒有用首選引擎時的說明（例如改用 Google）
+  // 這一章有沒有翻好過任何一張：還沒有時一次只送一張（第一張譯文最快出現；
+  // 第一批同時送 6 張時，第一張要等 50 秒以上）
+  let firstResultSeen = false;
   let picking = false; // 正在選「不要翻的圖」
   let hovered = null; // 選圖時滑鼠底下加了框的圖
   let queue = []; // 等著送出的圖片網址
@@ -298,6 +302,10 @@
     if (rect.width < MIN_WIDTH) {
       return false;
     }
+    if (element instanceof HTMLImageElement && element.complete && element.naturalWidth === 0 &&
+        !lazyUrl(element)) {
+      return false; // 破圖
+    }
     if (element instanceof HTMLImageElement) {
       if (!loaded(element) && !lazyUrl(element)) {
         return false; // 小圖示，或延遲載入但找不到網址（載入後會再掃一次）
@@ -338,7 +346,7 @@
     const width = best * 20;
     return elements.filter((element) => {
       const w = element.getBoundingClientRect().width;
-      return w >= width * 0.8 && w <= width * 1.25;
+      return (w >= width * 0.8 && w <= width * 1.25) || (w >= width * 1.6 && w <= width * 2.6);
     });
   }
 
@@ -417,7 +425,7 @@
       const entry = sources.get(source) || track(source);
       entry.element = element; // 送出的先後依這個元素離畫面多近
       // 要截圖的（讀不到像素）等整張都在畫面上才排
-      if (entry.state === "waiting" && readable(element) && (!entry.needsCapture || fullyVisible(element))) {
+      if (entry.state === "waiting" && readable(element) && (!entry.needsCapture || captureRegion(element, entry))) {
         entry.state = "queued"; // 剛剛抓不到、現在載入了：從頁面讀
         queue.push(source);
       }
@@ -514,30 +522,210 @@
 
   // 截下分頁目前的畫面、裁出這張圖（background.js 的 capture）。截圖前把蓋在這張圖上的
   // 控制面板和別張圖的譯文暫時藏起來，免得截進去；截完馬上恢復，再要求翻譯
+  // 這張圖現在能截哪一段（element 座標，CSS 像素）。左右要整個在畫面上；比畫面高的圖截看得到的那段，
+  // 至少要看得到半個畫面（或整張）而且還有沒翻過的部分。不能截時回傳 null
+  function captureRegion(element, entry) {
+    const span = visibleSpan(element.getBoundingClientRect());
+    if (!span) {
+      return null;
+    }
+    const { top, bottom } = span;
+    const covered = entry.slices || [];
+    if (covered.length && uncoveredLength(covered, top, bottom) < Math.min(80, (bottom - top) / 2)) {
+      return null; // 這一段翻過了
+    }
+    return { top, bottom };
+  }
+
+  // 這張圖看得到、而且值得截的那一段（element 座標）：左右要整個在畫面上；
+  // 上下至少看得到半個畫面或整張，或是看得到它的頂端／底端 120 像素以上（捲到最後才露出來的那一段）
+  function visibleSpan(rect) {
+    if (rect.width <= 0 || rect.height <= 0 || rect.left < -1 || rect.right > innerWidth + 1) {
+      return null;
+    }
+    const top = Math.max(0, -rect.top);
+    const bottom = Math.min(rect.height, innerHeight - rect.top);
+    const end = top <= 0.5 || bottom >= rect.height - 0.5;
+    if (bottom - top < Math.min(rect.height - 1, innerHeight * 0.5) && !(end && bottom - top >= 120)) {
+      return null;
+    }
+    return { top, bottom };
+  }
+
+  // [top, bottom] 裡還沒被 slices 蓋到的長度
+  function uncoveredLength(slices, top, bottom) {
+    let length = 0;
+    let at = top;
+    for (const [a, b] of [...slices].sort((x, y) => x[0] - y[0])) {
+      if (b <= at) {
+        continue;
+      }
+      if (a > at) {
+        length += Math.min(a, bottom) - at;
+      }
+      at = Math.max(at, b);
+      if (at >= bottom) {
+        break;
+      }
+    }
+    return length + Math.max(0, bottom - at);
+  }
+
+  // 分段截圖翻完了：沒截到的不到整張的 12%（只比畫面高一點點的頁，例如 soraraw 的雙頁模式比畫面高 34 像素，
+  // 最下面那一小段捲不到，以前就永遠「等待中」）
+  function sliceComplete(entry) {
+    return entry.sliceHeight > 0 &&
+           uncoveredLength(entry.slices || [], 0, entry.sliceHeight) < Math.max(2, entry.sliceHeight * 0.12);
+  }
+
+  // 一段的結果拼進整張圖：座標換成「整張圖的 CSS 像素 × 第一段的縮放」。
+  // 碰到這一段上下邊緣的段落（被切掉一半的對話框）先不收，等下一段完整出現時再翻；
+  // 和已經收過的段落重疊一半以上的不重複收
+  function mergeSlice(entry, reply) {
+    const { top, bottom, width, height } = reply.slice;
+    const scale = reply.width / width; // 這一段的圖，每個 CSS 像素是幾個像素
+    if (!entry.merged) {
+      entry.merged = { ...reply, items: [], width: Math.round(width * scale), height: Math.round(height * scale) };
+      delete entry.merged.slice;
+      entry.sliceHeight = height;
+      entry.slices = [];
+    }
+    const merged = entry.merged;
+    const factor = merged.width / width / scale; // 這一段的像素 → 整張圖的像素
+    const edge = 4 * scale;
+    const area = (r) => Math.max(0, r[2] - r[0]) * Math.max(0, r[3] - r[1]);
+    const items = [...merged.items];
+    for (const item of reply.items) {
+      const [left, itemTop, right, itemBottom] = item.rect;
+      if ((top > 0 && itemTop <= edge) || (bottom < height && itemBottom >= reply.height - edge)) {
+        continue;
+      }
+      const rect = [left * factor, (itemTop + top * scale) * factor, right * factor, (itemBottom + top * scale) * factor]
+        .map(Math.round);
+      const duplicate = items.some((other) => {
+        const r = other.rect;
+        const shared = [Math.max(r[0], rect[0]), Math.max(r[1], rect[1]), Math.min(r[2], rect[2]), Math.min(r[3], rect[3])];
+        return area(shared) > 0.5 * Math.min(area(r), area(rect));
+      });
+      if (!duplicate) {
+        items.push({ ...item, rect, lineThickness: Math.round((item.lineThickness || 0) * factor) });
+      }
+    }
+    // 收進來的範圍：上下邊緣留 40 像素（那裡的段落等下一段）
+    entry.slices.push([top > 0 ? top + 40 : 0, bottom < height ? bottom - 40 : height]);
+    entry.merged = { ...merged, items };
+    return entry.merged;
+  }
+
+  // 等這張圖停在同一個位置（翻頁的滑動動畫結束），最多等 3 秒
+  async function settle(element) {
+    let last = null;
+    let still = 0;
+    for (let i = 0; i < 30 && still < 3; i++) {
+      await nextFrame();
+      const r = element.getBoundingClientRect();
+      const same = last && Math.abs(r.left - last.left) < 0.5 && Math.abs(r.top - last.top) < 0.5 &&
+                   Math.abs(r.width - last.width) < 0.5;
+      still = same ? still + 1 : 0;
+      last = r;
+    }
+    return still >= 3;
+  }
+
+  // 網站蓋在這張圖上的東西（浮動的按鈕、提示、章名列）：位置和圖重疊、定位方式是浮動的
+  // （absolute、fixed、sticky），又不是這張圖的上層容器的元素。用位置找而不是用 elementsFromPoint，
+  // 因為這類提示常常設了 pointer-events: none（點擊穿透），點的位置找不到它們。只留最外層的
+  function coveringElements(element, rect) {
+    const found = [];
+    for (const other of document.body.querySelectorAll("*")) {
+      if (other === element || other.contains(element) || element.contains(other) ||
+          other === panelHost || other.tagName === "TMW-OVERLAY" || other.tagName === "TMW-PANEL") {
+        continue;
+      }
+      const position = getComputedStyle(other).position;
+      if (position !== "absolute" && position !== "fixed" && position !== "sticky") {
+        continue;
+      }
+      const r = other.getBoundingClientRect();
+      if (r.width === 0 || r.height === 0 || r.right <= rect.left || r.left >= rect.left + rect.width ||
+          r.bottom <= rect.top || r.top >= rect.top + rect.height) {
+        continue;
+      }
+      // 別張圖（閱讀器的其他頁）不用藏：它們和這張圖不重疊，重疊的是背景或容器
+      if (other.querySelector?.("img, canvas") && !(other instanceof HTMLImageElement)) {
+        continue;
+      }
+      found.push(other);
+    }
+    return found.filter((node) => !found.some((outer) => outer !== node && outer.contains(node)));
+  }
+
+  // 截下分頁目前的畫面、裁出這張圖看得到的那一段（background.js 的 capture）。
+  // 先等圖停穩（翻頁動畫中截會整片偏掉）；截圖前把蓋在圖上的控制面板、別張圖的譯文和網站自己的介面
+  // 暫時藏起來；截完核對位置，動過就丟掉，下次再截（偏掉的結果也就不會進快取）
   async function captureAndSend(element, soundEffects, page) {
+    // 「載入整頁」正在自動捲動：圖會一直動，等它捲完
+    if (preloading || !(await settle(element)) || preloading) {
+      return { type: "error", message: "capture-moving" };
+    }
     const rect = element.getBoundingClientRect();
+    const span = visibleSpan(rect);
+    if (!span) {
+      return { type: "error", message: "capture-moving" }; // 停穩的時候已經不在畫面上了（網頁捲走了）：等下次
+    }
+    const { top, bottom } = span;
+    const visible = { left: rect.left, top: rect.top + top, width: rect.width, height: bottom - top };
     const overlaps = (other) => {
       const r = other.getBoundingClientRect();
-      return r.right > rect.left && r.left < rect.right && r.bottom > rect.top && r.top < rect.bottom;
+      return r.right > visible.left && r.left < visible.left + visible.width &&
+             r.bottom > visible.top && r.top < visible.top + visible.height;
     };
-    const hidden = [panel, ...[...pages.values()].map((page) => page.anchor).filter(Boolean)].filter(overlaps);
-    hidden.forEach((node) => node.style.setProperty("visibility", "hidden", "important"));
+    const ours = [panel, ...[...pages.values()].map((other) => other.anchor).filter(Boolean)].filter(overlaps);
+    // 用 opacity 藏而不是 visibility：子元素可以自己設 visibility: visible 再顯示出來
+    // （soraraw「中央タップでUIを非表示」的提示就是這樣），opacity 蓋得住整棵子樹
+    // 也關掉 transition：網站的元素常設 transition: all，透明度會慢慢淡出，截圖時還看得到
+    const saved = (node, name) => ({ name, value: node.style.getPropertyValue(name),
+                                      priority: node.style.getPropertyPriority(name) });
+    const hidden = [...new Set([...ours, ...coveringElements(element, visible)])].map((node) => ({
+      node, before: [saved(node, "opacity"), saved(node, "transition")] }));
+    hidden.forEach(({ node }) => {
+      node.style.setProperty("transition", "none", "important");
+      node.style.setProperty("opacity", "0", "important");
+    });
     let shot;
     try {
       await nextFrame();
       await nextFrame(); // 等藏起來的畫面真的畫出來
       shot = await chrome.runtime.sendMessage({
         kind: "capture",
-        rect: { x: rect.left, y: rect.top, width: rect.width, height: rect.height },
+        rect: { x: visible.left, y: visible.top, width: visible.width, height: visible.height },
         scale: devicePixelRatio,
       });
     } finally {
-      hidden.forEach((node) => node.style.removeProperty("visibility"));
+      hidden.forEach(({ node, before }) => {
+        for (const { name, value, priority } of before) {
+          if (value) {
+            node.style.setProperty(name, value, priority);
+          } else {
+            node.style.removeProperty(name);
+          }
+        }
+      });
+    }
+    const after = element.getBoundingClientRect();
+    if (Math.abs(after.left - rect.left) > 1 || Math.abs(after.top - rect.top) > 1) {
+      return { type: "error", message: "capture-moving" }; // 截的時候圖動了：結果會偏，不要
     }
     if (shot?.type !== "captured") {
       return shot || { type: "error", message: "capture-failed" };
     }
-    return await chrome.runtime.sendMessage({ kind: "translate", site: location.origin, ...page, captured: shot.token, soundEffects });
+    const reply = await chrome.runtime.sendMessage({ kind: "translate", site: location.origin, ...page,
+                                                     captured: shot.token, soundEffects });
+    // 比畫面高的圖只截了一段：記下是哪一段，交給 mergeSlice 拼起來
+    if (reply?.type === "result" && (top > 0.5 || bottom < rect.height - 0.5)) {
+      reply.slice = { top, bottom, width: rect.width, height: rect.height };
+    }
+    return reply;
   }
 
   async function sendInPage(element, soundEffects, page) {
@@ -574,6 +762,7 @@
       "tab-hidden": "分頁不在前面，截不到圖：切回來時再翻",
       "capture-empty": "截圖裁不到這張圖",
       "capture-expired": "截好的圖等太久被丟掉了",
+      "capture-moving": "這張圖一直在動（翻頁動畫），等它停下來再截",
       disconnected: "和主程式的連線斷了",
     };
     if (known[message]) {
@@ -600,8 +789,9 @@
     let reply;
     try {
       if (entry.needsCapture) {
-        reply = element?.isConnected && fullyVisible(element) ? await captureAndSend(element, soundEffects, pageOf(source))
-                                                              : { type: "error", message: "page-protected" };
+        const region = element?.isConnected ? captureRegion(element, entry) : null;
+        reply = region ? await captureAndSend(element, soundEffects, pageOf(source), region)
+                       : { type: "error", message: "page-protected" };
       } else if (isHttp(source)) {
         reply = await chrome.runtime.sendMessage({ kind: "translate", site: location.origin, ...pageOf(source), url: source, page: location.href, soundEffects });
         if (reply?.fetchFailed) {
@@ -632,9 +822,9 @@
       return;
     }
     // 讀不到像素（canvas 被跨網域保護）、或截圖時分頁不在前面：改用截圖，等整張都在畫面上
-    if ((reply?.message === "page-protected" || reply?.message === "tab-hidden") && element?.isConnected) {
+    if (["page-protected", "tab-hidden", "capture-moving"].includes(reply?.message) && element?.isConnected) {
       entry.needsCapture = true;
-      if (fullyVisible(element) && reply.message === "page-protected" && !entry.triedCapture) {
+      if (captureRegion(element, entry) && reply.message === "page-protected" && !entry.triedCapture) {
         entry.triedCapture = true;
         entry.state = "queued";
         queue.push(source);
@@ -642,11 +832,28 @@
       }
       entry.triedCapture = false;
       entry.state = "waiting";
-      entry.reason = "網頁不讓讀取這張圖：捲到整張都在畫面上時用截圖翻譯";
+      entry.reason = entry.slices?.length ? "這張圖比畫面高：捲動時一段一段截圖翻譯"
+                                          : "網頁不讓讀取這張圖：捲到它出現在畫面上時用截圖翻譯";
       return;
     }
     if (reply?.notice) {
       lastNotice = reply.notice;
+    }
+    if (reply?.type === "result" && !reply.error && reply.slice) {
+      // 比畫面高的圖：這一段的譯文拼進整張圖的結果；還沒翻完的段落等捲到時再截
+      const merged = mergeSlice(entry, reply);
+      for (const [shown, page] of pages) {
+        if (page.source === source) {
+          page.result = merged;
+          showOverlay(shown, page);
+        }
+      }
+      if (!sliceComplete(entry)) {
+        entry.state = "waiting";
+        entry.reason = "這張圖比畫面高：捲動時一段一段截圖翻譯";
+        return;
+      }
+      reply = merged;
     }
     if (reply?.type === "result" && !reply.error) {
       entry.state = "done";
@@ -670,7 +877,8 @@
   }
 
   function pump() {
-    if (running >= IN_FLIGHT || fatal) {
+    const limit = firstResultSeen ? IN_FLIGHT : 1;
+    if (running >= limit || fatal) {
       return;
     }
     // 每次都依「現在」離畫面多近重新排：使用者捲到哪就先翻哪；元素被拿掉的排最後
@@ -679,12 +887,14 @@
       const element = sources.get(source)?.element;
       return element?.isConnected ? distanceToViewport(element) : Number.MAX_SAFE_INTEGER;
     };
-    queue.sort((a, b) => distance(a) - distance(b));
-    while (running < IN_FLIGHT && queue.length > 0) {
+    const right = (source) => sources.get(source)?.element?.getBoundingClientRect().right ?? 0;
+    queue.sort((a, b) => distance(a) - distance(b) || right(b) - right(a));
+    while (running < limit && queue.length > 0) {
       const source = queue.shift();
       running += 1;
       process(source).finally(() => {
         running -= 1;
+        firstResultSeen = true;
         updateBadge();
         pump();
       });
@@ -1080,7 +1290,7 @@
     // 等著截圖的圖已經整張在畫面上：有些閱讀器用 transform 移動內容，捲動時不會有 scroll 事件
     for (const entry of sources.values()) {
       if (entry.state === "waiting" && entry.needsCapture && entry.element?.isConnected &&
-          fullyVisible(entry.element)) {
+          captureRegion(entry.element, entry)) {
         scheduleScan();
         break;
       }
@@ -1106,6 +1316,7 @@
     if (chapter !== lastChapter) {
       lastChapter = chapter;
       sources = new Map(); // 新的一章重新計數（翻好的還記在 doneBySource）
+      firstResultSeen = false; // 新的一章：第一張一樣先送
       queue = [];
       scan();
     }

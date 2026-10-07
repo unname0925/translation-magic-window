@@ -70,20 +70,62 @@ def page_target() -> dict:
     return pages[0]
 
 
-def worker_target() -> dict:
+def find_worker() -> dict | None:
     for target in targets():
         if target["type"] == "service_worker" and EXTENSION_ID in target["url"]:
             return target
-    raise SystemExit("找不到擴充功能的背景程式（沒有載入？）")
+    return None
+
+
+async def wake_worker() -> None:
+    """背景程式（MV3 service worker）閒置一陣子會被瀏覽器停掉：開一下擴充功能自己的頁面把它叫醒。"""
+    version = json.loads(urllib.request.urlopen(f"http://127.0.0.1:{PORT}/json/version", timeout=5).read())
+    async with websockets.connect(version["webSocketDebuggerUrl"], max_size=None) as ws:
+        async def call(method, my, **params):
+            await ws.send(json.dumps({"id": my, "method": method, "params": params}))
+            while True:
+                message = json.loads(await ws.recv())
+                if message.get("id") == my:
+                    return message.get("result", {})
+        created = await call("Target.createTarget", 1, url=f"chrome-extension://{EXTENSION_ID}/popup.html",
+                             background=True)
+        for _ in range(20):
+            if find_worker():
+                break
+            await asyncio.sleep(0.25)
+        await call("Target.closeTarget", 2, targetId=created.get("targetId", ""))
+
+
+def worker_target() -> dict:
+    target = find_worker()
+    if target is None:
+        asyncio.run(wake_worker()) if not asyncio_running() else None
+        target = find_worker()
+    if target is None:
+        raise SystemExit(f"找不到擴充功能的背景程式（{disable_reasons()}）")
+    return target
+
+
+def asyncio_running() -> bool:
+    try:
+        asyncio.get_running_loop()
+        return True
+    except RuntimeError:
+        return False
 
 
 class Session:
     def __init__(self, target: dict):
         self.url = target["webSocketDebuggerUrl"]
+        self.page = target.get("type") == "page"
         self.counter = 0
 
     async def __aenter__(self):
         self.ws = await websockets.connect(self.url, max_size=None)
+        if self.page:
+            # 分頁帶到最前面：在背景的分頁會被當成「隱藏中」（document.hidden），
+            # 有些網站隱藏中會蓋上遮罩、停止翻頁動畫
+            await self.call("Page.bringToFront")
         return self
 
     async def __aexit__(self, *exc):
@@ -131,15 +173,28 @@ def launch(onscreen: bool) -> None:
     manifest = json.loads((EXTENSION / "manifest.json").read_text(encoding="utf-8"))
     manifest["host_permissions"] = manifest.pop("optional_host_permissions", ["<all_urls>"])
     (EXTENSION / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
-    position = "--window-position=40,40" if onscreen else "--window-position=-2400,0"
+    # 預設用無頭模式：沒有實體視窗，螢幕關掉、鎖定時網頁也不會被當成「隱藏中」（document.hidden）。
+    # 有些網站（soraraw）隱藏中會蓋上「內容已暫時隱藏」的遮罩，翻譯的截圖也截不到東西
+    position = "--window-position=40,40" if onscreen else "--headless=new"
+    # 無頭模式的瀏覽器識別字串有「HeadlessEdg」：網站可能給不同的版面或擋掉，換成一般 Edge 的
+    version = subprocess.run(["powershell", "-NoProfile", "-Command", f"(Get-Item '{EDGE}').VersionInfo.ProductVersion"],
+                             capture_output=True, text=True, check=False).stdout.strip() or "154.0.0.0"
+    agent = (f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+             f"Chrome/{version.split('.')[0]}.0.0.0 Safari/537.36 Edg/{version}")
     subprocess.Popen([str(EDGE), f"--user-data-dir={PROFILE}", f"--remote-debugging-port={PORT}",
                       "--no-first-run", "--no-default-browser-check", "--disable-features=msEdgeFirstRunExperience",
                       "--disable-backgrounding-occluded-windows", "--disable-renderer-backgrounding",
-                      "--window-size=1400,950", position, f"--load-extension={EXTENSION}", "about:blank"],
+                      # 不登入、不同步：全新的設定檔會被 Edge 自動用 Windows 的帳號登入，
+                      # 把使用者帳號裡的擴充功能裝進來、把測試時的瀏覽紀錄同步回帳號
+                      "--disable-sync", "--no-service-autorun",
+                      "--disable-features=msImplicitSignin,msEdgeSyncConsent,msSignInRequired,EdgeSync",
+                      "--window-size=1400,950", position, f"--user-agent={agent}",
+                      f"--load-extension={EXTENSION}", "about:blank"],
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     for _ in range(60):
         try:
-            worker_target()
+            if find_worker() is None:
+                raise LookupError
             print(f"Edge 開好了（埠 {PORT}），擴充功能已載入")
             return
         except Exception:
@@ -167,10 +222,12 @@ def close(quiet: bool = False) -> None:
 
 async def screenshot(path: str) -> None:
     async with Session(page_target()) as s:
-        size = await s.evaluate("({ w: innerWidth, h: innerHeight, dpr: devicePixelRatio })")
+        size = await s.evaluate("({ w: innerWidth, h: innerHeight, dpr: devicePixelRatio, "
+                                "x: visualViewport.pageLeft, y: visualViewport.pageTop })")
         # 截成 CSS 像素的大小（縮放 1／devicePixelRatio）：圖上的座標可以直接拿來 click
         shot = await s.call("Page.captureScreenshot", format="png", clip={
-            "x": 0, "y": 0, "width": size["w"], "height": size["h"], "scale": 1 / size["dpr"]})
+            # clip 是整份網頁的座標：捲動之後要從目前的位置截（以前固定從頂端截，長條模式截到空白）
+            "x": size["x"], "y": size["y"], "width": size["w"], "height": size["h"], "scale": 1 / size["dpr"]})
         data = base64.b64decode(shot["data"])
         Path(path).write_bytes(data)
         width, height = struct.unpack(">II", data[16:24])  # PNG 的 IHDR
@@ -236,6 +293,8 @@ async def open_url(url: str) -> None:
 
 
 async def in_worker(expression: str):
+    if find_worker() is None:
+        await wake_worker()
     async with Session(worker_target()) as s:
         return await s.evaluate(expression)
 
@@ -244,7 +303,7 @@ async def tab_id() -> int:
     page = page_target()
     tabs = await in_worker("chrome.tabs.query({}).then((t) => t.map((x) => ({ id: x.id, url: x.url })))")
     for tab in tabs:
-        if tab["url"] == page["url"]:
+        if tab.get("url") == page["url"]:  # 有些分頁（空白頁之類）查不到網址
             return tab["id"]
     raise SystemExit("找不到這個分頁的 tab id")
 

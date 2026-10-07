@@ -77,6 +77,8 @@ struct PipelineTimings {
     double overlayMs = 0.0;
     // 漫畫模式用 manga-ocr 重讀直排對白的時間（已經算在 ocrMs 裡，另外記下來找慢在哪）
     double rereadMs = 0.0;
+    // 名詞記憶：新名字先翻一次的時間（在 translationMs 之前，不包含在裡面）
+    double termsMs = 0.0;
     // OCR 是畫面還在等穩定時預先做好的（ocrMs 只剩沿用的時間，幾乎是 0）
     bool ocrPrepared = false;
 

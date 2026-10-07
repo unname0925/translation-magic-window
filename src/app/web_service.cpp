@@ -223,8 +223,11 @@ void WebService::onResult(const core::PipelineResult& result) {
         callbacks_.log("網頁：" + std::to_string(result.groups.size()) + " 段，OCR " +
                        std::to_string(static_cast<int>(t.ocrMs)) + " ms（manga-ocr " +
                        std::to_string(static_cast<int>(t.rereadMs)) + "）、翻譯 " +
-                       std::to_string(static_cast<int>(t.translationMs)) + " ms、覆蓋層 " +
-                       std::to_string(static_cast<int>(t.overlayMs)) + " ms" +
+                       std::to_string(static_cast<int>(t.translationMs)) + " ms" +
+                       (t.termsMs >= 1.0
+                            ? "（名詞 " + std::to_string(static_cast<int>(t.termsMs)) + "）"
+                            : std::string()) +
+                       "、覆蓋層 " + std::to_string(static_cast<int>(t.overlayMs)) + " ms" +
                        dropSummary(result.overlayDrops) +
                        (result.error.empty() ? "" : "，翻譯失敗：" + result.error));
     }
