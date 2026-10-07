@@ -17,6 +17,8 @@
     python tools/web_extension/edge_driver.py close
 
 - 用獨立的設定檔（暫存資料夾），不碰使用者自己的 Edge；close 只關這個設定檔的程序。
+  每次 launch 都從全新的設定檔開始：Edge 154 會把「開發人員模式沒開」時用 --load-extension 載入的
+  擴充功能停用（disable_reasons 1<<24），而且停用的狀態記在設定檔裡，第二次開同一個設定檔就載不起來。
 - 「讀取所有網站」的權限要使用者在瀏覽器的對話框按允許，程式按不到：所以載入的是擴充功能的副本，
   manifest 裡直接給好這個權限（ID 一樣，因為公鑰一樣）。第一次使用的權限流程要另外手動測。
 - 視窗放在螢幕外（--onscreen 放在螢幕上），關掉背景節流，截圖、動畫照常。
@@ -105,7 +107,23 @@ class Session:
         return result.get("result", {}).get("value")
 
 
+def disable_reasons() -> str:
+    """設定檔裡記的、這個擴充功能被停用的原因（載入失敗時給人看）。"""
+    for name in ("Secure Preferences", "Preferences"):
+        path = PROFILE / "Default" / name
+        try:
+            settings = json.loads(path.read_text(encoding="utf-8"))
+            entry = settings["extensions"]["settings"][EXTENSION_ID]
+            return f"{name} 裡的 disable_reasons：{entry.get('disable_reasons')}"
+        except (OSError, KeyError, ValueError):
+            continue
+    return "設定檔裡沒有這個擴充功能的紀錄"
+
+
 def launch(onscreen: bool) -> None:
+    close(quiet=True)  # 上次的還開著就先關掉，舊的設定檔才刪得掉
+    if PROFILE.exists():
+        shutil.rmtree(PROFILE, ignore_errors=True)
     WORK.mkdir(parents=True, exist_ok=True)
     if EXTENSION.exists():
         shutil.rmtree(EXTENSION)
@@ -126,14 +144,25 @@ def launch(onscreen: bool) -> None:
             return
         except Exception:
             time.sleep(0.5)
-    raise SystemExit("Edge 開了，但擴充功能沒有載入")
+    raise SystemExit(f"Edge 開了，但擴充功能沒有載入（{disable_reasons()}）")
 
 
-def close() -> None:
-    script = ("Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*tmw-edge-qa*' } | "
+def close(quiet: bool = False) -> None:
+    # 只關測試設定檔的 msedge.exe（指令列裡有這個設定檔的路徑），不碰使用者自己的 Edge
+    script = ("Get-CimInstance Win32_Process -Filter \"Name='msedge.exe'\" | "
+              "Where-Object { $_.CommandLine -like '*tmw-edge-qa*' } | "
               "ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }")
     subprocess.run(["powershell", "-NoProfile", "-Command", script], check=False)
-    print("關了測試用的 Edge")
+    for _ in range(20):  # 等程序真的結束，設定檔才不會還被鎖著
+        check = subprocess.run(["powershell", "-NoProfile", "-Command",
+                                "(Get-CimInstance Win32_Process -Filter \"Name='msedge.exe'\" | "
+                                "Where-Object { $_.CommandLine -like '*tmw-edge-qa*' }).Count"],
+                               capture_output=True, text=True, check=False)
+        if check.stdout.strip() in ("", "0"):
+            break
+        time.sleep(0.5)
+    if not quiet:
+        print("關了測試用的 Edge（剩下的測試 Edge 程序：0）")
 
 
 async def screenshot(path: str) -> None:
