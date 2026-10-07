@@ -207,6 +207,12 @@ WebRequest parseWebRequest(std::string_view json) {
     if (message.contains("site") && message["site"].is_string()) {
         out.site = message["site"].get<std::string>();
     }
+    if (message.contains("order") && message["order"].is_number_integer()) {
+        out.order = std::max(-1, message["order"].get<int>());
+    }
+    if (message.contains("chapter") && message["chapter"].is_string()) {
+        out.chapter = message["chapter"].get<std::string>();
+    }
     if (message.contains("soundEffects") && message["soundEffects"].is_boolean()) {
         out.soundEffects = message["soundEffects"].get<bool>();
     }

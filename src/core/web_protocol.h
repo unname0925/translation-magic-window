@@ -69,6 +69,8 @@ struct WebRequest {
     std::string language;         // Translate："auto"、"ja"…；沒給時是空字串
     bool soundEffects = true;     // Translate：要不要翻譯擬聲字（沒給時翻）
     std::string site;             // Translate：哪個網站（名詞記憶依網站分開，core/term_memory.h）
+    int order = -1;               // Translate：這張圖在這一章裡的順序（上下文照頁序）
+    std::string chapter;          // Translate：哪一章
     std::uint64_t pixelHash = 0;  // Translate：像素的雜湊（WebService 填，查硬碟快取用）
     std::string error;            // Invalid：哪裡不對（回給擴充功能看）
 };

@@ -357,9 +357,17 @@
     return !(element instanceof HTMLImageElement) || loaded(element);
   }
 
+  // 這張圖在這一章裡的順序：第一次找到的先後（第一次掃描就是網頁上的順序）。
+  // 閱讀器把捲出畫面的圖拿掉時，網頁上的位置會變，這個不會
+  let nextOrder = 0;
+  function pageOf(source) {
+    return { order: sources.get(source)?.order ?? -1, chapter: chapterOf(location.href) };
+  }
+
   function track(source) {
     const known = doneBySource.get(source);
     const entry = known ? { state: "done", result: known, reason: "" } : { state: "queued", reason: "" };
+    entry.order = nextOrder++;
     sources.set(source, entry);
     if (!known) {
       queue.push(source);
@@ -506,7 +514,7 @@
 
   // 截下分頁目前的畫面、裁出這張圖（background.js 的 capture）。截圖前把蓋在這張圖上的
   // 控制面板和別張圖的譯文暫時藏起來，免得截進去；截完馬上恢復，再要求翻譯
-  async function captureAndSend(element, soundEffects) {
+  async function captureAndSend(element, soundEffects, page) {
     const rect = element.getBoundingClientRect();
     const overlaps = (other) => {
       const r = other.getBoundingClientRect();
@@ -529,14 +537,14 @@
     if (shot?.type !== "captured") {
       return shot || { type: "error", message: "capture-failed" };
     }
-    return await chrome.runtime.sendMessage({ kind: "translate", site: location.origin, captured: shot.token, soundEffects });
+    return await chrome.runtime.sendMessage({ kind: "translate", site: location.origin, ...page, captured: shot.token, soundEffects });
   }
 
-  async function sendInPage(element, soundEffects) {
+  async function sendInPage(element, soundEffects, page) {
     try {
       const encoded = await encodedInPage(element);
       if (encoded) {
-        const reply = await chrome.runtime.sendMessage({ kind: "translate", site: location.origin, encoded, soundEffects });
+        const reply = await chrome.runtime.sendMessage({ kind: "translate", site: location.origin, ...page, encoded, soundEffects });
         if (!reply?.fetchFailed) {
           return reply;
         }
@@ -544,7 +552,7 @@
       if (!element.isConnected) {
         return { type: "error", message: "圖片被網頁拿掉了" };
       }
-      return await chrome.runtime.sendMessage({ kind: "translate", site: location.origin, image: readInPage(element), soundEffects });
+      return await chrome.runtime.sendMessage({ kind: "translate", site: location.origin, ...page, image: readInPage(element), soundEffects });
     } catch (error) {
       return { type: "error", message: error?.name === "SecurityError" ? "page-protected" : String(error?.message || error) };
     }
@@ -592,10 +600,10 @@
     let reply;
     try {
       if (entry.needsCapture) {
-        reply = element?.isConnected && fullyVisible(element) ? await captureAndSend(element, soundEffects)
+        reply = element?.isConnected && fullyVisible(element) ? await captureAndSend(element, soundEffects, pageOf(source))
                                                               : { type: "error", message: "page-protected" };
       } else if (isHttp(source)) {
-        reply = await chrome.runtime.sendMessage({ kind: "translate", site: location.origin, url: source, page: location.href, soundEffects });
+        reply = await chrome.runtime.sendMessage({ kind: "translate", site: location.origin, ...pageOf(source), url: source, page: location.href, soundEffects });
         if (reply?.fetchFailed) {
           if (!element?.isConnected || !readable(element)) {
             // 背景抓不到、頁面也還沒載入：叫網頁先載入它，載入後 scan 會再排
@@ -604,10 +612,10 @@
             forceLoad(element, source);
             return;
           }
-          reply = await sendInPage(element, soundEffects);
+          reply = await sendInPage(element, soundEffects, pageOf(source));
         }
       } else if (element?.isConnected) {
-        reply = await sendInPage(element, soundEffects);
+        reply = await sendInPage(element, soundEffects, pageOf(source));
       } else {
         entry.state = "waiting"; // canvas 被拿掉了：建回來時再讀
         return;

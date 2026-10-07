@@ -478,6 +478,33 @@ TEST_F(PipelineTest, OverlayOnlyJobsDoNotTranslateWhatWillNotBeCovered) {
     }
 }
 
+TEST_F(PipelineTest, PagesGetTheContextOfThePageBeforeThem) {
+    // 網頁漫畫好幾頁同時翻譯：第 2 頁先翻完，第 1 頁的上下文還是要用第 0 頁的
+    const auto page = [&](int index, std::string text) {
+        ocr_.lines = {line(20, 20, 300, 44, std::move(text))};
+        PipelineJob request = job();
+        request.pageIndex = index;
+        request.chapter = "chapter-1";
+        return run(request);
+    };
+    page(2, "Third page");
+    page(0, "First page");
+    ASSERT_TRUE(engine_->requests.back().context.empty() ||
+                engine_->requests.back().context.front().first != "Third page")
+        << "第 0 頁前面沒有頁：不拿後面的頁當上下文";
+    page(1, "Second page");
+    const auto& context = engine_->requests.back().context;
+    ASSERT_EQ(context.size(), 1u);
+    EXPECT_EQ(context[0].first, "First page");
+
+    PipelineJob other = job();
+    other.pageIndex = 1;
+    other.chapter = "chapter-2";
+    ocr_.lines = {line(20, 20, 300, 44, "Other chapter")};
+    run(other);
+    EXPECT_TRUE(engine_->requests.back().context.empty()) << "別的一章不拿這一章的頁";
+}
+
 // 速度優化 4：畫面還在等穩定時先做 OCR，穩定之後直接沿用
 class PreparedOcrTest : public PipelineTest {
 protected:

@@ -196,6 +196,8 @@ void WebService::submitNext() {
     }
     job.soundEffects = next.request->soundEffects;  // 控制面板的開關
     job.termScope = next.request->site.empty() ? std::string("web") : next.request->site;
+    job.pageIndex = next.request->order;  // 上下文照頁序
+    job.chapter = next.request->chapter;
     job.overlayOnly = true;  // 沒有結果視窗：蓋不上去的段落不必翻譯
     running_[job.generation] =
         Running{next.connection, std::move(next.id), std::move(next.cacheKey)};

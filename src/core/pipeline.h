@@ -63,6 +63,10 @@ struct PipelineJob {
     bool overlayOnly = false;
     // 名詞記憶的範圍（core/term_memory.h；網頁漫畫是網站）。空字串：不用名詞記憶
     std::string termScope;
+    // 網頁漫畫：這張圖在這一章裡的順序和是哪一章。給 LLM 的上下文用「這一頁之前的頁」，
+    // 不是「剛好最後翻完的」（好幾頁同時翻譯，最後翻完的常常是後面的頁）。-1：不知道
+    int pageIndex = -1;
+    std::string chapter;
 };
 
 struct PipelineTimings {
@@ -212,6 +216,9 @@ private:
     // 這一頁的名字還沒記過的，先一起翻譯一次記下來；再把記過的譯名加進專有名詞表
     void applyTerms(const std::vector<std::string>& terms, const PipelineJob& job,
                     TranslateRequest& request, std::stop_token cancel);
+    // 照頁序的上下文：這一章裡 job.pageIndex 之前最近的幾組原文和譯文
+    std::vector<std::pair<std::string, std::string>> contextBefore(const PipelineJob& job);
+    static constexpr std::size_t kRememberedChapters = 3;
 
 public:
 private:
@@ -231,6 +238,10 @@ private:
             OcrResult ocr;
         };
         std::optional<Prepared> prepared;
+        // 網頁漫畫：每一章、每一頁翻好的原文和譯文（PipelineJob::pageIndex），只留最近幾章
+        std::map<std::string, std::map<int, std::vector<std::pair<std::string, std::string>>>>
+            chapters;
+        std::vector<std::string> chapterOrder;
     };
 
     // 漫畫模式：直排的段落換成 manga-ocr 重讀的文字，ルビ 跟著搬過去（M2-03）

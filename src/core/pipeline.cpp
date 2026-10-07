@@ -298,6 +298,26 @@ Pipeline::RecognizedPage Pipeline::recognize(const PipelineJob& job, std::stop_t
     return page;
 }
 
+std::vector<std::pair<std::string, std::string>> Pipeline::contextBefore(const PipelineJob& job) {
+    LensMemory& state = memory(job.lens);  // memory() 自己會鎖，先拿參照再鎖
+    const std::lock_guard lock(memoryMutex_);
+    std::vector<std::pair<std::string, std::string>> context;
+    const auto chapter = state.chapters.find(job.chapter);
+    if (chapter == state.chapters.end()) {
+        return context;  // 這一章的第一頁
+    }
+    // 從最靠近的前一頁往前拿，湊滿 contextGroups 組，再排回閱讀順序
+    for (auto page = std::make_reverse_iterator(chapter->second.lower_bound(job.pageIndex));
+         page != chapter->second.rend() && context.size() < options_.contextGroups; ++page) {
+        for (auto group = page->second.rbegin();
+             group != page->second.rend() && context.size() < options_.contextGroups; ++group) {
+            context.push_back(*group);
+        }
+    }
+    std::reverse(context.begin(), context.end());
+    return context;
+}
+
 void Pipeline::applyTerms(const std::vector<std::string>& terms, const PipelineJob& job,
                           TranslateRequest& request, std::stop_token cancel) {
     const std::vector<std::string> unknown = options_.terms->missing(job.termScope, terms);
@@ -340,6 +360,9 @@ PipelineResult Pipeline::finish(RecognizedPage page, const PipelineJob& job,
         applyTerms(page.terms, job, request, cancel);
     }
     result.glossary = request.glossary;
+    if (job.pageIndex >= 0) {
+        request.context = contextBefore(job);  // 照頁序：這一頁之前的頁
+    }
     const auto translationStart = std::chrono::steady_clock::now();
     std::vector<std::string> translations;
     try {
@@ -374,6 +397,20 @@ PipelineResult Pipeline::finish(RecognizedPage page, const PipelineJob& job,
             state.recent.erase(
                 state.recent.begin(),
                 state.recent.end() - static_cast<std::ptrdiff_t>(options_.contextGroups));
+        }
+        if (job.pageIndex >= 0) {
+            if (!state.chapters.contains(job.chapter)) {
+                state.chapterOrder.push_back(job.chapter);
+                if (state.chapterOrder.size() > kRememberedChapters) {
+                    state.chapters.erase(state.chapterOrder.front());
+                    state.chapterOrder.erase(state.chapterOrder.begin());
+                }
+            }
+            auto& done = state.chapters[job.chapter][job.pageIndex];
+            done.clear();
+            for (const TranslatedBlock& group : result.groups) {
+                done.emplace_back(group.block.text, group.translation);
+            }
         }
     }
     return result;

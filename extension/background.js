@@ -251,6 +251,8 @@ async function translate(request) {
         language,
         soundEffects,
         site: request.site || "", // 主程式的名詞記憶依網站分開
+        order: Number.isInteger(request.order) ? request.order : -1, // 上下文照頁序
+        chapter: request.chapter || "",
       });
     } catch (error) {
       port = null;

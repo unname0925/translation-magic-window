@@ -92,6 +92,23 @@ TEST(ParseWebRequestTest, SoundEffectsDefaultToTranslated) {
     EXPECT_FALSE(parseWebRequest(message.dump()).soundEffects);
 }
 
+TEST(ParseWebRequestTest, PageOrderAndChapter) {
+    const std::vector<std::uint8_t> rgba(4, 0);
+    nlohmann::json message{{"type", "translate"},
+                           {"id", "a"},
+                           {"width", 1},
+                           {"height", 1},
+                           {"pixels", base64Encode(rgba)}};
+    EXPECT_EQ(parseWebRequest(message.dump()).order, -1);
+    message["order"] = 3;
+    message["chapter"] = "https://example.com/c/12";
+    message["site"] = "https://example.com";
+    const WebRequest request = parseWebRequest(message.dump());
+    EXPECT_EQ(request.order, 3);
+    EXPECT_EQ(request.chapter, "https://example.com/c/12");
+    EXPECT_EQ(request.site, "https://example.com");
+}
+
 TEST(ParseWebRequestTest, PixelsMustMatchTheSize) {
     const std::string json = nlohmann::json{
         {"type", "translate"},
