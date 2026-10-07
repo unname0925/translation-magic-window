@@ -441,6 +441,70 @@ def make_sound_page(content: str) -> str:
     return page
 
 
+def make_skip_page(content: str) -> str:
+    """不翻某張圖：在面板按「不翻某張圖」再點一張圖，它的譯文拿掉、不算進進度、
+    網頁本來的點擊不會觸發；按「恢復略過的圖」之後重新翻譯。"""
+    PIXEL = "data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="
+    page = f"""<!doctype html><meta charset=utf-8>
+    <style>
+      body {{ margin: 0; }}
+      #reader img {{ display: block; width: 600px; height: 700px; margin: 10px auto; }}
+    </style>
+    <div id=reader></div>
+    <script>
+    const attach = Element.prototype.attachShadow;
+    Element.prototype.attachShadow = function () {{ return attach.call(this, {{ mode: "open" }}); }};
+    const reader = document.getElementById("reader");
+    let pageClicks = 0;
+    for (let i = 0; i < 3; i++) {{
+      const img = document.createElement("img");
+      img.src = "{PIXEL}";
+      img.dataset.src = "https://cdn.example.invalid/page" + i + ".jpg";
+      img.addEventListener("click", () => pageClicks++);  // 閱讀器的「點圖翻頁」
+      reader.append(img);
+    }}
+    const sent = [];
+    let listener = null;
+    window.chrome = {{ runtime: {{ onMessage: {{ addListener: (f) => listener = f, removeListener: () => listener = null }},
+                                  sendMessage: async (message) => {{
+      if (message.kind !== "translate") return {{ type: "engines", engines: [], current: "" }};
+      sent.push(message.url.slice(-9));
+      await new Promise((r) => setTimeout(r, 30));
+      return {{ type: "result", id: message.url, width: 600, height: 700, error: "", notice: "", patchesDropped: 0,
+                items: [{{ rect: [100, 100, 300, 400], text: "譯文", vertical: true, foreground: "#000000",
+                           background: "#ffffff", size: "normal", lineThickness: 30, ruby: [] }}] }};
+    }} }} }};
+    </script>
+    <script>{content}</script>
+    <script>
+    const report = [];
+    function check(name, ok, detail = "") {{ report.push((ok ? "PASS " : "FAIL ") + name + (detail ? " (" + detail + ")" : "")); }}
+    const overlays = () => document.querySelectorAll("tmw-overlay").length;
+    const panelButton = (id) => document.querySelector("tmw-panel").shadowRoot.getElementById(id);
+    const status = () => {{ let r = null; listener({{ kind: "page-status" }}, {{}}, (x) => r = x); return r; }};
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    (async () => {{
+      await wait(2000);
+      check("三張都翻好", overlays() === 3 && sent.length === 3, overlays() + " overlays");
+      panelButton("skip").click();
+      const first = reader.querySelector("img").getBoundingClientRect();
+      reader.querySelector("img").dispatchEvent(new MouseEvent("click", {{ bubbles: true, cancelable: true,
+        clientX: first.left + first.width / 2, clientY: first.top + first.height / 2 }}));
+      await wait(300);
+      check("點的那張譯文拿掉、不算進進度", overlays() === 2 && status().total === 2,
+            overlays() + " overlays, total " + status().total);
+      check("選圖時網頁本來的點擊不觸發", pageClicks === 0, pageClicks + " clicks");
+      reader.querySelector("img").dispatchEvent(new MouseEvent("click", {{ bubbles: true }}));
+      check("選完之後點圖恢復正常", pageClicks === 1, pageClicks + " clicks");
+      panelButton("unskip").click();
+      await wait(1500);
+      check("恢復之後重新翻譯", overlays() === 3 && sent.length === 4, overlays() + " overlays, " + sent.length + " requests");
+      document.body.setAttribute("data-report", report.join(" | "));
+    }})();
+    </script>"""
+    return page
+
+
 def run(page: str, folder: Path, name: str) -> list[str]:
     path = folder / f"{name}.html"
     path.write_text(page, encoding="utf-8")
@@ -468,6 +532,7 @@ def main() -> int:
         "blocked": make_blocked_page(content),
         "blob-swap": make_blob_page(content),
         "sound-effects": make_sound_page(content),
+        "skip": make_skip_page(content),
     }
     failed = 0
     with tempfile.TemporaryDirectory() as folder:

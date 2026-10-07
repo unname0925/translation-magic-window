@@ -90,6 +90,8 @@
         <button class="action" id="retry">重試失敗的圖</button>
         <button class="action" id="preload">載入整頁</button>
         <button class="action" id="stop">停止並移除</button>
+        <button class="action" id="skip" title="點一下網頁上的圖，這個網站以後都不翻它（例如橫幅、廣告）">不翻某張圖…</button>
+        <button class="action" id="unskip">恢復略過的圖</button>
       </div>
       <label><input type="checkbox" id="autoPreload"> 開始時先載入整頁的圖</label>
       <label title="對話框外的短字，例如「ドドド」。不翻時擬聲字不送翻譯，翻得比較快">
@@ -181,6 +183,8 @@
   const canvasIds = new WeakMap(); // canvas 沒有網址：每一個給一個編號
   let canvasSerial = 0;
   let lastNotice = ""; // 主程式沒有用首選引擎時的說明（例如改用 Google）
+  let picking = false; // 正在選「不要翻的圖」
+  let hovered = null; // 選圖時滑鼠底下加了框的圖
   let queue = []; // 等著送出的圖片網址
   let running = 0;
   let visible = true;
@@ -363,10 +367,44 @@
     return entry;
   }
 
+  // 這個網站略過的圖（使用者在面板上點選的，例如橫幅、廣告）：網址或圖片內容的指紋。
+  // 記在 chrome.storage，依網站分開，換頁、重開瀏覽器之後還在
+  const SKIP_KEY = `skip:${location.origin}`;
+  let skipped = new Set();
+  (chrome.storage?.local.get({ [SKIP_KEY]: [] }) ?? Promise.resolve({ [SKIP_KEY]: [] }))
+    .then((saved) => {
+      skipped = new Set([...skipped, ...(saved[SKIP_KEY] || [])]);
+      forgetSkipped();
+    })
+    .catch(() => {});
+
+  function saveSkipped() {
+    chrome.storage?.local.set({ [SKIP_KEY]: [...skipped] }).catch(() => {});
+  }
+
+  // 略過的圖：拿掉譯文、不排隊、不算進進度
+  function forgetSkipped() {
+    for (const [element, page] of pages) {
+      if (skipped.has(page.source)) {
+        removeOverlay(page);
+        pages.delete(element);
+      }
+    }
+    for (const source of skipped) {
+      sources.delete(source);
+      doneBySource.delete(source);
+    }
+    queue = queue.filter((source) => !skipped.has(source));
+    updateBadge();
+  }
+
   function scan() {
     const elements = [...document.images, ...document.querySelectorAll("canvas")].filter(isCandidate);
     for (const element of mainColumn(elements)) {
       const source = sourceOf(element);
+      if (skipped.has(source)) {
+        continue;
+      }
       const page = pages.get(element);
       const entry = sources.get(source) || track(source);
       entry.element = element; // 送出的先後依這個元素離畫面多近
@@ -859,6 +897,9 @@
     $panel("notice").textContent = lastNotice;
     $panel("title").textContent = panelState.minimized && total ? `翻譯 ${done}/${total}` : "網頁漫畫翻譯";
     $panel("retry").disabled = failed === 0;
+    $panel("unskip").disabled = skipped.size === 0;
+    $panel("unskip").textContent = skipped.size ? `恢復略過的圖（${skipped.size}）` : "恢復略過的圖";
+    $panel("skip").textContent = picking ? "取消選圖" : "不翻某張圖…";
     $panel("preload").disabled = preloading;
     $panel("toggle").textContent = visible ? "顯示原文" : "顯示譯文";
   }
@@ -926,7 +967,7 @@
     for (const element of images) {
       const source = sourceOf(element);
       const result = doneBySource.get(source);
-      if (!result) {
+      if (!result || skipped.has(source)) {
         continue; // 還沒翻：交給一般的掃描
       }
       const page = pages.get(element);
@@ -1095,6 +1136,7 @@
 
   // 停止：拿掉所有譯文和監聽，這一頁回到原樣（再按「翻譯這一頁」重新開始）
   function stop() {
+    endPicking();
     observer.disconnect();
     resized.disconnect();
     timers.forEach(clearInterval);
@@ -1155,6 +1197,69 @@
     return false;
   }
   chrome.runtime.onMessage.addListener(onMessage);
+
+  // 選一張不要翻的圖：滑鼠移到圖上加框，點一下就略過；Esc 或再按一次按鈕取消。
+  // 這段時間點圖不會觸發網頁原本的動作（例如閱讀器的翻頁）
+  function trackedImageAt(x, y) {
+    return document.elementsFromPoint(x, y).find((element) => pages.has(element)) || null;
+  }
+  function highlight(element) {
+    if (hovered === element) {
+      return;
+    }
+    hovered?.style.removeProperty("outline");
+    hovered = element;
+    hovered?.style.setProperty("outline", "4px solid #e8a33d", "important");
+  }
+  const onPickMove = (event) => highlight(trackedImageAt(event.clientX, event.clientY));
+  const onPickClick = (event) => {
+    if (event.composedPath().includes(panelHost)) {
+      return; // 面板上的按鈕照常
+    }
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    const element = trackedImageAt(event.clientX, event.clientY);
+    endPicking();
+    if (element) {
+      skipped.add(pages.get(element).source);
+      saveSkipped();
+      forgetSkipped();
+      lastNotice = `已略過這張圖（這個網站共 ${skipped.size} 張）`;
+      updateBadge();
+    }
+  };
+  const onPickKey = (event) => {
+    if (event.key === "Escape") {
+      endPicking();
+    }
+  };
+  function startPicking() {
+    picking = true;
+    addEventListener("mousemove", onPickMove, true);
+    addEventListener("click", onPickClick, true);
+    addEventListener("keydown", onPickKey, true);
+    lastNotice = "點一下不要翻的圖（Esc 取消）";
+    updateBadge();
+  }
+  function endPicking() {
+    if (!picking) {
+      return;
+    }
+    picking = false;
+    highlight(null);
+    removeEventListener("mousemove", onPickMove, true);
+    removeEventListener("click", onPickClick, true);
+    removeEventListener("keydown", onPickKey, true);
+    lastNotice = "";
+    updateBadge();
+  }
+  $panel("skip").addEventListener("click", () => (picking ? endPicking() : startPicking()));
+  $panel("unskip").addEventListener("click", () => {
+    skipped.clear();
+    saveSkipped();
+    lastNotice = "";
+    scan(); // 略過的圖重新找出來、送去翻譯
+  });
 
   $panel("toggle").addEventListener("click", toggle);
   $panel("retry").addEventListener("click", retry);
