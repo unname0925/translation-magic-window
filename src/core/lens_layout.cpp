@@ -75,6 +75,13 @@ SizeI lensWindowSizeForContent(SizeI content, unsigned dpi) {
             metrics.handleHeight + metrics.border + content.height + side};
 }
 
+bool isReasonableLensSize(SizeI window, SizeI workArea) {
+    if (window.width <= 0 || window.height <= 0 || workArea.width <= 0 || workArea.height <= 0) {
+        return false;
+    }
+    return window.width * 10 <= workArea.width * 7 && window.height * 10 <= workArea.height * 8;
+}
+
 SizeI minimumLensWindowSize(unsigned dpi) {
     const LensMetrics metrics = scaledLensMetrics(dpi);
     return lensWindowSizeForContent({metrics.minContentWidth, metrics.minContentHeight}, dpi);

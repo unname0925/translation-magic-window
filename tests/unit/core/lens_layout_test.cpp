@@ -178,6 +178,16 @@ TEST(LensRenderTest, PaintsBorderHandleAndGrabZones) {
     EXPECT_EQ(pixelAt(pixels, layout, {layout.handle.left, 0}), accent);          // 把手
 }
 
+TEST(LensSizeTest, OversizedLensesAreNotRestored) {
+    const SizeI work{2560, 1400};
+    EXPECT_TRUE(isReasonableLensSize({800, 500}, work));
+    EXPECT_TRUE(isReasonableLensSize({1792, 1120}, work)) << "剛好 70% 寬、80% 高";
+    EXPECT_FALSE(isReasonableLensSize({1800, 500}, work)) << "太寬";
+    EXPECT_FALSE(isReasonableLensSize({800, 1200}, work)) << "太高";
+    EXPECT_FALSE(isReasonableLensSize({3788, 2316}, work)) << "比整個螢幕還大";
+    EXPECT_FALSE(isReasonableLensSize({0, 500}, work));
+}
+
 TEST(LensRenderTest, HandleHasGripDots) {
     const LensLayout layout = computeLensLayout(lensWindowSizeForContent({480, 270}, 96), 96);
     const auto pixels = render(layout);

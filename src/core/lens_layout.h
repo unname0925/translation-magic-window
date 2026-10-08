@@ -52,6 +52,10 @@ SizeI lensWindowSizeForContent(SizeI content, unsigned dpi);
 
 SizeI minimumLensWindowSize(unsigned dpi);
 
+// 上次記住的透鏡大小還能不能用：不能比這個螢幕的工作區的 70% 寬、80% 高還大。
+// 拉得太大的透鏡（例如整個螢幕那麼大）下次開程式時會蓋滿畫面，改用預設大小
+bool isReasonableLensSize(SizeI window, SizeI workArea);
+
 enum class LensHitZone {
     Transparent,  // 滑鼠穿透
     Move,         // 拖動把手

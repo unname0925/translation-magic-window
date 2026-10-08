@@ -307,32 +307,24 @@ TEST_F(AppTest, LensesCanBeAddedAndRemoved) {
 }
 
 // M5-05：結束時記住每個透鏡的位置，下次啟動照樣開回來
-TEST_F(AppTest, LensesComeBackWhereTheyWere) {
+TEST_F(AppTest, OnlyTheFirstLensComesBackWhereItWas) {
+    // 開程式時只有一個透鏡，放回上次第一個透鏡的位置；多開的透鏡要用時再新增
+    const core::RectI first = windowRectOf(lens_);
     ASSERT_TRUE(app_->postCommand(app::kCommandAddLens));
     ASSERT_TRUE(
         waitUntil([&] { return visibleLenses(app_->processId()).size() == 2; }, kUiTimeout));
-    std::vector<core::RectI> before;
-    for (const HWND lens : visibleLenses(app_->processId())) {
-        before.push_back(windowRectOf(lens));
-    }
     ASSERT_EQ(app_->requestExit(kExitTimeout), std::optional<DWORD>{0});
 
     app_ = std::make_unique<AppProcess>(
         std::vector<std::wstring>{L"--data-dir", dataDirectory_.wstring()});
     ASSERT_TRUE(
-        waitUntil([&] { return visibleLenses(app_->processId()).size() == 2; }, kLaunchTimeout))
+        waitUntil([&] { return visibleLenses(app_->processId()).size() == 1; }, kLaunchTimeout))
         << "主程式的記錄：\n"
         << appLog();
-    std::vector<core::RectI> after;
-    for (const HWND lens : visibleLenses(app_->processId())) {
-        after.push_back(windowRectOf(lens));
-    }
-    const auto byPosition = [](const core::RectI& a, const core::RectI& b) {
-        return std::tie(a.left, a.top) < std::tie(b.left, b.top);
-    };
-    std::sort(before.begin(), before.end(), byPosition);
-    std::sort(after.begin(), after.end(), byPosition);
-    EXPECT_EQ(after, before) << "位置和大小都一樣";
+    test::pumpMessages(500ms);
+    const std::vector<HWND> lenses = visibleLenses(app_->processId());
+    ASSERT_EQ(lenses.size(), 1u) << "只開一個透鏡";
+    EXPECT_EQ(windowRectOf(lenses.front()), first) << "位置和大小都和上次第一個透鏡一樣";
 }
 
 // M1-12：系統匣選單的「開啟結果視窗」

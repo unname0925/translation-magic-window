@@ -235,12 +235,12 @@ AppController::AppController(HINSTANCE instance, std::filesystem::path dataDirec
         capture_ = std::make_unique<platform::ScreenCapture>();
         frameSource_ = std::make_unique<platform::CaptureFrameSource>(*capture_);
 
-        // 上次結束時的透鏡（位置、大小、個數）；第一次啟動是一個，在螢幕中央
-        if (settings_.lenses.empty()) {
+        // 開程式時只有一個透鏡：放回上次第一個透鏡的位置；大到不合理（比螢幕工作區的 70% 寬、
+        // 80% 高還大）就用預設大小，在螢幕中央。多開的透鏡要用的時候再從系統匣新增
+        if (settings_.lenses.empty() || !reasonableLensPlacement(settings_.lenses.front())) {
             addLens();
-        }
-        for (const core::RectI& placement : settings_.lenses) {
-            addLens(&placement);
+        } else {
+            addLens(&settings_.lenses.front());
         }
 
         tray_ = std::make_unique<platform::TrayIcon>(hwnd_, kTrayCallbackMessage,
@@ -571,6 +571,20 @@ void AppController::setLensVisible(bool visible) {
         // 隱藏時完全不取樣、不觸發；重新顯示時從「等待穩定」開始
         lens->trigger->setEnabled(visible && !paused_);
     }
+}
+
+bool AppController::reasonableLensPlacement(const core::RectI& rect) {
+    const RECT wanted{rect.left, rect.top, rect.right, rect.bottom};
+    const HMONITOR monitor = MonitorFromRect(&wanted, MONITOR_DEFAULTTONULL);
+    if (monitor == nullptr) {
+        return false;  // 不在任何螢幕上（拔掉的螢幕）
+    }
+    MONITORINFO info{};
+    info.cbSize = sizeof(info);
+    GetMonitorInfoW(monitor, &info);
+    return core::isReasonableLensSize(
+        {rect.width(), rect.height()},
+        {info.rcWork.right - info.rcWork.left, info.rcWork.bottom - info.rcWork.top});
 }
 
 void AppController::addLens(const core::RectI* placement) {
