@@ -25,7 +25,7 @@
                            "data-echo", "data-full", "data-srcset", "data-lazy-srcset"];
 
   const STYLE = `
-    :host { all: initial; }
+    :host { all: initial; direction: ltr; unicode-bidi: isolate; }
     .layer { position: absolute; inset: 0; container-type: size; overflow: hidden; }
     .item { position: absolute; display: flex; align-items: center; justify-content: center;
             box-sizing: border-box; overflow: hidden; }
@@ -71,6 +71,9 @@
              background: #2b2c2f; color: #f1f1f1; font: inherit; }
     .reasons { display: grid; gap: 2px; color: #f6c35b; font-size: 11px; }
     .notice { color: #9ecbff; font-size: 11px; }
+    .confirm { border: 1px solid #e8a33d; border-radius: 6px; padding: 6px; color: #ffd28a; font-size: 11px;
+               display: grid; gap: 5px; }
+    .confirm[hidden] { display: none; }
     .mini .body { display: none; }
     .mini { width: auto; }
     .mini .head { border-bottom: 0; }
@@ -83,9 +86,12 @@
     <div class="body">
       <div><span id="status">準備中…</span> <span id="detail" class="muted"></span></div>
       <div class="bar"><div id="progress"></div></div>
-      <div id="reasons" class="reasons"></div>
-      <div id="notice" class="notice"></div>
       <div class="row"><span>翻譯</span><select id="engine" title="主程式用過的翻譯引擎"></select></div>
+      <div id="paidConfirm" class="confirm" hidden>
+        <div id="paidText"></div>
+        <div class="buttons"><button class="action" id="paidYes">確定改用</button>
+          <button class="action" id="paidNo">取消</button></div>
+      </div>
       <div class="buttons">
         <button class="action" id="toggle">顯示原文</button>
         <button class="action" id="retry">重試失敗的圖</button>
@@ -99,6 +105,8 @@
         <input type="checkbox" id="soundEffects"> 翻譯擬聲字</label>
       <div class="row"><span>透明度</span><input type="range" id="opacity" min="20" max="100" step="5">
         <span id="opacityText" class="muted"></span></div>
+      <div id="reasons" class="reasons"></div>
+      <div id="notice" class="notice"></div>
     </div>
   </div>`;
   document.documentElement.appendChild(panelHost);
@@ -453,6 +461,15 @@
   }
 
   function scan() {
+    // 閱讀器回收的 canvas（soraraw 的縦読み只用幾個 canvas 輪流畫）：每一個都被當成新的圖，
+    // 總數一路漲到實際頁數的兩倍以上。已經不在網頁上、還沒翻好的 canvas 不算了；
+    // 翻好的照樣留著（建回來時直接蓋回去）
+    for (const [source, entry] of sources) {
+      if (source.startsWith("canvas:") && entry.state !== "done" && entry.state !== "working" &&
+          !entry.element?.isConnected) {
+        sources.delete(source);
+      }
+    }
     const elements = [...document.images, ...document.querySelectorAll("canvas")].filter(isCandidate);
     const column = mainColumn(elements);
     for (const element of [...column, ...hiddenPages(column)]) {
@@ -1044,6 +1061,7 @@
   }
 
   const IMPORTANT = ["position:absolute", "display:block", "margin:0", "padding:0", "border:0",
+                     "direction:ltr", "unicode-bidi:isolate",
                      "transform:none", "pointer-events:none", "z-index:2147483647", "float:none",
                      "box-sizing:border-box", "background:transparent", "min-width:0", "min-height:0",
                      "max-width:none", "max-height:none"].map((rule) => `${rule} !important`).join(";");
@@ -1305,12 +1323,13 @@
     select.replaceChildren(...engines.map((engine) => {
       const option = document.createElement("option");
       option.value = String(engine.index);
-      option.textContent = engine.label;
+      option.textContent = isFreeEngine(engine.label) ? engine.label : `💲 ${engine.label}`;
       option.selected = engine.label === reply.current;
       return option;
     }));
     select.disabled = engines.length === 0;
     select.title = reply?.current ? `現在用：${reply.current}` : "主程式用過的翻譯引擎";
+    engineBefore = select.value; // 換成付費引擎時沒確認就換回這個
     // 剛開始時和主程式的連線可能還沒好：空的就過一下再問（最多 5 次）
     if (engines.length === 0 && engineRetries < 5) {
       engineRetries += 1;
@@ -1319,7 +1338,37 @@
   }
   let engineRetries = 0;
 
-  async function chooseEngine() {
+  // 免費的引擎：Google 翻譯（免費）、電腦上的 Ollama、本機的伺服器。其他的（api.anthropic.com、
+  // OpenAI、DeepL…）照用量計費，換過去之前要先確認
+  function isFreeEngine(label) {
+    return /免費|Ollama|127\.0\.0\.1|localhost/i.test(label);
+  }
+
+  let engineBefore = "";
+  function chooseEngine() {
+    const select = $panel("engine");
+    const label = select.selectedOptions[0]?.textContent || "";
+    if (!isFreeEngine(label)) {
+      // 先換回原本的，按「確定改用」才真的換
+      const chosen = select.value;
+      select.value = engineBefore;
+      $panel("paidText").textContent = `「${label}」要付費（照用量計費）。確定要改用嗎？`;
+      $panel("paidConfirm").hidden = false;
+      $panel("paidYes").onclick = () => {
+        $panel("paidConfirm").hidden = true;
+        select.value = chosen;
+        switchEngine();
+      };
+      $panel("paidNo").onclick = () => {
+        $panel("paidConfirm").hidden = true;
+      };
+      return;
+    }
+    $panel("paidConfirm").hidden = true;
+    switchEngine();
+  }
+
+  async function switchEngine() {
     const index = Number($panel("engine").value);
     $panel("engine").disabled = true;
     $panel("notice").textContent = "切換翻譯引擎中…";

@@ -68,6 +68,15 @@ void addEnglishTerms(std::string_view text, std::vector<std::string>& out,
                                      text[end] == '-' || text[end] == '\'')) {
             ++end;
         }
+        // 前後接著 @ _ . / 或數字：帳號、網址、檔名的一部分（@azu_knzm 的 azu），不是名字
+        const auto glued = [](char c) {
+            return c == '@' || c == '_' || c == '.' || c == '/' || c == '#' ||
+                   std::isdigit(static_cast<unsigned char>(c));
+        };
+        if ((i > 0 && glued(text[i - 1])) || (end < text.size() && glued(text[end]))) {
+            i = end;
+            continue;
+        }
         std::string word(text.substr(i, end - i));
         i = end;
         // 去掉 -san、-kun 這類後綴和所有格
@@ -103,6 +112,28 @@ std::string termKey(const std::string& term) {
 }
 
 }  // namespace
+
+bool isUsableTermTranslation(std::string_view translation) {
+    if (translation.empty()) {
+        return false;
+    }
+    // 模型照抄了提示詞裡的說明用語（ルビ 的「{本文|讀音}」、專有名詞表）：「讀音：ミツキ」「本文」
+    for (const std::string_view echo :
+         {"本文", "讀音", "譯者", "原文", "譯文", ":", "：", "{", "|"}) {
+        if (translation.find(echo) != std::string_view::npos) {
+            return false;
+        }
+    }
+    int count = 0;
+    for (std::size_t i = 0; i < translation.size();) {
+        const char32_t c = nextCodePoint(translation, i);
+        ++count;
+        if ((c >= 0x3041 && c <= 0x309F) || (c >= 0x30A1 && c <= 0x30FA)) {
+            return false;  // 假名：沒翻成中文（片假名名字要給中文譯名）
+        }
+    }
+    return count <= 12;  // 一句話不是名字
+}
 
 std::vector<std::string> findTerms(std::string_view text) {
     std::vector<std::string> out;
@@ -184,7 +215,11 @@ void TermMemory::load() {
             if (entry.is_array() && entry.size() == 2 && entry[0].is_string() &&
                 entry[1].is_string()) {
                 const std::string term = entry[0].get<std::string>();
-                if (terms_[scope].emplace(term, entry[1].get<std::string>()).second) {
+                const std::string translation = entry[1].get<std::string>();
+                if (!isUsableTermTranslation(translation)) {
+                    continue;  // 以前存進去的壞譯名：丟掉，下次重新翻
+                }
+                if (terms_[scope].emplace(term, translation).second) {
                     order_[scope].push_back(term);
                 }
             }
@@ -253,7 +288,8 @@ void TermMemory::remember(const std::string& scope,
     auto& order = order_[scope];
     for (const auto& [term, translation] : terms) {
         const std::string key = termKey(term);
-        if (key.empty() || translation.empty() || !known.emplace(key, translation).second) {
+        if (key.empty() || !isUsableTermTranslation(translation) ||
+            !known.emplace(key, translation).second) {
             continue;
         }
         order.push_back(key);

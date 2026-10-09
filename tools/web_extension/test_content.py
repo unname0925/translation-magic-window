@@ -653,6 +653,68 @@ def make_tall_capture_page(content: str) -> str:
     return page
 
 
+def make_rtl_engine_page(content: str) -> str:
+    """由右往左翻的閱讀器（dir="rtl"，像 soraraw）：譯文還是由左往右排，直排的句尾標點不會跑到欄首。
+    換成要付費的引擎要先在面板上確認，取消就不換。"""
+    PIXEL = "data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="
+    page = f"""<!doctype html><meta charset=utf-8>
+    <style>
+      body {{ margin: 0; }}
+      #reader img {{ display: block; width: 600px; height: 800px; margin: 10px auto; }}
+    </style>
+    <div id=reader dir=rtl></div>
+    <script>
+    const attach = Element.prototype.attachShadow;
+    Element.prototype.attachShadow = function () {{ return attach.call(this, {{ mode: "open" }}); }};
+    const reader = document.getElementById("reader");
+    const img = document.createElement("img");
+    img.src = "{PIXEL}";
+    img.dataset.src = "https://cdn.example.invalid/rtl.jpg";
+    reader.append(img);
+    const switched = [];
+    let listener = null;
+    window.chrome = {{ runtime: {{ onMessage: {{ addListener: (f) => listener = f, removeListener: () => listener = null }},
+                                  sendMessage: async (message) => {{
+      if (message.kind === "engines") return {{ type: "engines", current: "hy-mt2（Ollama 127.0.0.1:11434）",
+        engines: [{{ index: 0, label: "hy-mt2（Ollama 127.0.0.1:11434）" }}, {{ index: 1, label: "claude（OpenAI 相容 api.anthropic.com）" }},
+                  {{ index: 2, label: "Google 翻譯（免費）" }}] }};
+      if (message.kind === "set-engine") {{ switched.push(message.index); return {{ type: "engines", engines: [], current: "" }}; }}
+      if (message.kind !== "translate") return {{}};
+      return {{ type: "result", id: "r", width: 600, height: 800, error: "", notice: "", patchesDropped: 0,
+                items: [{{ rect: [200, 100, 300, 600], text: "你好嗎？", vertical: true, foreground: "#000000",
+                           background: "#ffffff", size: "normal", lineThickness: 40, ruby: [] }}] }};
+    }} }} }};
+    </script>
+    <script>{content}</script>
+    <script>
+    const report = [];
+    function check(name, ok, detail = "") {{ report.push((ok ? "PASS " : "FAIL ") + name + (detail ? " (" + detail + ")" : "")); }}
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    const panel = () => document.querySelector("tmw-panel").shadowRoot;
+    (async () => {{
+      await wait(1500);
+      const text = document.querySelector("tmw-overlay")?.shadowRoot?.querySelector(".text");
+      check("dir=rtl 的閱讀器裡譯文還是由左往右排", text && getComputedStyle(text).direction === "ltr",
+            text ? getComputedStyle(text).direction : "沒有譯文");
+      const select = panel().getElementById("engine");
+      select.value = "1";
+      select.dispatchEvent(new Event("change"));
+      await wait(200);
+      check("選付費引擎時先確認、還沒換", !panel().getElementById("paidConfirm").hidden && switched.length === 0 &&
+            select.value === "0", "switched " + JSON.stringify(switched) + " value " + select.value);
+      panel().getElementById("paidNo").click();
+      await wait(200);
+      check("取消就不換", panel().getElementById("paidConfirm").hidden && switched.length === 0);
+      select.value = "2";
+      select.dispatchEvent(new Event("change"));
+      await wait(300);
+      check("免費的引擎直接換", switched.length === 1 && switched[0] === 2, JSON.stringify(switched));
+      document.body.setAttribute("data-report", report.join(" | "));
+    }})();
+    </script>"""
+    return page
+
+
 def run(page: str, folder: Path, name: str) -> list[str]:
     path = folder / f"{name}.html"
     path.write_text(page, encoding="utf-8")
@@ -683,6 +745,7 @@ def main() -> int:
         "skip": make_skip_page(content),
         "capture": make_capture_page(content),
         "capture-tall": make_tall_capture_page(content),
+        "rtl-engine": make_rtl_engine_page(content),
     }
     failed = 0
     with tempfile.TemporaryDirectory() as folder:

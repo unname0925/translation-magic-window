@@ -28,6 +28,9 @@ namespace tmw::core {
 //   去掉 -san 這類後綴；常用的英文字不算
 std::vector<std::string> findTerms(std::string_view text);
 
+// 模型給的譯名能不能記：不能照抄提示詞的用語（「讀音：…」「本文」）、不能留假名、不能是一整句
+bool isUsableTermTranslation(std::string_view translation);
+
 class TermMemory {
 public:
     // file 是空的：只放在記憶體裡（測試、預覽工具）

@@ -27,6 +27,24 @@ TEST(FindTermsTest, RomanizedNamesInEnglish) {
     EXPECT_TRUE(findTerms("STRAWBERRY CAKE").empty()) << "不像日文拼音的字不是名字";
 }
 
+TEST(FindTermsTest, HandlesAndAddressesAreNotNames) {
+    EXPECT_TRUE(findTerms("@azu_knzm").empty()) << "帳號";
+    EXPECT_TRUE(findTerms("discord.gg/hanako").empty()) << "網址";
+    EXPECT_EQ(findTerms("HANAKO, @tanaka_99"), (Terms{"HANAKO"}));
+}
+
+TEST(TermMemoryTest, BadTranslationsAreNotRemembered) {
+    EXPECT_FALSE(isUsableTermTranslation("讀音：ミツキ")) << "照抄提示詞的用語";
+    EXPECT_FALSE(isUsableTermTranslation("本文")) << "照抄提示詞的用語";
+    EXPECT_FALSE(isUsableTermTranslation("ミツキ")) << "沒翻成中文";
+    EXPECT_FALSE(isUsableTermTranslation("我覺得你應該先回家休息一下比較好")) << "一整句";
+    EXPECT_TRUE(isUsableTermTranslation("美月"));
+    EXPECT_TRUE(isUsableTermTranslation("TANAKA")) << "留英文的不算錯（只是沒翻）";
+    TermMemory memory;
+    memory.remember("site", {{"Mitsuki", "讀音：ミツキ"}, {"Haruka", "春香"}});
+    EXPECT_EQ(memory.size("site"), 1u);
+}
+
 TEST(TermMemoryTest, TheFirstTranslationWins) {
     TermMemory memory;
     EXPECT_EQ(memory.missing("site", Terms{"山田", "鈴木"}), (Terms{"山田", "鈴木"}));
