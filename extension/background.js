@@ -298,29 +298,51 @@ async function activeTabs() {
   return (await chrome.storage.session.get({ [ACTIVE_TABS]: [] }))[ACTIVE_TABS];
 }
 
-async function setActive(tabId, active) {
+// 每個翻譯中的分頁是在哪個網站開始的：換頁後還在同一個網站才繼續（換到別的網站不自動翻）
+const ACTIVE_ORIGINS = "activeOrigins";
+
+function originOf(url) {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return "";
+  }
+}
+
+async function setActive(tabId, active, origin = "") {
   const tabs = (await activeTabs()).filter((id) => id !== tabId);
+  const { [ACTIVE_ORIGINS]: origins = {} } = await chrome.storage.session.get({ [ACTIVE_ORIGINS]: {} });
+  delete origins[tabId];
   if (active) {
     tabs.push(tabId);
+    origins[tabId] = origin;
   }
-  await chrome.storage.session.set({ [ACTIVE_TABS]: tabs });
+  await chrome.storage.session.set({ [ACTIVE_TABS]: tabs, [ACTIVE_ORIGINS]: origins });
 }
 
 async function start(tabId) {
   await chrome.scripting.executeScript({ target: { tabId }, files: ["content.js"] });
-  await setActive(tabId, true);
+  const tab = await chrome.tabs.get(tabId).catch(() => null);
+  await setActive(tabId, true, originOf(tab?.url || ""));
 }
 
-chrome.tabs.onUpdated.addListener((tabId, info) => {
+chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
   if (info.status !== "complete") {
     return;
   }
-  activeTabs().then((tabs) => {
-    if (tabs.includes(tabId)) {
-      // 沒有這個網站的權限（使用者拒絕了「讀取所有網站」）時注入不了：就算了
-      chrome.scripting.executeScript({ target: { tabId }, files: ["content.js"] }).catch(() => {});
+  (async () => {
+    if (!(await activeTabs()).includes(tabId)) {
+      return;
     }
-  });
+    const { [ACTIVE_ORIGINS]: origins = {} } = await chrome.storage.session.get({ [ACTIVE_ORIGINS]: {} });
+    const started = origins[tabId];
+    if (started && started !== originOf(tab?.url || "")) {
+      await setActive(tabId, false); // 換到別的網站：不自動翻，要翻再按一次
+      return;
+    }
+    // 沒有這個網站的權限（使用者拒絕了「讀取所有網站」）時注入不了：就算了
+    await chrome.scripting.executeScript({ target: { tabId }, files: ["content.js"] }).catch(() => {});
+  })();
 });
 chrome.tabs.onRemoved.addListener((tabId) => {
   setActive(tabId, false);

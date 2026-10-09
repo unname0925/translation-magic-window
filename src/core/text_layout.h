@@ -125,6 +125,11 @@ void markSoundEffects(std::vector<TextBlock>& blocks, std::span<const RectI> bub
 // - 日文：直接相連
 // startOffsets 不是 nullptr 時，填入每一行在結果中的起始位置（以「字」計）。
 // ルビ 的位置要跟著搬，所以需要它。
+// 開頭的句尾標點（。、，！？」』）等）移到最後：日文直排的句號常被 OCR 偵測成獨立的一塊、
+// 排在最前面，譯文也跟著從「。」開始，直排時「。」就畫在第一個字上面。
+// 「……」不搬：句子可以從刪節號開始
+std::string moveLeadingClosingPunctuation(std::string_view text);
+
 std::string joinLines(std::span<const std::string> lines, Language language,
                       std::vector<int>* startOffsets = nullptr);
 

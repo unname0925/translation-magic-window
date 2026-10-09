@@ -378,6 +378,9 @@ PipelineResult Pipeline::finish(RecognizedPage page, const PipelineJob& job,
         translations.assign(sources.size(), std::string());
     }
     result.timings.translationMs = millisecondsSince(translationStart);
+    for (std::string& translation : translations) {
+        translation = moveLeadingClosingPunctuation(translation);
+    }
 
     result.groups.reserve(blocks.size());
     for (std::size_t i = 0; i < blocks.size(); ++i) {

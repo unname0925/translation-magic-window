@@ -223,6 +223,15 @@ TEST(EdgeTest, DetectsEveryEdge) {
     EXPECT_FALSE(touchesEdge(RectI::fromXYWH(50, 50, 100, 20), frame));
 }
 
+TEST(PunctuationTest, ClosingPunctuationAtTheStartMovesToTheEnd) {
+    EXPECT_EQ(moveLeadingClosingPunctuation("。好的"), "好的。");
+    EXPECT_EQ(moveLeadingClosingPunctuation("！？ 走吧"), "走吧！？");
+    EXPECT_EQ(moveLeadingClosingPunctuation("好的。"), "好的。") << "本來就在最後的不動";
+    EXPECT_EQ(moveLeadingClosingPunctuation("……好"), "……好") << "可以從刪節號開始";
+    EXPECT_EQ(moveLeadingClosingPunctuation("。"), "。") << "只有標點的不動";
+    EXPECT_EQ(moveLeadingClosingPunctuation(""), "");
+}
+
 TEST(SoundEffectTest, ShortTextOutsideEveryBubble) {
     const std::vector<RectI> bubbles{RectI{0, 0, 200, 200}};
     TextBlock block;

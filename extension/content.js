@@ -352,6 +352,9 @@
 
   function distanceToViewport(element) {
     const rect = element.getBoundingClientRect();
+    if (rect.width === 0 && rect.height === 0) {
+      return 100000 + (sources.get(sourceOf(element))?.order ?? 0); // 藏起來的頁：最後，照順序
+    }
     if (rect.bottom < 0) {
       return -rect.bottom * 2 + 1; // 在上面（已經看過了）：往下看的機會比較大，排後面一點
     }
@@ -414,9 +417,45 @@
     updateBadge();
   }
 
+  // 閱讀器先載入、但用 display: none 藏起來的頁（MangaDex 的單頁、雙頁模式）：先翻好，翻到那一頁時
+  // 譯文已經在了。只收已經載入、夠大、網址來源和主要內容欄一樣（例如都是 blob:），
+  // 而且和主要內容欄的圖在同一個容器裡的，免得收到網站其他地方藏著的大圖
+  function hiddenPages(column) {
+    if (column.length === 0) {
+      return [];
+    }
+    const schemeOf = (img) => (img.currentSrc || img.src || "").split(":")[0];
+    const schemes = new Set(column.filter((e) => e instanceof HTMLImageElement).map(schemeOf));
+    const containers = new Set();
+    for (const element of column) {
+      let parent = element.parentElement;
+      for (let i = 0; i < 3 && parent; i++, parent = parent.parentElement) {
+        containers.add(parent);
+      }
+    }
+    return [...document.images].filter((img) => {
+      if (column.includes(img) || !loaded(img) || img.naturalWidth < MIN_NATURAL || img.naturalHeight < MIN_NATURAL ||
+          !schemes.has(schemeOf(img))) {
+        return false;
+      }
+      const rect = img.getBoundingClientRect();
+      if (rect.width > 0 || rect.height > 0) {
+        return false; // 看得見的走一般的路
+      }
+      let parent = img.parentElement;
+      for (let i = 0; i < 4 && parent; i++, parent = parent.parentElement) {
+        if (containers.has(parent)) {
+          return true;
+        }
+      }
+      return false;
+    });
+  }
+
   function scan() {
     const elements = [...document.images, ...document.querySelectorAll("canvas")].filter(isCandidate);
-    for (const element of mainColumn(elements)) {
+    const column = mainColumn(elements);
+    for (const element of [...column, ...hiddenPages(column)]) {
       const source = sourceOf(element);
       if (skipped.has(source)) {
         continue;
@@ -721,6 +760,9 @@
     }
     const reply = await chrome.runtime.sendMessage({ kind: "translate", site: location.origin, ...page,
                                                      captured: shot.token, soundEffects });
+    if (reply?.type === "result") {
+      reply.captured = true; // 照元素範圍截的：譯文鋪滿元素（contentBox）
+    }
     // 比畫面高的圖只截了一段：記下是哪一段，交給 mergeSlice 拼起來
     if (reply?.type === "result" && (top > 0.5 || bottom < rect.height - 0.5)) {
       reply.slice = { top, bottom, width: rect.width, height: rect.height };
@@ -894,6 +936,10 @@
       running += 1;
       process(source).finally(() => {
         running -= 1;
+        if (!firstResultSeen && $panel("engine").options.length === 0) {
+          engineRetries = 0;
+          loadEngines(); // 第一張回來了，連線一定好了：選單還是空的就再問一次
+        }
         firstResultSeen = true;
         updateBadge();
         pump();
@@ -1012,6 +1058,59 @@
            "width:anchor-size(width);height:anchor-size(height)";
   }
 
+  // 圖實際畫在元素的哪裡（元素寬高的比例）。object-fit: contain／scale-down／none／cover 時，
+  // 圖不會剛好填滿元素：soraraw 每章開頭的頁 792×1126 的圖放在 670×855 的元素裡，左右各留白約 35 像素，
+  // 譯文鋪滿整個元素就整片往外偏。截圖翻譯的結果是照元素範圍截的，不用換算
+  function contentBox(element, result) {
+    const full = { left: 0, top: 0, width: 1, height: 1 };
+    if (result?.captured) {
+      return full;
+    }
+    const naturalWidth = element instanceof HTMLImageElement ? element.naturalWidth : element.width;
+    const naturalHeight = element instanceof HTMLImageElement ? element.naturalHeight : element.height;
+    const rect = element.getBoundingClientRect();
+    if (!naturalWidth || !naturalHeight || rect.width <= 0 || rect.height <= 0) {
+      return full;
+    }
+    const style = getComputedStyle(element);
+    const fit = style.objectFit;
+    if (fit === "fill" || !fit) {
+      return full;
+    }
+    const contain = Math.min(rect.width / naturalWidth, rect.height / naturalHeight);
+    const cover = Math.max(rect.width / naturalWidth, rect.height / naturalHeight);
+    const scale = fit === "contain" ? contain : fit === "cover" ? cover : fit === "none" ? 1 : Math.min(1, contain);
+    const width = naturalWidth * scale;
+    const height = naturalHeight * scale;
+    // object-position：百分比（預設 50% 50%）或像素
+    const [x = "50%", y = "50%"] = style.objectPosition.split(/\s+/);
+    const place = (value, free) => value.endsWith("%") ? (parseFloat(value) / 100) * free : parseFloat(value) || 0;
+    const left = place(x, rect.width - width);
+    const top = place(y, rect.height - height);
+    return { left: left / rect.width, top: top / rect.height, width: width / rect.width, height: height / rect.height };
+  }
+
+  function fitContentBox(element, page) {
+    if (!page.layer) {
+      return;
+    }
+    const rect = element.getBoundingClientRect();
+    const key = `${Math.round(rect.width)}x${Math.round(rect.height)}`;
+    if (page.boxKey === key) {
+      return;
+    }
+    page.boxKey = key;
+    const box = contentBox(element, page.result);
+    const percent = (value) => `${(value * 100).toFixed(3)}%`;
+    page.layer.style.left = percent(box.left);
+    page.layer.style.top = percent(box.top);
+    page.layer.style.width = percent(box.width);
+    page.layer.style.height = percent(box.height);
+    page.layer.style.right = "auto";
+    page.layer.style.bottom = "auto";
+    page.fitted = false; // 字級要照新的範圍重量
+  }
+
   // 譯文放在緊跟著圖片的元素裡：和圖片在同一個捲動容器，捲動時一起動
   function showOverlay(element, page) {
     removeOverlay(page);
@@ -1033,7 +1132,9 @@
     page.fitted = false;
     page.left = 0;
     page.top = 0;
+    page.boxKey = "";
     attach(element, page);
+    fitContentBox(element, page);
     align(element, page);
   }
 
@@ -1058,6 +1159,7 @@
     if (!page.anchor.isConnected) {
       attach(element, page); // 網頁的程式重繪時把它拿掉了
     }
+    fitContentBox(element, page); // 元素大小變了才重算
     const rect = element.getBoundingClientRect();
     if (!page.manual) {
       if (element.style.getPropertyValue("anchor-name") !== page.anchorName) {
@@ -1132,6 +1234,7 @@
     const done = all.filter((entry) => entry.state === "done").length;
     const failed = all.filter((entry) => entry.state === "failed");
     const waiting = all.filter((entry) => entry.state === "waiting");
+    const partial = waiting.filter((entry) => entry.merged?.items?.length).length; // 比畫面高、翻了一部分的
     // 同樣的原因合在一起：「翻譯失敗：被限流或額度用完：HTTP 429（3 張）」
     const reasons = new Map();
     for (const entry of [...failed, ...waiting]) {
@@ -1142,6 +1245,7 @@
       done,
       failed: failed.length,
       waiting: waiting.length,
+      partial,
       reasons: [...reasons].map(([reason, count]) => `${reason}（${count} 張）`),
     };
   }
@@ -1165,7 +1269,9 @@
     }
     $panel("status").textContent = text;
     const { waiting } = counts();
-    $panel("detail").textContent = [failed ? `${failed} 張失敗` : "", waiting ? `${waiting} 張等圖片載入` : ""]
+    const { partial } = counts();
+    $panel("detail").textContent = [failed ? `${failed} 張失敗` : "", partial ? `${partial} 張翻了一部分` : "",
+                                    waiting - partial > 0 ? `${waiting - partial} 張等圖片載入` : ""]
       .filter(Boolean).join("，");
     $panel("progress").style.width = total ? `${(finished / total) * 100}%` : "0";
     const list = $panel("reasons");
@@ -1205,7 +1311,13 @@
     }));
     select.disabled = engines.length === 0;
     select.title = reply?.current ? `現在用：${reply.current}` : "主程式用過的翻譯引擎";
+    // 剛開始時和主程式的連線可能還沒好：空的就過一下再問（最多 5 次）
+    if (engines.length === 0 && engineRetries < 5) {
+      engineRetries += 1;
+      setTimeout(loadEngines, 3000);
+    }
   }
+  let engineRetries = 0;
 
   async function chooseEngine() {
     const index = Number($panel("engine").value);
@@ -1489,8 +1601,22 @@
 
   // 選一張不要翻的圖：滑鼠移到圖上加框，點一下就略過；Esc 或再按一次按鈕取消。
   // 這段時間點圖不會觸發網頁原本的動作（例如閱讀器的翻頁）
+  // 點的位置是哪張圖：看座標落在哪張圖的範圍裡，不用 elementsFromPoint——有些閱讀器（soraraw）
+  // 的 canvas 設了 pointer-events: none，或上面蓋著翻頁用的透明層，點的位置找不到它
   function trackedImageAt(x, y) {
-    return document.elementsFromPoint(x, y).find((element) => pages.has(element)) || null;
+    let best = null;
+    let bestArea = Infinity;
+    for (const element of pages.keys()) {
+      if (!element.isConnected) {
+        continue;
+      }
+      const r = element.getBoundingClientRect();
+      if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom && r.width * r.height < bestArea) {
+        best = element; // 疊在一起時取比較小的那張
+        bestArea = r.width * r.height;
+      }
+    }
+    return best;
   }
   function highlight(element) {
     if (hovered === element) {

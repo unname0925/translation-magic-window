@@ -447,6 +447,33 @@ void markSoundEffects(std::vector<TextBlock>& blocks, std::span<const RectI> bub
     }
 }
 
+std::string moveLeadingClosingPunctuation(std::string_view text) {
+    static constexpr std::u32string_view kClosing = U"。、，．！？!?」』）】〕〉》｣";
+    std::size_t at = 0;
+    std::string moved;
+    while (at < text.size()) {
+        std::size_t next = at;
+        const char32_t c = nextCodePoint(text, next);
+        if (c == U' ' || c == U'　') {
+            at = next;  // 開頭的空白一起拿掉
+            continue;
+        }
+        if (kClosing.find(c) == std::u32string_view::npos) {
+            break;
+        }
+        moved.append(text.substr(at, next - at));
+        at = next;
+    }
+    if (moved.empty()) {
+        return std::string(text);
+    }
+    std::string rest(text.substr(at));
+    if (rest.empty()) {
+        return std::string(text);  // 只有標點：不動
+    }
+    return rest + moved;
+}
+
 bool touchesEdge(const RectI& rect, const SizeI& frame, int margin) {
     return rect.left <= margin || rect.top <= margin || rect.right >= frame.width - margin ||
            rect.bottom >= frame.height - margin;
