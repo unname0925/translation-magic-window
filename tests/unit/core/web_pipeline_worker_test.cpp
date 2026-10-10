@@ -184,10 +184,17 @@ TEST_F(WebPipelineWorkerTest, APageOnScreenGoesBeforePagesNotStarted) {
     engine_->release();
     ASSERT_TRUE(waitFor(4));
     const std::lock_guard lock(mutex_);
-    // 1 在翻譯、2 的 OCR 已經做好在等（最多等 translators 頁），3 還沒開始
-    EXPECT_EQ(results_[0].generation, 1u) << "已經在翻的照樣先完成";
-    EXPECT_EQ(results_[2].generation, 4u) << "畫面上的插到還沒開始的前面";
-    EXPECT_EQ(results_[3].generation, 3u);
+    // 1 在翻譯；2 的 OCR 可能已經做好在等（最多等 translators 頁），那就排在 4 前面；3 還沒開始
+    const auto position = [&](std::uint64_t generation) {
+        for (std::size_t i = 0; i < results_.size(); ++i) {
+            if (results_[i].generation == generation) {
+                return i;
+            }
+        }
+        return results_.size();
+    };
+    EXPECT_EQ(position(1), 0u) << "已經在翻的照樣先完成";
+    EXPECT_LT(position(4), position(3)) << "畫面上的插到還沒開始的前面";
 }
 
 TEST_F(WebPipelineWorkerTest, StoppingWhileBusyDoesNotHang) {

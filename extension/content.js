@@ -941,7 +941,7 @@
       return known[message];
     }
     if (reply.fetchFailed) {
-      return `抓不到圖片（${message}）`;
+      return /decod/i.test(message) ? "圖片解不開（格式不支援或檔案壞了）" : `抓不到圖片（${message}）`;
     }
     if (/size|pixels/.test(message)) {
       return `圖片格式不對（${message}）`;
@@ -1257,6 +1257,9 @@
       element.style.setProperty("anchor-name", page.anchorName, "important");
       anchor.style.cssText = anchoredStyle(page.anchorName);
     }
+    // 只比圖高一層：網站自己固定在畫面上的介面（soraraw 的「次へ／前へ」列）照樣蓋在譯文上面
+    const z = Number.parseInt(getComputedStyle(element.closest("picture") || element).zIndex, 10);
+    anchor.style.setProperty("z-index", String(Number.isFinite(z) ? z + 1 : 1), "important");
     const root = anchor.attachShadow({ mode: "closed" });
     const style = document.createElement("style");
     style.textContent = STYLE;
@@ -1373,9 +1376,11 @@
     const reasons = new Map();
     const waitingReasons = new Set(); // 只是在等（不是出錯）：面板用一般的顏色
     for (const entry of [...failed, ...waiting]) {
-      reasons.set(entry.reason, (reasons.get(entry.reason) || 0) + 1);
+      // 沒寫原因的（閱讀器把還沒翻的 canvas 拿掉了）：等它回到畫面上
+      const reason = entry.reason || (entry.state === "waiting" ? "等這張圖回到畫面上" : "沒有說明原因");
+      reasons.set(reason, (reasons.get(reason) || 0) + 1);
       if (entry.state === "waiting") {
-        waitingReasons.add(entry.reason);
+        waitingReasons.add(reason);
       }
     }
     return {
@@ -1432,7 +1437,8 @@
     $panel("title").textContent = panelState.minimized && total ? `翻譯 ${done}/${total}` : "網頁漫畫翻譯";
     $panel("retry").disabled = failed === 0;
     $panel("unskip").disabled = skipped.size === 0;
-    $panel("unskip").textContent = skipped.size ? `恢復略過的圖（${skipped.size}）` : "恢復略過的圖";
+    $panel("unskip").textContent = skipped.size ? `恢復略過（${skipped.size}）` : "恢復略過的圖";
+    $panel("unskip").title = skipped.size ? `這個網站略過了 ${skipped.size} 張圖，按一下全部恢復` : "";
     $panel("skip").textContent = picking ? "取消選圖" : "不翻某張圖…";
     $panel("preload").disabled = preloading;
     $panel("toggle").textContent = visible ? "顯示原文" : "顯示譯文";

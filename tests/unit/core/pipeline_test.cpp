@@ -102,7 +102,10 @@ public:
         out.reserve(segments.size());
         for (const std::string& segment : segments) {
             // keepKanaInBatches：好幾段一起送時，有假名的原樣留著（模型沒翻完）
-            const bool keep = keepKanaInBatches && segments.size() > 1 && kanaCount(segment) > 0;
+            const bool keep = segments.size() > 1 &&
+                              ((keepKanaInBatches && kanaCount(segment) > 0) ||
+                               (keepEnglishInBatches && segment.find(' ') == std::string::npos &&
+                                segment.size() <= 5));
             out.push_back(keep ? segment : "譯:" + withoutKana(segment));
         }
         return out;
@@ -112,6 +115,7 @@ public:
     std::vector<TranslateRequest> requests;
     std::optional<TranslateError> failure;
     bool keepKanaInBatches = false;
+    bool keepEnglishInBatches = false;  // 短的英文對白（5 個字元以內）原樣留著
 };
 
 class PipelineTest : public ::testing::Test {
@@ -528,6 +532,16 @@ TEST_F(PipelineTest, TranslationsThatKeepKanaAreTranslatedAgainOneByOne) {
     ASSERT_EQ(result.groups.size(), 2u);
     EXPECT_EQ(kanaCount(result.groups[0].translation), 0) << result.groups[0].translation;
     EXPECT_EQ(result.groups[1].translation, "譯:Hello") << "沒有假名的不重翻";
+}
+
+TEST_F(PipelineTest, ShortEnglishLinesLeftInEnglishAreTranslatedAgain) {
+    // 一次送好幾段時，假引擎把短的「Huh?!」原樣留著；單獨送時才翻
+    engine_->keepEnglishInBatches = true;
+    ocr_.lines = {line(20, 20, 300, 44, "Huh?!"), line(20, 150, 300, 174, "Where are we going")};
+    const PipelineResult result = run(job());
+    ASSERT_EQ(result.groups.size(), 2u);
+    EXPECT_EQ(result.groups[0].translation, "譯:Huh?!");
+    EXPECT_EQ(result.groups[1].translation, "譯:Where are we going");
 }
 
 // 速度優化 4：畫面還在等穩定時先做 OCR，穩定之後直接沿用

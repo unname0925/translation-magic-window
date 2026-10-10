@@ -7,6 +7,7 @@
 #include <string>
 #include <utility>
 
+#include "core/language.h"
 #include "core/overlay_plan.h"
 #include "core/ruby.h"
 #include "core/translator.h"
@@ -380,9 +381,15 @@ PipelineResult Pipeline::finish(RecognizedPage page, const PipelineJob& job,
     result.timings.translationMs = millisecondsSince(translationStart);
     // 譯文留著沒翻的原文（日文假名：句尾的「な」「だからっ」、整段沒翻；英文：半句留英文）：
     // 那幾段單獨重翻一次，留下的變少才換。網頁漫畫實測約 5% 的段落留著假名，重翻後 1.4%
+    // 譯文整段都是英文（短對白「COME ON, LET'S
+    // GO!」「Huh?!」被照抄回來）也算：英文漫畫實測每章好幾處
     const auto leftover = [&request](const std::string& text) {
         const int words = englishWordCount(text, request.glossary);
-        return kanaCount(text) + (words >= 2 ? words : 0);  // 一個英文字多半是名字、音效，不算
+        const ScriptCounts scripts = countScripts(text);
+        const bool allLatin = scripts.latin >= 2 && scripts.han == 0 && scripts.kana == 0 &&
+                              scripts.hangul == 0 && !request.glossary.contains(text);
+        // 一個英文字多半是名字、音效，不算
+        return kanaCount(text) + (words >= 2 ? words : 0) + (allLatin && words < 2 ? 1 : 0);
     };
     if (result.error.empty() && !cancel.stop_requested()) {
         std::vector<std::size_t> leaky;
