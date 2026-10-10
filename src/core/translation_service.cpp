@@ -1,5 +1,6 @@
 #include "core/translation_service.h"
 
+#include <array>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -19,6 +20,27 @@ TranslationService::TranslationService(std::shared_ptr<TranslatorChain> chain,
                                        std::size_t cacheCapacity)
     : chain_(std::move(chain)), converter_(std::move(converter)), cache_(cacheCapacity) {
     engineIds_ = chain_->engineIds();
+}
+
+std::vector<std::string> TranslationService::retranslate(std::span<const std::string> segments,
+                                                         const TranslateRequest& request,
+                                                         std::stop_token cancel) {
+    std::vector<std::string> out;
+    out.reserve(segments.size());
+    for (const std::string& segment : segments) {
+        const std::array<std::string, 1> one{segment};
+        ChainResult result = chain_->translate(one, request, cancel);
+        std::string translation = result.translations.empty()
+                                      ? std::string()
+                                      : converter_->convert(result.translations[0]);
+        if (!translation.empty()) {
+            cache_.put(TranslationKey{result.engine, request.srcLang, request.dstLang, segment,
+                                      glossaryFingerprint(segment, request.glossary)},
+                       translation);
+        }
+        out.push_back(std::move(translation));
+    }
+    return out;
 }
 
 std::string TranslationService::engineStatus() const {

@@ -1,6 +1,7 @@
 #include "core/text_layout.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -8,6 +9,7 @@
 #include <map>
 #include <numeric>
 #include <optional>
+#include <set>
 
 #include "core/utf8.h"
 
@@ -472,6 +474,53 @@ std::string moveLeadingClosingPunctuation(std::string_view text) {
         return std::string(text);  // 只有標點：不動
     }
     return rest + moved;
+}
+
+int kanaCount(std::string_view text) {
+    int count = 0;
+    int depth = 0;  // 在 {本文|讀音} 標記裡面
+    for (std::size_t i = 0; i < text.size();) {
+        const char32_t c = nextCodePoint(text, i);
+        if (c == U'{') {
+            ++depth;
+        } else if (c == U'}' && depth > 0) {
+            --depth;
+        } else if (depth == 0 && ((c >= 0x3041 && c <= 0x3096) || (c >= 0x30A1 && c <= 0x30FA))) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+int englishWordCount(std::string_view text, const std::map<std::string, std::string>& ignore) {
+    const auto lower = [](std::string word) {
+        for (char& c : word) {
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        }
+        return word;
+    };
+    std::set<std::string> skip;
+    for (const auto& [source, target] : ignore) {
+        skip.insert(lower(source));
+        skip.insert(lower(target));
+    }
+    int count = 0;
+    std::size_t i = 0;
+    while (i < text.size()) {
+        if (!std::isalpha(static_cast<unsigned char>(text[i]))) {
+            ++i;
+            continue;
+        }
+        std::size_t end = i;
+        while (end < text.size() && std::isalpha(static_cast<unsigned char>(text[end]))) {
+            ++end;
+        }
+        if (end - i >= 3 && !skip.contains(lower(std::string(text.substr(i, end - i))))) {
+            ++count;
+        }
+        i = end;
+    }
+    return count;
 }
 
 bool touchesEdge(const RectI& rect, const SizeI& frame, int margin) {

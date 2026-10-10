@@ -378,6 +378,36 @@ PipelineResult Pipeline::finish(RecognizedPage page, const PipelineJob& job,
         translations.assign(sources.size(), std::string());
     }
     result.timings.translationMs = millisecondsSince(translationStart);
+    // 譯文留著沒翻的原文（日文假名：句尾的「な」「だからっ」、整段沒翻；英文：半句留英文）：
+    // 那幾段單獨重翻一次，留下的變少才換。網頁漫畫實測約 5% 的段落留著假名，重翻後 1.4%
+    const auto leftover = [&request](const std::string& text) {
+        const int words = englishWordCount(text, request.glossary);
+        return kanaCount(text) + (words >= 2 ? words : 0);  // 一個英文字多半是名字、音效，不算
+    };
+    if (result.error.empty() && !cancel.stop_requested()) {
+        std::vector<std::size_t> leaky;
+        std::vector<std::string> again;
+        for (std::size_t i = 0; i < translations.size(); ++i) {
+            if (leftover(translations[i]) > 0 && i < sources.size()) {
+                leaky.push_back(i);
+                again.push_back(sources[i]);
+            }
+        }
+        if (!leaky.empty()) {
+            try {
+                const std::vector<std::string> fresh =
+                    translation_.retranslate(again, request, cancel);
+                for (std::size_t k = 0; k < leaky.size() && k < fresh.size(); ++k) {
+                    std::string& old = translations[leaky[k]];
+                    if (!fresh[k].empty() && leftover(fresh[k]) < leftover(old)) {
+                        old = fresh[k];
+                    }
+                }
+            } catch (const TranslatorError&) {
+                // 重翻失敗：留著原本的譯文
+            }
+        }
+    }
     for (std::string& translation : translations) {
         translation = moveLeadingClosingPunctuation(translation);
     }

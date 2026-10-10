@@ -120,7 +120,7 @@
     panel.classList.toggle("hidden", panelState.hidden);
     panel.style.opacity = String(panelState.opacity / 100);
     const width = panel.offsetWidth || 230;
-    const left = panelState.left ?? innerWidth - width - 24;
+    const left = panelState.left ?? defaultPanelLeft(width);
     panel.style.left = `${Math.max(0, Math.min(left, innerWidth - width))}px`;
     panel.style.top = `${Math.max(0, Math.min(panelState.top, innerHeight - 32))}px`;
     $panel("opacity").value = String(panelState.opacity);
@@ -128,6 +128,38 @@
     $panel("minimize").textContent = panelState.minimized ? "+" : "–";
     $panel("autoPreload").checked = panelState.autoPreload;
     $panel("soundEffects").checked = panelState.soundEffects;
+  }
+
+  // 還沒拖動過面板時放哪裡：漫畫欄的右邊或左邊有空白就放在空白裡，不蓋到漫畫；
+  // 兩邊都放不下就放右上（整頁翻完時會自動縮小，見 updateBadge）
+  function defaultPanelLeft(width) {
+    let columnLeft = Infinity;
+    let columnRight = -Infinity;
+    for (const element of pages.keys()) {
+      const r = element.isConnected ? element.getBoundingClientRect() : null;
+      if (r && r.width > 0 && r.bottom > 0 && r.top < innerHeight) {
+        columnLeft = Math.min(columnLeft, r.left);
+        columnRight = Math.max(columnRight, r.right);
+      }
+    }
+    if (columnRight > columnLeft) {
+      if (innerWidth - columnRight >= width + 24) {
+        return columnRight + Math.min(24, (innerWidth - columnRight - width) / 2);
+      }
+      if (columnLeft >= width + 24) {
+        return columnLeft - width - Math.min(24, (columnLeft - width) / 2);
+      }
+    }
+    return innerWidth - width - 24;
+  }
+
+  // 面板蓋到漫畫嗎（使用者沒拖動過、而且找不到空白可以放的時候）
+  function panelCoversManga() {
+    const p = panel.getBoundingClientRect();
+    return [...pages.keys()].some((element) => {
+      const r = element.isConnected ? element.getBoundingClientRect() : null;
+      return r && r.right > p.left && r.left < p.right && r.bottom > p.top && r.top < p.bottom;
+    });
   }
 
   function savePanel() {
@@ -182,9 +214,9 @@
     applySoundEffects();
   });
   addEventListener("resize", applyPanel, { passive: true });
-  applyPanel();
 
   const pages = new Map(); // 元素 → { source, result, anchor, layer }（譯文畫在哪）
+  applyPanel(); // 要在 pages 之後：沒拖過的面板依漫畫欄的位置放（defaultPanelLeft）
   // 這一章的每一張圖（依網址）：state 是 queued／working／waiting（等圖片載入）／done／failed，
   // reason 是失敗的原因。元素被拿掉也留著：總數不會變少，有網址的照樣翻完
   let sources = new Map();
@@ -195,6 +227,7 @@
   // 這一章有沒有翻好過任何一張：還沒有時一次只送一張（第一張譯文最快出現；
   // 第一批同時送 6 張時，第一張要等 50 秒以上）
   let firstResultSeen = false;
+  let autoMinimized = false; // 翻完時自動縮小過一次（使用者再展開就不再縮）
   let picking = false; // 正在選「不要翻的圖」
   let hovered = null; // 選圖時滑鼠底下加了框的圖
   let queue = []; // 等著送出的圖片網址
@@ -500,6 +533,9 @@
     }
     pump();
     updateBadge();
+    if (panelState.left == null) {
+      applyPanel(); // 找到漫畫欄了：沒拖過的面板移到旁邊的空白
+    }
   }
 
   let scanTimer = 0;
@@ -822,6 +858,7 @@
       "capture-empty": "截圖裁不到這張圖",
       "capture-expired": "截好的圖等太久被丟掉了",
       "capture-moving": "這張圖一直在動（翻頁動畫），等它停下來再截",
+      cancelled: "換章了，這張不翻了",
       disconnected: "和主程式的連線斷了",
     };
     if (known[message]) {
@@ -892,7 +929,7 @@
       entry.triedCapture = false;
       entry.state = "waiting";
       entry.reason = entry.slices?.length ? "這張圖比畫面高：捲動時一段一段截圖翻譯"
-                                          : "網頁不讓讀取這張圖：捲到它出現在畫面上時用截圖翻譯";
+                                          : "這個網站不讓讀取圖片，只能翻畫面上看得到的頁：翻到或捲到那一頁，幾秒後就會出現譯文";
       return;
     }
     if (reply?.notice) {
@@ -1284,6 +1321,12 @@
       text = `翻譯中 ${done} / ${total}`;
     } else {
       text = `完成 ${done} 張`;
+      // 翻完了、面板又蓋在漫畫上（使用者沒動過它）：自動縮小，只留標題列
+      if (!autoMinimized && panelState.left == null && !panelState.minimized && panelCoversManga()) {
+        autoMinimized = true;
+        panelState.minimized = true;
+        applyPanel();
+      }
     }
     $panel("status").textContent = text;
     const { waiting } = counts();
@@ -1476,6 +1519,7 @@
     const chapter = chapterOf(location.href);
     if (chapter !== lastChapter) {
       lastChapter = chapter;
+      chrome.runtime.sendMessage({ kind: "cancel-tab" }).catch(() => {}); // 上一章還沒翻完的不用翻了
       sources = new Map(); // 新的一章重新計數（翻好的還記在 doneBySource）
       firstResultSeen = false; // 新的一章：第一張一樣先送
       queue = [];

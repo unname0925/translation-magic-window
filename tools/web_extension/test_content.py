@@ -568,7 +568,7 @@ def make_capture_page(content: str) -> str:
       await wait(300);
       check("畫面上的那張用截圖翻好", overlays() === 1 && captures.length === 1 && translated === 1,
             overlays() + " overlays, " + captures.length + " captures");
-      check("不在畫面上的那張等著、說明原因", status().waiting === 1 && status().reasons.some((r) => r.includes("截圖")),
+      check("不在畫面上的那張等著、說明原因", status().waiting === 1 && status().reasons.some((r) => r.includes("畫面上")),
             JSON.stringify(status().reasons));
       scrollTo(0, 700);
       for (let i = 0; i < 50 && overlays() < 2; i++) await wait(100);  // 掃描、截圖、翻譯：最多等 5 秒

@@ -7,6 +7,7 @@
 #pragma once
 
 #include <cstddef>
+#include <map>
 #include <optional>
 #include <span>
 #include <string>
@@ -129,6 +130,12 @@ void markSoundEffects(std::vector<TextBlock>& blocks, std::span<const RectI> bub
 // 排在最前面，譯文也跟著從「。」開始，直排時「。」就畫在第一個字上面。
 // 「……」不搬：句子可以從刪節號開始
 std::string moveLeadingClosingPunctuation(std::string_view text);
+
+// 譯文裡留著幾個日文假名（不算 `{本文|讀音}` 標記裡的）：翻成中文的譯文不該有假名
+int kanaCount(std::string_view text);
+
+// 譯文裡留著幾個沒翻的英文單字（3 個字母以上；ignore 裡的不算，例如專有名詞表照原文留著的名字）
+int englishWordCount(std::string_view text, const std::map<std::string, std::string>& ignore);
 
 std::string joinLines(std::span<const std::string> lines, Language language,
                       std::vector<int>* startOffsets = nullptr);

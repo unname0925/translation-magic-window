@@ -12,6 +12,7 @@ const MAX_PIXELS = 4_000_000;
 
 let port = null;
 const waiting = new Map(); // id → [resolve…]：等主程式回覆
+const waitingTabs = new Map(); // id → 哪些分頁在等（換章時取消那個分頁的請求）
 const results = new Map(); // id → 成功的回覆（這次瀏覽器執行期間的快取；失敗的不記，重試才會真的重送）
 const engineWaiters = []; // 等主程式回「用過的翻譯引擎」
 // 主程式的狀態（控制視窗顯示）："unknown" | "connected" | "host-not-installed" | "app-unavailable" | 其他錯誤
@@ -64,6 +65,7 @@ function onHostMessage(message) {
   }
   const resolvers = waiting.get(message.id) || [];
   waiting.delete(message.id);
+  waitingTabs.delete(message.id);
   for (const resolve of resolvers) {
     resolve(message);
   }
@@ -79,6 +81,30 @@ function failAll(reason) {
     }
   }
   waiting.clear();
+  waitingTabs.clear();
+}
+
+// 這個分頁換章了：它還在等的圖不用翻了。只有這個分頁在等的，請主程式取消（別的分頁也在等同一張圖就留著）
+function cancelTab(tabId) {
+  for (const [id, tabs] of waitingTabs) {
+    if (!tabs.has(tabId)) {
+      continue;
+    }
+    tabs.delete(tabId);
+    if (tabs.size > 0) {
+      continue;
+    }
+    for (const resolve of waiting.get(id) || []) {
+      resolve({ type: "error", id, message: "cancelled" });
+    }
+    waiting.delete(id);
+    waitingTabs.delete(id);
+    try {
+      port?.postMessage({ type: "cancel", id });
+    } catch {
+      // 連線斷了：主程式那邊本來就會丟掉
+    }
+  }
 }
 
 function base64(bytes) {
@@ -209,7 +235,7 @@ async function decodePixels(encoded) {
 
 // content.js 的請求：{url} 由這裡抓，{encoded} 是頁面裡拿到的壓縮檔，
 // 或 {image:{width,height,pixels}} 是頁面裡已經讀好的
-async function translate(request) {
+async function translate(request, tabId) {
   let image = request.image;
   if (request.captured) {
     image = captures.get(request.captured);
@@ -235,6 +261,10 @@ async function translate(request) {
     return { ...cached, width: image.width, height: image.height };
   }
   const reply = await new Promise((resolve) => {
+    if (!waitingTabs.has(id)) {
+      waitingTabs.set(id, new Set());
+    }
+    waitingTabs.get(id).add(tabId);
     const list = waiting.get(id);
     if (list) {
       list.push(resolve); // 同一張圖已經在路上了
@@ -381,7 +411,10 @@ async function setAutoSite(origin, enabled) {
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   let work = null;
   if (request?.kind === "translate" && sender.tab) {
-    work = translate(request);
+    work = translate(request, sender.tab.id);
+  } else if (request?.kind === "cancel-tab" && sender.tab) {
+    cancelTab(sender.tab.id);
+    work = Promise.resolve({ ok: true });
   } else if (request?.kind === "capture" && sender.tab) {
     work = capture(request, sender);
   } else if (request?.kind === "app-status") {

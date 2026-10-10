@@ -37,6 +37,11 @@ public:
                                        const TranslateRequest& request, std::stop_token cancel,
                                        std::string* note = nullptr);
 
+    // 不看快取、一段一段單獨重翻（結果照樣寫回快取，蓋掉舊的）。譯文留著日文假名時用：
+    // 單獨送的提示詞和一次送好幾段的不同，結果才會變；送一樣的請求，模型多半給一樣的答案
+    std::vector<std::string> retranslate(std::span<const std::string> segments,
+                                         const TranslateRequest& request, std::stop_token cancel);
+
     TranslationCache& cache() { return cache_; }
 
     // 引擎鏈目前的狀況（除錯傾印用）

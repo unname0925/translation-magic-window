@@ -223,6 +223,21 @@ TEST(EdgeTest, DetectsEveryEdge) {
     EXPECT_FALSE(touchesEdge(RectI::fromXYWH(50, 50, 100, 20), frame));
 }
 
+TEST(KanaTest, CountsKanaOutsideRubyMarkers) {
+    EXPECT_EQ(kanaCount("還要糟呢な"), 1);
+    EXPECT_EQ(kanaCount("{本気|マジ}的"), 0) << "標記裡的讀音不算";
+    EXPECT_EQ(kanaCount("你好"), 0);
+    EXPECT_EQ(kanaCount("ありがとう"), 5);
+}
+
+TEST(EnglishLeftoverTest, CountsUntranslatedWords) {
+    EXPECT_EQ(englishWordCount("你到現在還是沒有嗎？ CONTACTED THAT GIRL?", {}), 3);
+    EXPECT_EQ(englishWordCount("田中，等等我！", {}), 0);
+    EXPECT_EQ(englishWordCount("TANAKA，等等我！", {{"TANAKA", "TANAKA"}}), 0)
+        << "名詞表照原文留的名字";
+    EXPECT_EQ(englishWordCount("OK，走吧", {}), 0) << "兩個字母以下不算";
+}
+
 TEST(PunctuationTest, ClosingPunctuationAtTheStartMovesToTheEnd) {
     EXPECT_EQ(moveLeadingClosingPunctuation("。好的"), "好的。");
     EXPECT_EQ(moveLeadingClosingPunctuation("！？ 走吧"), "走吧！？");

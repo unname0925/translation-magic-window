@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "core/translator_chain.h"
+#include "core/utf8.h"
 #include "support/fake_clock.h"
 
 namespace tmw::core {
@@ -74,6 +75,17 @@ OcrLine column(int left, int top, int right, int bottom, std::string text) {
     return OcrLine{RectI{left, top, right, bottom}, std::move(text), 0.9f, Orientation::Vertical};
 }
 
+// 假引擎的「翻譯」：真的引擎不會把假名留在中文譯文裡，換成「〇」
+std::string withoutKana(std::string_view text) {
+    std::string out;
+    for (std::size_t i = 0; i < text.size();) {
+        const char32_t c = nextCodePoint(text, i);
+        appendCodePoint(out,
+                        (c >= 0x3041 && c <= 0x3096) || (c >= 0x30A1 && c <= 0x30FA) ? U'〇' : c);
+    }
+    return out;
+}
+
 class FakeTranslator final : public ITranslator {
 public:
     std::string id() const override { return "fake"; }
@@ -89,7 +101,9 @@ public:
         std::vector<std::string> out;
         out.reserve(segments.size());
         for (const std::string& segment : segments) {
-            out.push_back("譯:" + segment);
+            // keepKanaInBatches：好幾段一起送時，有假名的原樣留著（模型沒翻完）
+            const bool keep = keepKanaInBatches && segments.size() > 1 && kanaCount(segment) > 0;
+            out.push_back(keep ? segment : "譯:" + withoutKana(segment));
         }
         return out;
     }
@@ -97,6 +111,7 @@ public:
     std::vector<Strings> batches;
     std::vector<TranslateRequest> requests;
     std::optional<TranslateError> failure;
+    bool keepKanaInBatches = false;
 };
 
 class PipelineTest : public ::testing::Test {
@@ -271,7 +286,7 @@ TEST_F(PipelineTest, PassesRecentGroupsAsContext) {
     EXPECT_TRUE(engine_->requests[0].context.empty());
     ASSERT_EQ(engine_->requests[1].context.size(), 1u);
     EXPECT_EQ(engine_->requests[1].context[0].first, "こんにちは");
-    EXPECT_EQ(engine_->requests[1].context[0].second, "譯:こんにちは");
+    EXPECT_EQ(engine_->requests[1].context[0].second, "譯:〇〇〇〇〇");
 }
 
 TEST_F(PipelineTest, KeepsOnlyTheMostRecentContext) {
@@ -503,6 +518,16 @@ TEST_F(PipelineTest, PagesGetTheContextOfThePageBeforeThem) {
     ocr_.lines = {line(20, 20, 300, 44, "Other chapter")};
     run(other);
     EXPECT_TRUE(engine_->requests.back().context.empty()) << "別的一章不拿這一章的頁";
+}
+
+TEST_F(PipelineTest, TranslationsThatKeepKanaAreTranslatedAgainOneByOne) {
+    // 一次送好幾段時，假引擎把「おはよう」原樣留著；單獨送時才翻
+    engine_->keepKanaInBatches = true;
+    ocr_.lines = {line(20, 20, 300, 44, "おはよう"), line(20, 150, 300, 174, "Hello")};
+    const PipelineResult result = run(job());
+    ASSERT_EQ(result.groups.size(), 2u);
+    EXPECT_EQ(kanaCount(result.groups[0].translation), 0) << result.groups[0].translation;
+    EXPECT_EQ(result.groups[1].translation, "譯:Hello") << "沒有假名的不重翻";
 }
 
 // 速度優化 4：畫面還在等穩定時先做 OCR，穩定之後直接沿用
