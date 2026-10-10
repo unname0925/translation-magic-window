@@ -112,7 +112,14 @@ void WebService::enqueue(int connection, std::shared_ptr<core::WebRequest> reque
         }
     }
     std::string id = request->id;
-    queue_.push_back(Pending{connection, std::move(id), std::move(request), std::move(key)});
+    // 畫面上的那張排到最前面：截圖翻譯（soraraw）時使用者已經翻到那一頁，正在等
+    const bool urgent = request->urgent;
+    Pending pending{connection, std::move(id), std::move(request), std::move(key)};
+    if (urgent) {
+        queue_.push_front(std::move(pending));
+    } else {
+        queue_.push_back(std::move(pending));
+    }
     pump();
 }
 
@@ -173,6 +180,7 @@ std::string dropSummary(const core::OverlayDrops& drops) {
     add("像是符號", drops.symbols);
     add("OCR 分數低", drops.lowScore);
     add("背景不適合蓋", drops.busyBackground);
+    add("英文照抄", drops.unchanged);
     return "，沒蓋 " + std::to_string(drops.total()) + " 段（" + parts + "）";
 }
 
@@ -198,6 +206,7 @@ void WebService::submitNext() {
     job.termScope = next.request->site.empty() ? std::string("web") : next.request->site;
     job.pageIndex = next.request->order;  // 上下文照頁序
     job.chapter = next.request->chapter;
+    job.urgent = next.request->urgent;
     job.overlayOnly = true;  // 沒有結果視窗：蓋不上去的段落不必翻譯
     running_[job.generation] =
         Running{next.connection, std::move(next.id), std::move(next.cacheKey)};

@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <utility>
 
+#include "core/language.h"
 #include "core/ruby.h"
 #include "core/text_style.h"
 #include "core/utf8.h"
@@ -316,6 +317,15 @@ float minimumScore(const TextBlock& block) {
 
 }  // namespace
 
+bool untranslatedLatin(std::string_view source, std::string_view translation) {
+    const ScriptCounts from = countScripts(source);
+    const ScriptCounts to = countScripts(stripRubyMarkup(translation));
+    const auto onlyLatin = [](const ScriptCounts& counts) {
+        return counts.latin > 0 && counts.han == 0 && counts.kana == 0 && counts.hangul == 0;
+    };
+    return onlyLatin(from) && onlyLatin(to);
+}
+
 CoverDecision coverDecision(const ImageBgra& frame, const TextBlock& block, bool canInpaint) {
     if (looksLikeSymbols(frame, block)) {
         return CoverDecision::Symbols;
@@ -349,6 +359,10 @@ std::vector<OverlayItem> planOverlay(const ImageBgra& frame,
         }
         if (looksLikeSymbols(frame, group.block)) {
             ++dropped.symbols;
+            continue;
+        }
+        if (untranslatedLatin(group.block.text, group.translation)) {
+            ++dropped.unchanged;
             continue;
         }
         OverlayItem item;

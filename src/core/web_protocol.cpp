@@ -213,6 +213,9 @@ WebRequest parseWebRequest(std::string_view json) {
     if (message.contains("chapter") && message["chapter"].is_string()) {
         out.chapter = message["chapter"].get<std::string>();
     }
+    if (message.contains("urgent") && message["urgent"].is_boolean()) {
+        out.urgent = message["urgent"].get<bool>();
+    }
     if (message.contains("soundEffects") && message["soundEffects"].is_boolean()) {
         out.soundEffects = message["soundEffects"].get<bool>();
     }

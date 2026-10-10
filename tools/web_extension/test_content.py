@@ -709,6 +709,16 @@ def make_rtl_engine_page(content: str) -> str:
       select.dispatchEvent(new Event("change"));
       await wait(300);
       check("免費的引擎直接換", switched.length === 1 && switched[0] === 2, JSON.stringify(switched));
+      // 閱讀器翻頁時換 object-position（2 頁模式把圖推向書脊）：譯文跟著圖畫出來的位置走
+      const layer = document.querySelector("tmw-overlay").shadowRoot.querySelector(".layer");
+      const before = layer.style.top;
+      img.style.objectFit = "contain";
+      await wait(1500);
+      const centered = layer.style.top;
+      img.style.objectPosition = "50% 0%";
+      await wait(1500);
+      check("object-position 改了譯文跟著移", centered !== before && parseFloat(layer.style.top) === 0,
+            before + " → " + centered + " → " + layer.style.top);
       document.body.setAttribute("data-report", report.join(" | "));
     }})();
     </script>"""

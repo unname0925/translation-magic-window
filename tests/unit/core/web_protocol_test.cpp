@@ -92,6 +92,18 @@ TEST(ParseWebRequestTest, SoundEffectsDefaultToTranslated) {
     EXPECT_FALSE(parseWebRequest(message.dump()).soundEffects);
 }
 
+TEST(ParseWebRequestTest, UrgentDefaultsToFalse) {
+    const std::vector<std::uint8_t> rgba(4, 0);
+    nlohmann::json message{{"type", "translate"},
+                           {"id", "a"},
+                           {"width", 1},
+                           {"height", 1},
+                           {"pixels", base64Encode(rgba)}};
+    EXPECT_FALSE(parseWebRequest(message.dump()).urgent);
+    message["urgent"] = true;
+    EXPECT_TRUE(parseWebRequest(message.dump()).urgent);
+}
+
 TEST(ParseWebRequestTest, PageOrderAndChapter) {
     const std::vector<std::uint8_t> rgba(4, 0);
     nlohmann::json message{{"type", "translate"},

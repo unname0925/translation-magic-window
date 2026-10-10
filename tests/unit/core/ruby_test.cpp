@@ -21,6 +21,13 @@ OcrLine row(int left, int right, int top, int bottom, std::string text) {
         RectI{left, top, right, bottom}, std::move(text), 0.9f, Orientation::Horizontal, {}};
 }
 
+TEST(DropKanaReadingsTest, OnlyReadingsWrittenInKanaAreDropped) {
+    EXPECT_EQ(dropKanaReadings("{母親|はは}來了"), "母親來了");
+    EXPECT_EQ(dropKanaReadings("是{認真|真的}的"), "是{認真|真的}的") << "讀音翻成中文的留著";
+    EXPECT_EQ(dropKanaReadings("{我|おれ}和{你|お前}"), "我和你");
+    EXPECT_EQ(dropKanaReadings("沒有標記"), "沒有標記");
+}
+
 TEST(IsKanaOnlyTest, OnlyKanaCountsAsRuby) {
     EXPECT_TRUE(isKanaOnly("マジ"));
     EXPECT_TRUE(isKanaOnly("しんれんさい"));

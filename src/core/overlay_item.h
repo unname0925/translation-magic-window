@@ -49,8 +49,9 @@ struct OverlayDrops {
     int symbols = 0;         // 原文沒有字、或是很小的一兩個字（多半是把符號讀成了字）
     int lowScore = 0;        // OCR 分數太低
     int busyBackground = 0;  // 背景不是純色、沒有修補，不值得蓋
+    int unchanged = 0;       // 原文和譯文都只有英文（商標、招牌、衣服上的字：照抄或讀錯了）
 
-    int total() const { return untranslated + symbols + lowScore + busyBackground; }
+    int total() const { return untranslated + symbols + lowScore + busyBackground + unchanged; }
 };
 
 }  // namespace tmw::core

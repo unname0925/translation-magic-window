@@ -476,8 +476,40 @@ std::string moveLeadingClosingPunctuation(std::string_view text) {
     return rest + moved;
 }
 
+namespace {
+
+bool isHiragana(char32_t c) {
+    return c >= 0x3041 && c <= 0x3096;
+}
+
+bool isKatakana(char32_t c) {
+    return c >= 0x30A1 && c <= 0x30FA;
+}
+
+bool isHan(char32_t c) {
+    return (c >= 0x4E00 && c <= 0x9FFF) || (c >= 0x3400 && c <= 0x4DBF);
+}
+
+bool isDot(char32_t c) {
+    return c == U'.' || c == U'．' || c == U'・' || c == U'。' || c == U'…' || c == U'･';
+}
+
+}  // namespace
+
 int kanaCount(std::string_view text) {
     int count = 0;
+    for (std::size_t i = 0; i < text.size();) {
+        const char32_t c = nextCodePoint(text, i);
+        if (isHiragana(c) || isKatakana(c)) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+std::string removeStrayHiragana(std::string_view text) {
+    int hiragana = 0;
+    int han = 0;
     int depth = 0;  // 在 {本文|讀音} 標記裡面
     for (std::size_t i = 0; i < text.size();) {
         const char32_t c = nextCodePoint(text, i);
@@ -485,11 +517,104 @@ int kanaCount(std::string_view text) {
             ++depth;
         } else if (c == U'}' && depth > 0) {
             --depth;
-        } else if (depth == 0 && ((c >= 0x3041 && c <= 0x3096) || (c >= 0x30A1 && c <= 0x30FA))) {
-            ++count;
+        } else if (depth == 0) {
+            hiragana += isHiragana(c) ? 1 : 0;
+            han += isHan(c) ? 1 : 0;
         }
     }
-    return count;
+    if (hiragana == 0 || han < 4 * hiragana) {
+        return std::string(text);
+    }
+    std::string out;
+    out.reserve(text.size());
+    depth = 0;
+    for (std::size_t i = 0; i < text.size();) {
+        const std::size_t start = i;
+        const char32_t c = nextCodePoint(text, i);
+        if (c == U'{') {
+            ++depth;
+        } else if (c == U'}' && depth > 0) {
+            --depth;
+        } else if (depth == 0 && isHiragana(c)) {
+            continue;
+        }
+        out.append(text.substr(start, i - start));
+    }
+    return out;
+}
+
+std::string normalizeEllipsis(std::string_view text) {
+    std::string out;
+    out.reserve(text.size());
+    for (std::size_t i = 0; i < text.size();) {
+        const std::size_t start = i;
+        const char32_t c = nextCodePoint(text, i);
+        if (!isDot(c)) {
+            out.append(text.substr(start, i - start));
+            continue;
+        }
+        // 一串點：兩個以上、又不全是「…」才換
+        int count = 1;
+        bool allEllipsis = c == U'…';
+        std::size_t end = i;
+        while (end < text.size()) {
+            std::size_t next = end;
+            const char32_t d = nextCodePoint(text, next);
+            if (!isDot(d)) {
+                break;
+            }
+            ++count;
+            allEllipsis = allEllipsis && d == U'…';
+            end = next;
+        }
+        out.append(count >= 2 && !allEllipsis ? std::string_view("……")
+                                              : text.substr(start, end - start));
+        i = end;
+    }
+    return out;
+}
+
+std::string fixHonorificSan(std::string_view source, std::string_view translation,
+                            const std::map<std::string, std::string>& glossary) {
+    const auto lower = [](std::string_view text) {
+        std::string out(text);
+        for (char& c : out) {
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        }
+        return out;
+    };
+    const std::string from = lower(source);
+    std::string out(translation);
+    for (const auto& [term, target] : glossary) {
+        if (target.empty() || from.find(lower(term) + "-san") == std::string::npos) {
+            continue;
+        }
+        const std::string wrong = target + "山";
+        for (std::size_t at = out.find(wrong); at != std::string::npos;
+             at = out.find(wrong, at + target.size() + 6)) {
+            out.replace(at + target.size(), std::string_view("山").size(), "先生");
+        }
+    }
+    return out;
+}
+
+std::string stripTranslationPreamble(std::string_view text) {
+    // 「翻譯為：」「翻譯是：」「譯文：」出現在前面（說明不會太長），後面還有字
+    static constexpr std::string_view kMarkers[] = {
+        "翻譯為：", "翻譯為:", "翻譯是：", "翻譯是:", "翻譯成：", "譯文：", "譯文:"};
+    for (const std::string_view marker : kMarkers) {
+        const std::size_t at = text.find(marker);
+        if (at != std::string_view::npos && at <= 120) {
+            std::string_view rest = text.substr(at + marker.size());
+            while (!rest.empty() && rest.front() == ' ') {
+                rest.remove_prefix(1);
+            }
+            if (!rest.empty()) {
+                return std::string(rest);
+            }
+        }
+    }
+    return std::string(text);
 }
 
 int englishWordCount(std::string_view text, const std::map<std::string, std::string>& ignore) {

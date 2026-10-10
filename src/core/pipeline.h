@@ -67,6 +67,8 @@ struct PipelineJob {
     // 不是「剛好最後翻完的」（好幾頁同時翻譯，最後翻完的常常是後面的頁）。-1：不知道
     int pageIndex = -1;
     std::string chapter;
+    // 網頁漫畫：這張圖送來時就在畫面上。排在還沒開始的頁前面（core/web_pipeline_worker.h）
+    bool urgent = false;
 };
 
 struct PipelineTimings {

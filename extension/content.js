@@ -55,6 +55,8 @@
     .body { padding: 8px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 7px;
             overflow-wrap: anywhere; }
     .body > * { min-width: 0; }
+    .line { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    button.action { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .bar { height: 4px; border-radius: 2px; background: #3c3c3c; overflow: hidden; }
     .bar > div { height: 100%; width: 0; background: #63a4e8; transition: width .3s; }
     .buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
@@ -70,6 +72,7 @@
     select { flex: 1; min-width: 0; width: 100%; text-overflow: ellipsis; padding: 2px 4px; border: 1px solid #4a4a4a; border-radius: 4px;
              background: #2b2c2f; color: #f1f1f1; font: inherit; }
     .reasons { display: grid; gap: 2px; color: #f6c35b; font-size: 11px; }
+    .reasons .wait { color: #c8c8c8; }
     .notice { color: #9ecbff; font-size: 11px; }
     .confirm { border: 1px solid #e8a33d; border-radius: 6px; padding: 6px; color: #ffd28a; font-size: 11px;
                display: grid; gap: 5px; }
@@ -84,7 +87,7 @@
       <button class="icon" id="minimize" title="縮小／展開">–</button>
       <button class="icon" id="close" title="關閉面板（翻譯繼續）">×</button></div>
     <div class="body">
-      <div><span id="status">準備中…</span> <span id="detail" class="muted"></span></div>
+      <div class="line" id="statusLine"><span id="status">準備中…</span> <span id="detail" class="muted"></span></div>
       <div class="bar"><div id="progress"></div></div>
       <div class="row"><span>翻譯</span><select id="engine" title="主程式用過的翻譯引擎"></select></div>
       <div id="paidConfirm" class="confirm" hidden>
@@ -121,8 +124,9 @@
     panel.style.opacity = String(panelState.opacity / 100);
     const width = panel.offsetWidth || 230;
     const left = panelState.left ?? defaultPanelLeft(width);
+    const top = panelState.left == null ? defaultPanelTop(left, width) : panelState.top;
     panel.style.left = `${Math.max(0, Math.min(left, innerWidth - width))}px`;
-    panel.style.top = `${Math.max(0, Math.min(panelState.top, innerHeight - 32))}px`;
+    panel.style.top = `${Math.max(0, Math.min(top, innerHeight - 32))}px`;
     $panel("opacity").value = String(panelState.opacity);
     $panel("opacityText").textContent = `${panelState.opacity}%`;
     $panel("minimize").textContent = panelState.minimized ? "+" : "–";
@@ -132,25 +136,76 @@
 
   // 還沒拖動過面板時放哪裡：漫畫欄的右邊或左邊有空白就放在空白裡，不蓋到漫畫；
   // 兩邊都放不下就放右上（整頁翻完時會自動縮小，見 updateBadge）
+  // 上一次放的位置還在空白裡就不動：每張圖寬度不同，照「現在看得到的圖」重算的話，面板會隨捲動左右跳
   function defaultPanelLeft(width) {
     let columnLeft = Infinity;
     let columnRight = -Infinity;
-    for (const element of pages.keys()) {
+    // 略過的圖也算漫畫：使用者正要看它的原文，面板不能搬到它上面
+    for (const element of [...pages.keys(), ...skippedElements]) {
       const r = element.isConnected ? element.getBoundingClientRect() : null;
       if (r && r.width > 0 && r.bottom > 0 && r.top < innerHeight) {
         columnLeft = Math.min(columnLeft, r.left);
         columnRight = Math.max(columnRight, r.right);
       }
     }
-    if (columnRight > columnLeft) {
-      if (innerWidth - columnRight >= width + 24) {
-        return columnRight + Math.min(24, (innerWidth - columnRight - width) / 2);
-      }
-      if (columnLeft >= width + 24) {
-        return columnLeft - width - Math.min(24, (columnLeft - width) / 2);
+    if (columnRight <= columnLeft) {
+      return placedLeft ?? innerWidth - width - 24;
+    }
+    const clear = (left) => left >= 0 && left + width <= innerWidth && (left >= columnRight || left + width <= columnLeft);
+    if (placedLeft != null && clear(placedLeft)) {
+      return placedLeft;
+    }
+    if (innerWidth - columnRight >= width + 24) {
+      placedLeft = columnRight + Math.min(24, (innerWidth - columnRight - width) / 2);
+    } else if (columnLeft >= width + 24) {
+      placedLeft = columnLeft - width - Math.min(24, (columnLeft - width) / 2);
+    } else {
+      placedLeft = innerWidth - width - 24;
+    }
+    return placedLeft;
+  }
+  let placedLeft = null;
+  const skippedElements = new Set(); // 這一頁上被略過的圖（面板不放在上面）
+
+  // 沒拖過的面板放多高：網站自己固定在畫面上方的介面（soraraw 的章節選單、設定齒輪）在那裡就
+  // 放到它下面，不要蓋住網站的按鈕。量一次要找好幾個點，兩秒內重用上次的結果
+  let topCache = { at: 0, left: NaN, top: 24 };
+  function defaultPanelTop(left, width) {
+    const now = performance.now();
+    if (now - topCache.at < 2000 && Math.abs(topCache.left - left) < 4) {
+      return topCache.top;
+    }
+    let bottom = 0;
+    const seen = new Set();
+    for (let y = 6; y <= 120; y += 18) {
+      for (let x = left + 8; x <= left + width - 8; x += (width - 16) / 4) {
+        for (const hit of document.elementsFromPoint(x, y)) {
+          if (seen.has(hit) || hit === panelHost || hit === document.body || hit === document.documentElement ||
+              hit instanceof HTMLImageElement || hit instanceof HTMLCanvasElement) {
+            continue;
+          }
+          seen.add(hit);
+          const bar = fixedAncestor(hit);
+          const r = bar?.getBoundingClientRect();
+          if (r && r.top < 120 && r.height < innerHeight / 3 && r.width < innerWidth * 1.01 &&
+              bar.querySelector("a, button, select, input, [role=button]")) {
+            bottom = Math.max(bottom, r.bottom);
+          }
+        }
       }
     }
-    return innerWidth - width - 24;
+    const top = bottom > 0 ? Math.max(24, bottom + 8) : 24;
+    topCache = { at: now, left, top };
+    return top;
+  }
+  function fixedAncestor(node) {
+    for (let at = node, depth = 0; at && at !== document.body && depth < 8; at = at.parentElement, depth += 1) {
+      const position = getComputedStyle(at).position;
+      if (position === "fixed" || position === "sticky") {
+        return at;
+      }
+    }
+    return null;
   }
 
   // 面板蓋到漫畫嗎（使用者沒拖動過、而且找不到空白可以放的時候）
@@ -199,6 +254,7 @@
     panelState.minimized = !panelState.minimized;
     applyPanel();
     savePanel();
+    updateBadge(); // 標題：縮小時是「翻譯 3/7」，展開時是「網頁漫畫翻譯」
   });
   $panel("close").addEventListener("click", () => {
     panelState.hidden = true; // 只關面板，翻譯繼續；控制視窗可以再叫出來
@@ -412,8 +468,12 @@
   // 這張圖在這一章裡的順序：第一次找到的先後（第一次掃描就是網頁上的順序）。
   // 閱讀器把捲出畫面的圖拿掉時，網頁上的位置會變，這個不會
   let nextOrder = 0;
+  // urgent：送出時這張就在畫面上（使用者正在看，主程式排到還沒開始的頁前面）
   function pageOf(source) {
-    return { order: sources.get(source)?.order ?? -1, chapter: chapterOf(location.href) };
+    const entry = sources.get(source);
+    const element = entry?.element;
+    return { order: entry?.order ?? -1, chapter: chapterOf(location.href),
+             urgent: Boolean(element?.isConnected) && distanceToViewport(element) === 0 };
   }
 
   function track(source) {
@@ -841,6 +901,22 @@
     }
   }
 
+  // 主程式的「改用 google（openai-compatible：回應格式錯誤）」換成看得懂的說法
+  function friendlyNotice(notice) {
+    const names = { google: "Google 翻譯", "openai-compatible": "原本的引擎", deepl: "DeepL",
+                    microsoft: "Microsoft 翻譯" };
+    const name = (id) => names[id] || id;
+    const match = /^改用 (\S+)（(.*)）$/.exec(notice);
+    if (!match) {
+      return notice;
+    }
+    const why = match[2].split("；").map((part) => {
+      const [id, ...rest] = part.split("：");
+      return rest.length ? `${name(id)}${rest.join("：").replace("回應格式錯誤", "這次回應的格式不對")}` : part;
+    }).join("；");
+    return `有些頁改用 ${name(match[1])}（${why}）`;
+  }
+
   // 失敗的原因（給人看）
   function reasonOf(reply) {
     if (!reply) {
@@ -929,11 +1005,11 @@
       entry.triedCapture = false;
       entry.state = "waiting";
       entry.reason = entry.slices?.length ? "這張圖比畫面高：捲動時一段一段截圖翻譯"
-                                          : "這個網站不讓讀取圖片，只能翻畫面上看得到的頁：翻到或捲到那一頁，幾秒後就會出現譯文";
+                                          : "這個網站不讓讀取圖片，只能翻畫面上看得到的頁：翻到或捲到那一頁就會優先翻它";
       return;
     }
     if (reply?.notice) {
-      lastNotice = reply.notice;
+      lastNotice = friendlyNotice(reply.notice);
     }
     if (reply?.type === "result" && !reply.error && reply.slice) {
       // 比畫面高的圖：這一段的譯文拼進整張圖的結果；還沒翻完的段落等捲到時再截
@@ -1150,7 +1226,10 @@
       return;
     }
     const rect = element.getBoundingClientRect();
-    const key = `${Math.round(rect.width)}x${Math.round(rect.height)}`;
+    // 大小沒變、object-fit／object-position 改了也要重算：soraraw 的 2 頁模式翻頁時換 class，
+    // 把兩頁的圖推向書脊（0% 50%／100% 50%），譯文沒跟著就整片往外偏約 50 像素
+    const style = getComputedStyle(element);
+    const key = `${Math.round(rect.width)}x${Math.round(rect.height)} ${style.objectFit} ${style.objectPosition}`;
     if (page.boxKey === key) {
       return;
     }
@@ -1292,10 +1371,15 @@
     const partial = waiting.filter((entry) => entry.merged?.items?.length).length; // 比畫面高、翻了一部分的
     // 同樣的原因合在一起：「翻譯失敗：被限流或額度用完：HTTP 429（3 張）」
     const reasons = new Map();
+    const waitingReasons = new Set(); // 只是在等（不是出錯）：面板用一般的顏色
     for (const entry of [...failed, ...waiting]) {
       reasons.set(entry.reason, (reasons.get(entry.reason) || 0) + 1);
+      if (entry.state === "waiting") {
+        waitingReasons.add(entry.reason);
+      }
     }
     return {
+      waitingReasons: [...reasons.keys()].map((reason) => waitingReasons.has(reason)),
       total: all.length,
       done,
       failed: failed.length,
@@ -1306,7 +1390,7 @@
   }
 
   function updateBadge() {
-    const { total, done, failed, reasons } = counts();
+    const { total, done, failed, reasons, waitingReasons } = counts();
     const finished = done + failed;
     let text;
     if (fatal === "host-not-installed") {
@@ -1334,11 +1418,14 @@
     $panel("detail").textContent = [failed ? `${failed} 張失敗` : "", partial ? `${partial} 張翻了一部分` : "",
                                     waiting - partial > 0 ? `${waiting - partial} 張等圖片載入` : ""]
       .filter(Boolean).join("，");
+    // 一行放不下時截掉（折行的話下面的按鈕會往下跳），滑鼠移上去看完整的
+    $panel("statusLine").title = `${text} ${$panel("detail").textContent}`.trim();
     $panel("progress").style.width = total ? `${(finished / total) * 100}%` : "0";
     const list = $panel("reasons");
-    list.replaceChildren(...reasons.map((reason) => {
+    list.replaceChildren(...reasons.map((reason, index) => {
       const line = document.createElement("div");
       line.textContent = reason;
+      line.className = waitingReasons[index] ? "wait" : "";
       return line;
     }));
     $panel("notice").textContent = lastNotice;

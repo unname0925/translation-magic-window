@@ -131,8 +131,25 @@ void markSoundEffects(std::vector<TextBlock>& blocks, std::span<const RectI> bub
 // 「……」不搬：句子可以從刪節號開始
 std::string moveLeadingClosingPunctuation(std::string_view text);
 
-// 譯文裡留著幾個日文假名（不算 `{本文|讀音}` 標記裡的）：翻成中文的譯文不該有假名
+// 譯文裡留著幾個日文假名（`{本文|讀音}` 標記裡的也算：模型把原文的振り仮名照抄過來，
+// 中文旁邊標著日文讀音）：翻成中文的譯文不該有假名
 int kanaCount(std::string_view text);
+
+// 很長的中文譯文裡零星留著的平假名（句尾的「か」、助詞「が」「の」：模型沒翻乾淨）拿掉。
+// 漢字至少是平假名的 4 倍才拿；片假名不動（名字、擬聲字）；`{本文|讀音}` 標記裡面不動
+std::string removeStrayHiragana(std::string_view text);
+
+// 兩個以上連在一起的點（...、．．、・・・、。。）換成中文的刪節號「……」。直排時半形的點、
+// 全形的句點看起來都像「。。。」
+std::string normalizeEllipsis(std::string_view text);
+
+// 英文漫畫的「Yoshimura-san」被翻成「吉村山」（san 照音翻）：名詞表裡的名字後面接著 -san，
+// 譯文裡那個名字的譯名後面又是「山」，就換成「先生」。不在名詞表裡的名字判斷不了（富士山）
+std::string fixHonorificSan(std::string_view source, std::string_view translation,
+                            const std::map<std::string, std::string>& glossary);
+
+// 模型把說明也一起回了（「…的繁體中文翻譯為：譯文」）：只留冒號後面的譯文
+std::string stripTranslationPreamble(std::string_view text);
 
 // 譯文裡留著幾個沒翻的英文單字（3 個字母以上；ignore 裡的不算，例如專有名詞表照原文留著的名字）
 int englishWordCount(std::string_view text, const std::map<std::string, std::string>& ignore);

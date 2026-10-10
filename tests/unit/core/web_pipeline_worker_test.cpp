@@ -172,6 +172,24 @@ TEST_F(WebPipelineWorkerTest, ResultsCarryTheTranslation) {
     EXPECT_EQ(results_[0].groups[0].block.text, "ページ407");
 }
 
+TEST_F(WebPipelineWorkerTest, APageOnScreenGoesBeforePagesNotStarted) {
+    WebPipelineWorker worker(pipeline_, 1, collector());
+    worker.submit(page(1));
+    ASSERT_TRUE(eventually([&] { return engine_->inside.load() == 1; }));
+    worker.submit(page(2));
+    worker.submit(page(3));
+    PipelineJob urgent = page(4);
+    urgent.urgent = true;  // 使用者翻到了這一頁
+    worker.submit(std::move(urgent));
+    engine_->release();
+    ASSERT_TRUE(waitFor(4));
+    const std::lock_guard lock(mutex_);
+    // 1 在翻譯、2 的 OCR 已經做好在等（最多等 translators 頁），3 還沒開始
+    EXPECT_EQ(results_[0].generation, 1u) << "已經在翻的照樣先完成";
+    EXPECT_EQ(results_[2].generation, 4u) << "畫面上的插到還沒開始的前面";
+    EXPECT_EQ(results_[3].generation, 3u);
+}
+
 TEST_F(WebPipelineWorkerTest, StoppingWhileBusyDoesNotHang) {
     WebPipelineWorker worker(pipeline_, 2, collector());
     for (std::uint64_t i = 1; i <= 6; ++i) {

@@ -55,6 +55,10 @@ bool worthInpainting(const TextBlock& block);
 
 // 翻譯之前就能判斷的：這一段會不會蓋上去（和 planOverlay 同樣的規則，只差在要修補的
 // 假設會補成功）。網頁漫畫沒有結果視窗，蓋不上去的段落翻了也看不到，不送翻譯
+// 原文和譯文都只有英文字母：模型沒翻（商標、招牌、衣服上的字），OCR 又常讀錯
+// （Snap-on → Sanp-on），重畫一次只會更糟，留著原圖。英文漫畫 2 章實測 5 處
+bool untranslatedLatin(std::string_view source, std::string_view translation);
+
 enum class CoverDecision { Cover, Symbols, LowScore, BusyBackground };
 CoverDecision coverDecision(const ImageBgra& frame, const TextBlock& block, bool canInpaint);
 

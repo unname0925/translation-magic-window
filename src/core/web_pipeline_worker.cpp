@@ -28,7 +28,11 @@ void WebPipelineWorker::submit(PipelineJob job) {
             return;
         }
         active_[item->job.generation] = item;
-        waiting_.push_back(std::move(item));
+        if (item->job.urgent) {
+            waiting_.push_front(std::move(item));
+        } else {
+            waiting_.push_back(std::move(item));
+        }
     }
     wake_.notify_all();
 }
@@ -121,7 +125,11 @@ void WebPipelineWorker::recognizeLoop() {
                 continue;  // 做 OCR 的時候被取消了
             }
             item->page = std::move(page);
-            recognized_.push_back(item);
+            if (item->job.urgent) {
+                recognized_.push_front(item);
+            } else {
+                recognized_.push_back(item);
+            }
         }
         wake_.notify_all();
     }

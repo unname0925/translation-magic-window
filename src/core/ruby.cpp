@@ -259,6 +259,24 @@ std::string stripRubyMarkup(std::string_view text) {
     return out;
 }
 
+std::string dropKanaReadings(std::string_view text) {
+    std::string out;
+    out.reserve(text.size());
+    std::size_t at = 0;
+    while (const std::optional<Markup> found = findMarkup(text, at)) {
+        const std::string_view reading = text.substr(found->bar + 1, found->close - found->bar - 1);
+        if (countScripts(reading).kana > 0) {
+            out.append(text.substr(at, found->open - at));
+            out.append(text.substr(found->open + 1, found->bar - found->open - 1));  // 只留本文
+        } else {
+            out.append(text.substr(at, found->close + 1 - at));
+        }
+        at = found->close + 1;
+    }
+    out.append(text.substr(at));
+    return out;
+}
+
 std::vector<std::pair<std::string, std::string>> rubyMarkupPairs(std::string_view text) {
     std::vector<std::pair<std::string, std::string>> pairs;
     std::size_t at = 0;

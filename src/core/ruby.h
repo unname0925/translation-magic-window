@@ -79,6 +79,10 @@ std::vector<RubyAnnotation> remapRuby(std::string_view oldText,
 // 否則譯文裡的標記數量會對不上，對齊檢查會一直判定格式錯誤（design.md 4.5）。
 std::string stripRubyMarkup(std::string_view text);
 
+// 讀音裡有日文假名的 `{本文|讀音}` 只留本文。翻成中文的譯文裡，模型常把原文的振り仮名
+// 照抄過來（中文旁邊標著日文讀音，還常是讀錯的）；讀音翻成中文的（作者刻意的讀音）留著
+std::string dropKanaReadings(std::string_view text);
+
 // 文字裡每個 `{本文|讀音}` 的（本文, 讀音），依出現順序。沒有配對的大括號不算。
 std::vector<std::pair<std::string, std::string>> rubyMarkupPairs(std::string_view text);
 

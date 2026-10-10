@@ -252,6 +252,20 @@ TEST(OverlayPlanTest, SymbolsReadAsTextAreLeftAlone) {
     EXPECT_EQ(coverDecision(frame, line.block, false), CoverDecision::Cover);
 }
 
+TEST(OverlayPlanTest, EnglishLeftAsEnglishIsNotRedrawn) {
+    // 商標、衣服上的字：模型照抄（OCR 還讀錯了），重畫只會更糟
+    const ImageBgra frame = solidFrame(400, 400, Rgba{255, 255, 255, 255});
+    TranslatedBlock logo = block(RectI{40, 40, 300, 90}, "Sanp-on", Orientation::Horizontal);
+    logo.block.text = "Sanp-on";
+    TranslatedBlock line = block(RectI{40, 200, 300, 250}, "你好嗎", Orientation::Horizontal);
+    line.block.text = "How are you";
+    const std::vector<TranslatedBlock> groups{logo, line};
+    OverlayDrops drops;
+    EXPECT_EQ(planOverlay(frame, groups, nullptr, &drops).size(), 1u);
+    EXPECT_EQ(drops.unchanged, 1);
+    EXPECT_FALSE(untranslatedLatin("ありがとう", "Thanks")) << "日文翻成英文名字之類的照樣蓋";
+}
+
 TEST(OverlayPlanTest, PlainBackgroundsAreNotInpainted) {
     const ImageBgra frame = solidFrame(200, 200, Rgba{255, 255, 255, 255});
     FakeInpainter inpainter;

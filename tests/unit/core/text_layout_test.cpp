@@ -223,11 +223,49 @@ TEST(EdgeTest, DetectsEveryEdge) {
     EXPECT_FALSE(touchesEdge(RectI::fromXYWH(50, 50, 100, 20), frame));
 }
 
-TEST(KanaTest, CountsKanaOutsideRubyMarkers) {
+TEST(KanaTest, CountsKanaInsideRubyMarkersToo) {
     EXPECT_EQ(kanaCount("還要糟呢な"), 1);
-    EXPECT_EQ(kanaCount("{本気|マジ}的"), 0) << "標記裡的讀音不算";
+    EXPECT_EQ(kanaCount("{認真|マジ}的"), 2) << "中文旁邊標日文讀音：模型照抄了原文的振り仮名";
+    EXPECT_EQ(kanaCount("{認真|真的}的"), 0);
     EXPECT_EQ(kanaCount("你好"), 0);
     EXPECT_EQ(kanaCount("ありがとう"), 5);
+}
+
+TEST(KanaTest, StrayHiraganaInALongTranslationIsRemoved) {
+    EXPECT_EQ(removeStrayHiragana("由我が來處理這件事"), "由我來處理這件事");
+    EXPECT_EQ(removeStrayHiragana("這樣真的好嗎か"), "這樣真的好嗎");
+    EXPECT_EQ(removeStrayHiragana("走吧だァ"), "走吧だァ") << "漢字不夠多：可能整段沒翻，交給重翻";
+    EXPECT_EQ(removeStrayHiragana("快逃キッ啊啊啊啊"), "快逃キッ啊啊啊啊") << "片假名不動";
+    EXPECT_EQ(removeStrayHiragana("{認真|まじ}的你要去嗎"), "{認真|まじ}的你要去嗎")
+        << "標記裡面不動（讀音另外處理）";
+}
+
+TEST(EllipsisTest, RunsOfDotsBecomeAChineseEllipsis) {
+    EXPECT_EQ(normalizeEllipsis("等等..."), "等等……");
+    EXPECT_EQ(normalizeEllipsis("什麼．．．"), "什麼……");
+    EXPECT_EQ(normalizeEllipsis("・・・好"), "……好");
+    EXPECT_EQ(normalizeEllipsis("嗯。。。"), "嗯……");
+    EXPECT_EQ(normalizeEllipsis("嗯……"), "嗯……");
+    EXPECT_EQ(normalizeEllipsis("嗯…"), "嗯…");
+    EXPECT_EQ(normalizeEllipsis("3.5 公尺"), "3.5 公尺");
+    EXPECT_EQ(normalizeEllipsis("好。走吧"), "好。走吧");
+    EXPECT_EQ(normalizeEllipsis("奧米諾斯・涅比利亞"), "奧米諾斯・涅比利亞");
+}
+
+TEST(HonorificTest, SanReadAsMountainBecomesMister) {
+    const std::map<std::string, std::string> glossary{{"Yoshimura", "吉村"}};
+    EXPECT_EQ(fixHonorificSan("Yoshimura-san, wait!", "吉村山，等等！", glossary),
+              "吉村先生，等等！");
+    EXPECT_EQ(fixHonorificSan("Yoshimura, wait!", "吉村山，等等！", glossary), "吉村山，等等！")
+        << "原文沒有 -san 就不動";
+    EXPECT_EQ(fixHonorificSan("Let's climb Mt. Fuji", "去爬富士山吧", glossary), "去爬富士山吧");
+}
+
+TEST(PreambleTest, ExplanationsBeforeTheTranslationAreDropped) {
+    EXPECT_EQ(stripTranslationPreamble("「BIG SPIRITS COMICS」的繁體中文翻譯為：大精神漫畫"),
+              "大精神漫畫");
+    EXPECT_EQ(stripTranslationPreamble("你好"), "你好");
+    EXPECT_EQ(stripTranslationPreamble("譯文："), "譯文：") << "後面沒有字就不動";
 }
 
 TEST(EnglishLeftoverTest, CountsUntranslatedWords) {

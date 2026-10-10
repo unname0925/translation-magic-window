@@ -408,7 +408,17 @@ PipelineResult Pipeline::finish(RecognizedPage page, const PipelineJob& job,
             }
         }
     }
-    for (std::string& translation : translations) {
+    // 翻成中文：重翻後還留著的日文讀音、零星的平假名拿掉，點換成刪節號，模型多回的說明去掉
+    const bool chinese = request.dstLang.starts_with("zh");
+    for (std::size_t i = 0; i < translations.size(); ++i) {
+        std::string& translation = translations[i];
+        if (chinese) {
+            translation = normalizeEllipsis(
+                removeStrayHiragana(dropKanaReadings(stripTranslationPreamble(translation))));
+            if (i < sources.size()) {
+                translation = fixHonorificSan(sources[i], translation, request.glossary);
+            }
+        }
         translation = moveLeadingClosingPunctuation(translation);
     }
 
