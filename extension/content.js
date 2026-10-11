@@ -332,19 +332,30 @@
         continue;
       }
       const url = absolute(name.includes("srcset") ? largestInSrcset(value) : value.trim());
-      if (isHttp(url)) {
+      if (imageUrl(url)) {
         return url;
       }
     }
     const fromSrcset = absolute(largestInSrcset(img.getAttribute("srcset")));
-    if (isHttp(fromSrcset)) {
+    if (imageUrl(fromSrcset)) {
       return fromSrcset;
     }
     // loading="lazy" 的圖 src 就是真的網址，只是瀏覽器還沒下載
-    return isHttp(img.src) && img.loading === "lazy" ? img.src : "";
+    return imageUrl(img.src) && img.loading === "lazy" ? img.src : "";
+  }
+
+  // 能當圖片網址的：http(s)，而且不是這一頁自己（src="" 之類空的網址會被解析成這一頁的網址，
+  // 背景抓回來的是網頁，一直「解不開」）
+  function imageUrl(url) {
+    return isHttp(url) && url.split("#")[0] !== location.href.split("#")[0];
   }
 
   function sourceOf(element) {
+    // canvas_source.js 標的「這一頁」的指紋：回收的 canvas 換畫別頁時身分跟著換，同一頁畫回來時認得
+    const page = element.getAttribute?.("data-tmw-page");
+    if (page && !(element instanceof HTMLImageElement)) {
+      return `canvas-page:${page}`;
+    }
     if (!(element instanceof HTMLImageElement)) {
       if (!canvasIds.has(element)) {
         canvasIds.set(element, ++canvasSerial);
@@ -458,6 +469,13 @@
     if (rect.top > innerHeight) {
       return rect.top - innerHeight;
     }
+    // 左右翻頁的閱讀器：排在畫面外左右兩邊的頁
+    if (rect.right < 0) {
+      return -rect.right;
+    }
+    if (rect.left > innerWidth) {
+      return rect.left - innerWidth;
+    }
     return 0;
   }
 
@@ -558,8 +576,14 @@
     // 總數一路漲到實際頁數的兩倍以上。已經不在網頁上、還沒翻好的 canvas 不算了；
     // 翻好的照樣留著（建回來時直接蓋回去）
     for (const [source, entry] of sources) {
-      if (source.startsWith("canvas:") && entry.state !== "done" && entry.state !== "working" &&
-          !entry.element?.isConnected) {
+      const showing = entry.element?.isConnected && sourceOf(entry.element) === source;
+      if (source.startsWith("canvas") && entry.state !== "done" && entry.state !== "working" &&
+          !showing && !entry.encoded) { // 先讀好內容的照樣翻
+        sources.delete(source);
+      } else if (entry.state === "waiting" && entry.element instanceof HTMLImageElement &&
+                 entry.element.isConnected && loaded(entry.element) && sourceOf(entry.element) !== source) {
+        // 同一個 <img> 換成了別的圖（soraraw 先用一個網址顯示，再換成拼好的 blob: 圖）：
+        // 舊的那張不算了，否則進度一直停在「1 張等圖片載入」
         sources.delete(source);
       }
     }
@@ -573,6 +597,7 @@
       const page = pages.get(element);
       const entry = sources.get(source) || track(source);
       entry.element = element; // 送出的先後依這個元素離畫面多近
+      prefetch(entry, element);
       // 要截圖的（讀不到像素）等整張都在畫面上才排
       if (entry.state === "waiting" && readable(element) && (!entry.needsCapture || captureRegion(element, entry))) {
         entry.state = "queued"; // 剛剛抓不到、現在載入了：從頁面讀
@@ -596,7 +621,15 @@
     if (panelState.left == null) {
       applyPanel(); // 找到漫畫欄了：沒拖過的面板移到旁邊的空白
     }
+    // 左右翻頁的閱讀器比 content.js 晚出現（換章時網頁剛載入完、閱讀器還沒建好），
+    // 或網站換章沒有重新載入網頁：這一章還沒往後翻過一遍就補翻
+    if (panelState.autoPreload && !preloading && flippedChapter !== chapterOf(location.href) &&
+        document.documentElement.hasAttribute("data-tmw-canvas-hook") &&
+        document.querySelector(".swiper, .swiper-container")) {
+      preloadAll();
+    }
   }
+  let flippedChapter = null; // 已經把左右翻頁的閱讀器往後翻過一遍的那一章
 
   let scanTimer = 0;
   function scheduleScan() {
@@ -702,16 +735,46 @@
     });
   }
 
-  // 網頁把一整頁畫上了 canvas（canvas_source.js 通知）：等著截圖的那張改用來源翻，不必等它捲到畫面上
-  const onCanvasDrawn = (event) => {
-    for (const [source, entry] of sources) {
-      if (entry.element === event.target && entry.state === "waiting" && entry.needsCapture) {
-        entry.state = "queued";
-        queue.push(source);
-        pump();
-        return;
-      }
+  // 閱讀器只把目前這頁附近的圖留在網頁上（soraraw 翻過去就把遠處的 <img> 拿掉、blob: 的圖、
+  // 畫好的 canvas）：一看到就先把內容讀下來存著，排到時圖不在了也能翻。有網址的圖不必（背景抓得到）
+  function prefetch(entry, element) {
+    if (entry.encoded || entry.state === "done" || entry.state === "working") {
+      return;
     }
+    if (element instanceof HTMLImageElement) {
+      const url = element.currentSrc || element.src;
+      if (/^(blob|data):/i.test(url) && loaded(element)) {
+        entry.encoded = encodedInPage(element);
+      }
+    } else if (document.documentElement.hasAttribute("data-tmw-canvas-hook")) {
+      entry.encoded = canvasSourceInPage(element);
+    }
+    entry.encoded?.then((data) => {
+      if (!data) {
+        entry.encoded = null; // 沒讀到：之後再試
+      }
+    });
+  }
+
+  // 網頁把一整頁畫上了 canvas（canvas_source.js 通知，canvas 上標了這一頁的指紋）：馬上讀走內容
+  // （閱讀器可能很快又拿這張 canvas 去畫別頁），翻過的直接蓋上；等著截圖的不必等它捲到畫面上
+  const onCanvasDrawn = (event) => {
+    const element = event.target;
+    if (!(element instanceof HTMLCanvasElement) || !isCandidate(element)) {
+      return;
+    }
+    const source = sourceOf(element);
+    if (skipped.has(source)) {
+      return;
+    }
+    const entry = sources.get(source) || track(source);
+    entry.element = element;
+    prefetch(entry, element);
+    if (entry.state === "waiting") {
+      entry.state = "queued";
+      queue.push(source);
+    }
+    scan(); // 譯文換成這一頁的（翻過的話）、排進佇列
   };
   document.addEventListener("tmw-canvas-drawn", onCanvasDrawn, true);
 
@@ -1030,8 +1093,18 @@
     const soundEffects = panelState.soundEffects; // 不翻擬聲字時主程式不送它們去翻譯
     let reply;
     try {
-      // 讀不到的 canvas：網頁先畫好的原尺寸來源讀得到的話就用它，不必等捲到畫面上截圖
-      const fromSource = element?.isConnected ? await canvasSourceInPage(element) : null;
+      // 先讀好的（blob: 的圖、canvas 的原尺寸來源）；讀不到的 canvas 現在再問一次來源，
+      // 讀得到就不必等捲到畫面上截圖
+      // 回收的 canvas 已經改畫別頁：等這一頁畫回來（canvas_source.js 通知時會重排）
+      const elsewhere = element instanceof HTMLCanvasElement && element.isConnected && sourceOf(element) !== source;
+      const fromSource = (await entry.encoded) ||
+                         (element?.isConnected && !elsewhere && !(element instanceof HTMLImageElement)
+                           ? await canvasSourceInPage(element) : null);
+      if (!fromSource && elsewhere) {
+        entry.state = "waiting";
+        entry.reason = "這一頁的圖還沒畫回網頁上（捲到那裡時再翻）";
+        return;
+      }
       if (fromSource) {
         reply = await chrome.runtime.sendMessage({ kind: "translate", site: location.origin, ...pageOf(source),
                                                    encoded: fromSource, soundEffects });
@@ -1045,7 +1118,8 @@
           if (!element?.isConnected || !readable(element)) {
             // 背景抓不到、頁面也還沒載入：叫網頁先載入它，載入後 scan 會再排
             entry.state = "waiting";
-            entry.reason = `抓不到圖片（${reply.message}），等網頁載入`;
+            entry.reason = /decod/i.test(reply.message || "") ? "圖片解不開（格式不支援或檔案壞了），等網頁載入"
+                                                              : `抓不到圖片（${reply.message}），等網頁載入`;
             forceLoad(element, source);
             return;
           }
@@ -1740,6 +1814,25 @@
 
   // 有些網站要圖片真的捲進畫面才載入（而且網址不放在屬性裡）：自動捲到底一次再捲回來。
   // 已經在屬性裡的網址 scan 本來就讀得到；這裡處理剩下的。最多 30 秒、到底且高度不再變就停
+  // 請 canvas_source.js 把 Swiper 閱讀器往後翻一遍。翻過了回傳 true；沒有 Swiper、或沒裝 canvas_source.js 時 false
+  function flipThroughReader() {
+    const root = document.documentElement;
+    if (!root.hasAttribute("data-tmw-canvas-hook")) {
+      return Promise.resolve(false);
+    }
+    return new Promise((resolve) => {
+      const done = () => {
+        clearTimeout(timer);
+        root.removeEventListener("tmw-flip-done", done);
+        resolve(Number(root.getAttribute("data-tmw-flip")) > 0);
+        root.removeAttribute("data-tmw-flip");
+      };
+      const timer = setTimeout(done, 300_000);
+      root.addEventListener("tmw-flip-done", done);
+      root.dispatchEvent(new CustomEvent("tmw-flip-swiper", { bubbles: true }));
+    });
+  }
+
   async function preloadAll() {
     if (preloading || fatal === "stopped") {
       return;
@@ -1750,6 +1843,16 @@
       if (img.loading === "lazy") {
         img.loading = "eager"; // 瀏覽器內建的延遲載入：直接改成立刻載入
       }
+    }
+    // 左右翻頁的閱讀器（Swiper）：往後一頁一頁翻（canvas_source.js），翻完就不必捲
+    if (document.querySelector(".swiper, .swiper-container")) {
+      flippedChapter = chapterOf(location.href);
+    }
+    if (await flipThroughReader()) {
+      preloading = false;
+      scan();
+      updateBadge();
+      return;
     }
     const first = [...pages.keys()][0] || [...document.images].find((img) => img.getBoundingClientRect().width >= MIN_WIDTH);
     const scroller = scrollerOf(first);
@@ -1837,6 +1940,9 @@
       fatal: fatal && fatal !== "stopped" ? fatal : "",
       preloading,
       panelHidden: panelState.hidden,
+      // 查問題用：還在等的是哪幾張（網址前段、元素還在不在網頁上）
+      waitingSources: [...sources].filter(([, entry]) => entry.state === "waiting")
+        .slice(0, 5).map(([source, entry]) => `${source.slice(0, 70)} ${entry.element?.isConnected ? "在" : "不在"}網頁上`),
     };
   }
 

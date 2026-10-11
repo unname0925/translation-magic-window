@@ -53,9 +53,36 @@
       const version = versions.get(image) || 0;
       if (known?.source !== image || known.version !== version) {
         sources.set(target, { source: image, version });
-        // 換了一頁：content.js 等著的話（不在畫面上、截不到）現在就能翻
+        // 這一頁的指紋標在 canvas 上：閱讀器回收 canvas 輪流畫不同頁（soraraw 的縦読み）時，
+        // content.js 靠它認出是哪一頁（同一頁畫在別的 canvas 上也認得）
+        const page = fingerprint(image);
+        if (page) {
+          target.setAttribute("data-tmw-page", page);
+        } else {
+          target.removeAttribute("data-tmw-page");
+        }
+        // 換了一頁：content.js 馬上讀走（canvas 可能很快又被拿去畫別頁）
         queueMicrotask(() => target.dispatchEvent(new CustomEvent("tmw-canvas-drawn")));
       }
+    }
+  }
+
+  // 縮成 16×16 的像素加上原大小，算一個雜湊。來源也讀不到時回傳空字串
+  const probe = document.createElement("canvas");
+  probe.width = probe.height = 16;
+  const probeContext = probe.getContext("2d", { willReadFrequently: true });
+  function fingerprint(image) {
+    try {
+      probeContext.clearRect(0, 0, 16, 16);
+      drawImage.call(probeContext, image, 0, 0, 16, 16);
+      const data = probeContext.getImageData(0, 0, 16, 16).data;
+      let hash = 0x811c9dc5;
+      for (let i = 0; i < data.length; i += 1) {
+        hash = Math.imul(hash ^ data[i], 0x01000193);
+      }
+      return `${image.width}x${image.height}-${(hash >>> 0).toString(36)}`;
+    } catch {
+      return "";
     }
   }
 
@@ -83,5 +110,55 @@
     } catch {
       reply(""); // 來源也被汙染了
     }
+  }, true);
+
+  // 「載入整頁」碰到左右翻頁的閱讀器（Swiper，例如 soraraw 的 1 頁／2 頁模式）：沒有東西可以捲，
+  // 網站只載入目前這頁附近的圖。content.js 送出 tmw-flip-swiper 時，在這裡一頁一頁往後翻，每翻一次等
+  // 那幾頁的圖載好（最多 2.5 秒；content.js 趁這時候讀走），翻到最後一頁再回原來那頁。
+  // 結果寫在 <html data-tmw-flip>：翻了幾次，-1 是沒有 Swiper（content.js 改用往下捲）
+  document.addEventListener("tmw-flip-swiper", async () => {
+    const root = document.documentElement;
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const findSwiper = () => [...document.querySelectorAll(".swiper, .swiper-container")]
+      .map((element) => element.swiper)
+      .filter((swiper) => swiper && !swiper.destroyed && swiper.slides?.length > 1)
+      .sort((a, b) => b.slides.length - a.slides.length)[0];
+    // 換章時網頁剛載入完、閱讀器還沒建好：等一下（有 .swiper 元素才等，其他網站馬上回答）
+    let swiper = findSwiper();
+    for (let waited = 0; !swiper && waited < 8000 && document.querySelector(".swiper, .swiper-container");
+         waited += 250) {
+      await sleep(250);
+      swiper = findSwiper();
+    }
+    if (!swiper) {
+      root.setAttribute("data-tmw-flip", "-1");
+      root.dispatchEvent(new CustomEvent("tmw-flip-done"));
+      return;
+    }
+    const start = swiper.activeIndex;
+    const url = location.href;
+    const ready = () => {
+      const perView = Math.max(1, Math.ceil(Number(swiper.params.slidesPerView) || 1));
+      const slides = [...swiper.slides].slice(swiper.activeIndex, swiper.activeIndex + perView);
+      return slides.every((slide) => {
+        const image = [...slide.querySelectorAll("img")].find((img) => img.naturalWidth > 300);
+        const canvas = [...slide.querySelectorAll("canvas")].find((c) => c.width > 300 && versions.get(c));
+        return Boolean(image || canvas);
+      });
+    };
+    let steps = 0;
+    while (!swiper.isEnd && steps < 100 && location.href === url) {
+      swiper.slideNext(0);
+      steps += 1;
+      for (let waited = 0; waited < 2500 && !ready(); waited += 150) {
+        await sleep(150);
+      }
+      await sleep(400); // content.js 掃描、讀走這幾頁
+    }
+    if (location.href === url) {
+      swiper.slideTo(start, 0);
+    }
+    root.setAttribute("data-tmw-flip", String(steps));
+    root.dispatchEvent(new CustomEvent("tmw-flip-done"));
   }, true);
 })();
