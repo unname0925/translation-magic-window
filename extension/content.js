@@ -659,6 +659,76 @@
     }
   }
 
+  // 畫面上的 canvas 是從哪張原尺寸的 canvas 整張畫過來的（canvas_source.js 在網頁的環境裡記下）。
+  // 讀得到時回傳它的 data: 網址，沒有時回傳 null。直接讀得到的 canvas 不必問
+  const sourceless = new WeakSet(); // 問過沒有來源、而且自己讀得到的 canvas
+  function canvasSourceInPage(element) {
+    if (!(element instanceof HTMLCanvasElement) || sourceless.has(element) ||
+        !document.documentElement.hasAttribute("data-tmw-canvas-hook")) {
+      return Promise.resolve(null);
+    }
+    if (!tainted(element)) {
+      sourceless.add(element);
+      return Promise.resolve(null);
+    }
+    return new Promise((resolve) => {
+      const done = (value) => {
+        clearTimeout(timer);
+        element.removeEventListener("tmw-canvas-source-ready", onReady);
+        resolve(value);
+      };
+      const onReady = async () => {
+        const url = element.getAttribute("data-tmw-source");
+        element.removeAttribute("data-tmw-source");
+        if (!url) {
+          done(null);
+          return;
+        }
+        try {
+          const blob = await (await fetch(url)).blob();
+          done(await new Promise((ok, fail) => {
+            const reader = new FileReader();
+            reader.onload = () => ok(reader.result);
+            reader.onerror = () => fail(reader.error);
+            reader.readAsDataURL(blob);
+          }));
+        } catch {
+          done(null);
+        }
+      };
+      const timer = setTimeout(() => done(null), 5000);
+      element.addEventListener("tmw-canvas-source-ready", onReady);
+      element.dispatchEvent(new CustomEvent("tmw-canvas-source"));
+    });
+  }
+
+  // 網頁把一整頁畫上了 canvas（canvas_source.js 通知）：等著截圖的那張改用來源翻，不必等它捲到畫面上
+  const onCanvasDrawn = (event) => {
+    for (const [source, entry] of sources) {
+      if (entry.element === event.target && entry.state === "waiting" && entry.needsCapture) {
+        entry.state = "queued";
+        queue.push(source);
+        pump();
+        return;
+      }
+    }
+  };
+  document.addEventListener("tmw-canvas-drawn", onCanvasDrawn, true);
+
+  // 這張 canvas 被跨網域的圖汙染了（讀不到像素）
+  function tainted(element) {
+    try {
+      const probe = document.createElement("canvas");
+      probe.width = probe.height = 1;
+      const context = probe.getContext("2d");
+      context.drawImage(element, 0, 0, 1, 1);
+      context.getImageData(0, 0, 1, 1);
+      return false;
+    } catch {
+      return true;
+    }
+  }
+
   // 整張都在畫面上（截圖才截得到）
   function fullyVisible(element) {
     const rect = element.getBoundingClientRect();
@@ -960,7 +1030,12 @@
     const soundEffects = panelState.soundEffects; // 不翻擬聲字時主程式不送它們去翻譯
     let reply;
     try {
-      if (entry.needsCapture) {
+      // 讀不到的 canvas：網頁先畫好的原尺寸來源讀得到的話就用它，不必等捲到畫面上截圖
+      const fromSource = element?.isConnected ? await canvasSourceInPage(element) : null;
+      if (fromSource) {
+        reply = await chrome.runtime.sendMessage({ kind: "translate", site: location.origin, ...pageOf(source),
+                                                   encoded: fromSource, soundEffects });
+      } else if (entry.needsCapture) {
         const region = element?.isConnected ? captureRegion(element, entry) : null;
         reply = region ? await captureAndSend(element, soundEffects, pageOf(source), region)
                        : { type: "error", message: "page-protected" };
@@ -1731,6 +1806,7 @@
     document.removeEventListener("load", scheduleScan, true);
     removeEventListener("scroll", onScroll, { capture: true });
     removeEventListener("resize", alignAll);
+    document.removeEventListener("tmw-canvas-drawn", onCanvasDrawn, true);
     chrome.runtime.onMessage.removeListener(onMessage);
     for (const [element, page] of pages) {
       removeOverlay(page);

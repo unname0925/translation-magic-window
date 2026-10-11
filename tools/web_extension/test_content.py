@@ -725,6 +725,85 @@ def make_rtl_engine_page(content: str) -> str:
     return page
 
 
+def make_canvas_source_page(content: str, hook: str) -> str:
+    """畫面上的 canvas 讀不到（被汙染），但它是從一張讀得到的原尺寸 canvas 整張畫過來的（像 soraraw）：
+    canvas_source.js 記下來源，兩張都用來源翻譯，不必截圖，不在畫面上的那張也不必等。"""
+    page = f"""<!doctype html><meta charset=utf-8>
+    <style>
+      body {{ margin: 0; }}
+      #reader canvas {{ display: block; width: 600px; height: 700px; margin: 10px auto; }}
+    </style>
+    <div id=reader></div>
+    <script>
+    // 模擬汙染：畫過標了 data-tainted（或已經被汙染）的東西的 canvas，讀像素時丟出 SecurityError
+    const draw = CanvasRenderingContext2D.prototype.drawImage;
+    CanvasRenderingContext2D.prototype.drawImage = function (source, ...rest) {{
+      if (source.dataset?.tainted || source.__tainted) this.canvas.__tainted = true;
+      return draw.call(this, source, ...rest);
+    }};
+    const read = CanvasRenderingContext2D.prototype.getImageData;
+    CanvasRenderingContext2D.prototype.getImageData = function (...args) {{
+      if (this.canvas.__tainted) throw new DOMException("tainted", "SecurityError");
+      return read.apply(this, args);
+    }};
+    </script>
+    <script>{hook}</script>
+    <script>
+    const reader = document.getElementById("reader");
+    const stamp = document.createElement("canvas");
+    stamp.width = stamp.height = 4;
+    stamp.dataset.tainted = "1";
+    for (let i = 0; i < 2; i++) {{
+      const full = document.createElement("canvas");  // 看不見的原尺寸整頁
+      full.width = 1200; full.height = 1400;
+      const f = full.getContext("2d");
+      f.fillStyle = "#fff"; f.fillRect(0, 0, 1200, 1400);
+      f.fillStyle = "#000"; f.fillRect(200 + i * 100, 200, 160, 600);
+      const shown = document.createElement("canvas");
+      shown.width = 600; shown.height = 700;
+      const c = shown.getContext("2d");
+      c.drawImage(full, 0, 0, 600, 700);
+      c.drawImage(stamp, 0, 0, 1, 1);  // 故意汙染
+      reader.append(shown);
+      if (i === 0) {{
+        const spacer = document.createElement("div"); spacer.style.height = "1500px"; reader.append(spacer);
+      }}
+    }}
+    const captures = [];
+    const encoded = [];
+    let listener = null;
+    window.chrome = {{ runtime: {{ onMessage: {{ addListener: (f) => listener = f, removeListener: () => listener = null }},
+                                  sendMessage: async (message) => {{
+      if (message.kind === "capture") {{
+        captures.push(1);
+        return {{ type: "captured", token: captures.length }};
+      }}
+      if (message.kind !== "translate") return {{ type: "engines", engines: [], current: "" }};
+      if (!message.encoded) return {{ type: "error", message: "should have used the source" }};
+      encoded.push(message.encoded.slice(0, 23));
+      return {{ type: "result", id: "s" + encoded.length, width: 1200, height: 1400, error: "", notice: "", patchesDropped: 0,
+                items: [{{ rect: [200, 200, 600, 800], text: "譯文", vertical: true, foreground: "#000000",
+                           background: "#ffffff", size: "normal", lineThickness: 30, ruby: [] }}] }};
+    }} }} }};
+    </script>
+    <script>{content}</script>
+    <script>
+    const report = [];
+    function check(name, ok, detail = "") {{ report.push((ok ? "PASS " : "FAIL ") + name + (detail ? " (" + detail + ")" : "")); }}
+    const overlays = () => document.querySelectorAll("tmw-overlay").length;
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    (async () => {{
+      for (let i = 0; i < 100 && overlays() < 2; i++) await wait(100);
+      check("兩張都用原尺寸的來源翻好，不在畫面上的也不必等", overlays() === 2 && encoded.length === 2,
+            overlays() + " overlays, " + JSON.stringify(encoded));
+      check("沒有截圖", captures.length === 0, captures.length + " captures");
+      check("送的是 JPEG", encoded.every((e) => e.startsWith("data:image/jpeg")));
+      document.body.setAttribute("data-report", report.join(" | "));
+    }})();
+    </script>"""
+    return page
+
+
 def run(page: str, folder: Path, name: str) -> list[str]:
     path = folder / f"{name}.html"
     path.write_text(page, encoding="utf-8")
@@ -756,6 +835,8 @@ def main() -> int:
         "capture": make_capture_page(content),
         "capture-tall": make_tall_capture_page(content),
         "rtl-engine": make_rtl_engine_page(content),
+        "canvas-source": make_canvas_source_page(
+            content, (ROOT / "extension" / "canvas_source.js").read_text(encoding="utf-8")),
     }
     failed = 0
     with tempfile.TemporaryDirectory() as folder:

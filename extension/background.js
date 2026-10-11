@@ -351,18 +351,33 @@ async function setActive(tabId, active, origin = "") {
   await chrome.storage.session.set({ [ACTIVE_TABS]: tabs, [ACTIVE_ORIGINS]: origins });
 }
 
+// canvas_source.js 要在網頁自己的環境（MAIN world）執行，而且越早越好：注入之前就畫好的頁記不到來源
+function injectCanvasHook(tabId) {
+  return chrome.scripting.executeScript({ target: { tabId }, files: ["canvas_source.js"], world: "MAIN",
+                                          injectImmediately: true }).catch(() => {});
+}
+
 async function start(tabId) {
+  await injectCanvasHook(tabId);
   await chrome.scripting.executeScript({ target: { tabId }, files: ["content.js"] });
   const tab = await chrome.tabs.get(tabId).catch(() => null);
   await setActive(tabId, true, originOf(tab?.url || ""));
 }
 
 chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
-  if (info.status !== "complete") {
+  if (info.status !== "complete" && info.status !== "loading") {
     return;
   }
   (async () => {
     if (!(await activeTabs()).includes(tabId)) {
+      return;
+    }
+    if (info.status === "loading") {
+      // 同一個網站換頁：網頁的程式開始畫之前先裝好 canvas_source.js
+      const { [ACTIVE_ORIGINS]: origins = {} } = await chrome.storage.session.get({ [ACTIVE_ORIGINS]: {} });
+      if (!origins[tabId] || origins[tabId] === originOf(tab?.url || "")) {
+        await injectCanvasHook(tabId);
+      }
       return;
     }
     const { [ACTIVE_ORIGINS]: origins = {} } = await chrome.storage.session.get({ [ACTIVE_ORIGINS]: {} });
@@ -381,12 +396,13 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 
 // 「這個網站自動翻譯」的網站：網頁載入完成時自動注入 content.js
 const AUTO_SCRIPT = "tmw-auto";
+const AUTO_HOOK = "tmw-auto-canvas"; // 同一批網站：canvas_source.js 在網頁一開始就裝好
 
 async function registerAutoSites() {
   const { autoSites } = await chrome.storage.local.get({ autoSites: [] });
-  const existing = await chrome.scripting.getRegisteredContentScripts({ ids: [AUTO_SCRIPT] });
+  const existing = await chrome.scripting.getRegisteredContentScripts({ ids: [AUTO_SCRIPT, AUTO_HOOK] });
   if (existing.length > 0) {
-    await chrome.scripting.unregisterContentScripts({ ids: [AUTO_SCRIPT] });
+    await chrome.scripting.unregisterContentScripts({ ids: existing.map((script) => script.id) });
   }
   if (autoSites.length === 0 || !(await chrome.permissions.contains({ origins: ["<all_urls>"] }))) {
     return;
@@ -396,6 +412,12 @@ async function registerAutoSites() {
     matches: autoSites.map((origin) => `${origin}/*`),
     js: ["content.js"],
     runAt: "document_idle",
+  }, {
+    id: AUTO_HOOK,
+    matches: autoSites.map((origin) => `${origin}/*`),
+    js: ["canvas_source.js"],
+    runAt: "document_start",
+    world: "MAIN",
   }]);
 }
 
