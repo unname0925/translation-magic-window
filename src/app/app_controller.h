@@ -2,6 +2,7 @@
 
 #include <windows.h>
 
+#include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <memory>
@@ -102,6 +103,7 @@ private:
     void setUpWeb();
     // 翻譯失敗或重建翻譯服務之後：本機 Ollama 沒在跑就啟動它
     void ensureOllama();
+    void maybeCheckOllamaPlacement();
     // 開管道；開不起來時過一下再試（attempt：第幾次）
     void startWeb(int attempt);
 
@@ -190,6 +192,7 @@ private:
     std::shared_ptr<core::TranslationService> translation_;
     // 設定的引擎是本機 Ollama、但它沒在跑時把它叫起來（開機後不一定會自己啟動）
     OllamaLauncher ollama_;
+    std::chrono::steady_clock::time_point lastOllamaCheck_ = std::chrono::steady_clock::now();
     // 顯示卡上的推論（OCR、背景修補）輪流做：透鏡和網頁漫畫在不同的執行緒（core/gpu_lock.h）
     std::mutex gpu_;
     std::unique_ptr<core::LockedOcrService> lockedOcr_;

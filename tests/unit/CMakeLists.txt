@@ -38,6 +38,7 @@ add_executable(tmw_unit_tests
     net/google_translator_test.cpp
     net/anthropic_translator_test.cpp
     net/custom_http_translator_test.cpp
+    net/ollama_status_test.cpp
     net/openai_translator_test.cpp
     net/service_translators_test.cpp
     net/update_check_test.cpp

@@ -47,7 +47,7 @@ std::shared_ptr<core::ITranslator> makeEngine(const core::EngineSettings& engine
             options.model = engine.model;
         }
         if (isLocalOllama(options.baseUrl)) {
-            options.ollamaKeepAlive = "30m";  // 閒置後第一次要等約 10 秒重新載入模型
+            options.ollamaKeepAlive = kOllamaKeepAlive;
         }
         if (!engine.encryptedApiKey.empty()) {
             const std::optional<std::string> key = platform::decryptSecret(engine.encryptedApiKey);

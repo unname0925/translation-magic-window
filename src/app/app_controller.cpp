@@ -435,6 +435,7 @@ LRESULT AppController::handleMessage(UINT message, WPARAM wParam, LPARAM lParam)
         case WM_TIMER:
             if (wParam == kTimerTick) {
                 maybeCheckForUpdates();
+                maybeCheckOllamaPlacement();
                 for (const std::unique_ptr<Lens>& lens : lenses_) {
                     lens->trigger->tick();
                     refreshDebugOverlay(*lens);
@@ -998,8 +999,21 @@ void AppController::rebuildTranslation() {
 
 void AppController::ensureOllama() {
     if (!settings_.engines.empty()) {
-        ollama_.ensureRunning(settings_.engines.front().endpoint);
+        ollama_.ensureRunning(settings_.engines.front().endpoint, settings_.engines.front().model);
     }
+}
+
+// 每兩分鐘看一下本機 Ollama 的模型有沒有整個放在顯示卡上（app/ollama_launcher.h）；
+// 網頁漫畫正在翻譯時只看不重新載入
+void AppController::maybeCheckOllamaPlacement() {
+    const auto now = std::chrono::steady_clock::now();
+    if (settings_.engines.empty() || now - lastOllamaCheck_ < std::chrono::minutes(2)) {
+        return;
+    }
+    lastOllamaCheck_ = now;
+    const bool idle = webWorker_ == nullptr || !webWorker_->busy();
+    ollama_.checkPlacement(settings_.engines.front().endpoint, settings_.engines.front().model,
+                           idle);
 }
 
 void AppController::setUpWeb() {

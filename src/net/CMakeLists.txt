@@ -16,6 +16,8 @@ add_library(tmw_net STATIC
     anthropic_translator.h
     llm_prompt.cpp
     llm_prompt.h
+    ollama_status.cpp
+    ollama_status.h
     openai_translator.cpp
     openai_translator.h
     rate_limiter.cpp

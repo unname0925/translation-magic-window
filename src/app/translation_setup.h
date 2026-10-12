@@ -30,6 +30,9 @@ struct TranslationSetup {
 // 本機的 Ollama（預設的連接埠 11434）。網址可能寫 localhost 或 127.0.0.1
 bool isLocalOllama(std::string_view url);
 
+// 本機 Ollama 的模型翻譯完保留多久（閒置後第一次要等約 10 秒重新載入模型）
+inline constexpr std::string_view kOllamaKeepAlive = "30m";
+
 TranslationSetup makeTranslationService(const core::Settings& settings, const core::IClock& clock,
                                         const std::filesystem::path& openccConfig);
 
