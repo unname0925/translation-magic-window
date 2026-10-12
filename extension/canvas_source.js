@@ -14,6 +14,7 @@
 
   const sources = new WeakMap(); // 畫面上的 canvas → { source, version }
   const versions = new WeakMap(); // canvas → 被畫過幾次（來源後來又被畫上別的東西就不算數）
+  const originals = new WeakMap(); // 原尺寸的 canvas → 畫進去的原圖的指紋
   const proto = CanvasRenderingContext2D.prototype;
   const drawImage = proto.drawImage;
 
@@ -31,6 +32,16 @@
       return;
     }
     versions.set(target, (versions.get(target) || 0) + 1);
+    // 整頁的原圖（ImageBitmap 之類）整張畫進原尺寸的 canvas：記下原圖的指紋。之後畫上的浮水印
+    // 有些網站每次位置不同（《キングダム》），用加了浮水印的 canvas 算指紋的話同一頁會對不上
+    if (!(image instanceof HTMLCanvasElement) && image?.width >= 64 && image?.height >= 64 &&
+        args.length <= 4 && (args[0] ?? 0) <= 1 && (args[1] ?? 0) <= 1) {
+      const print = fingerprint(image);
+      if (print) {
+        originals.set(target, print);
+      }
+      return;
+    }
     if (!(image instanceof HTMLCanvasElement) || image === target || image.width < 64 || image.height < 64) {
       return;
     }
@@ -55,7 +66,7 @@
         sources.set(target, { source: image, version });
         // 這一頁的指紋標在 canvas 上：閱讀器回收 canvas 輪流畫不同頁（soraraw 的縦読み）時，
         // content.js 靠它認出是哪一頁（同一頁畫在別的 canvas 上也認得）
-        const page = fingerprint(image);
+        const page = originals.get(image) || fingerprint(image);
         if (page) {
           target.setAttribute("data-tmw-page", page);
         } else {
@@ -147,16 +158,20 @@
       });
     };
     let steps = 0;
-    while (!swiper.isEnd && steps < 100 && location.href === url) {
+    let expected = start;
+    // 讀者自己翻了頁（activeIndex 不是這裡翻到的位置）：停下來，回到「原來那頁＋讀者自己翻的頁數」
+    while (!swiper.isEnd && steps < 100 && location.href === url && swiper.activeIndex === expected) {
       swiper.slideNext(0);
+      expected = swiper.activeIndex;
       steps += 1;
-      for (let waited = 0; waited < 2500 && !ready(); waited += 150) {
+      for (let waited = 0; waited < 2500 && !ready() && swiper.activeIndex === expected; waited += 150) {
         await sleep(150);
       }
       await sleep(400); // content.js 掃描、讀走這幾頁
     }
     if (location.href === url) {
-      swiper.slideTo(start, 0);
+      const turnedByReader = swiper.activeIndex - expected;
+      swiper.slideTo(Math.max(0, Math.min(start + turnedByReader, swiper.slides.length - 1)), 0);
     }
     root.setAttribute("data-tmw-flip", String(steps));
     root.dispatchEvent(new CustomEvent("tmw-flip-done"));

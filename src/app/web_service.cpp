@@ -238,6 +238,7 @@ void WebService::onResult(const core::PipelineResult& result) {
                             : std::string()) +
                        "、覆蓋層 " + std::to_string(static_cast<int>(t.overlayMs)) + " ms" +
                        dropSummary(result.overlayDrops) +
+                       (result.notice.empty() ? "" : "，" + result.notice) +  // 改用 google（…）
                        (result.error.empty() ? "" : "，翻譯失敗：" + result.error));
     }
     const core::PngEncoder encode = [](const core::ImageBgra& image) {
