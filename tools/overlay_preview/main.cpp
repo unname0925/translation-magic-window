@@ -195,6 +195,7 @@ int run(const Options& options) {
         job.language = options.language;
         job.inpainter = inpainter;
         job.manga = options.page;
+        job.skipAdPages = options.page;  // 和網頁漫畫一樣：雜誌廣告頁不翻
         job.termScope = options.chapter ? "preview" : "";
         if (!options.chapter) {
             pipeline.forget(job.lens);  // 每張圖各自獨立，不拿上一張當上下文
@@ -209,6 +210,9 @@ int run(const Options& options) {
                          {"glossary", result.glossary}});
         std::printf("\n== %s（%zu 段）\n", platform::pathToUtf8(path.filename()).c_str(),
                     result.groups.size());
+        if (result.adPage) {
+            std::printf("像雜誌廣告頁，不翻\n");
+        }
         if (!result.error.empty()) {
             std::printf("翻譯失敗：%s\n", result.error.c_str());
             ++failures;

@@ -9,6 +9,7 @@
 
 #include "core/language.h"
 #include "core/overlay_plan.h"
+#include "core/page_kind.h"
 #include "core/ruby.h"
 #include "core/translator.h"
 #include "core/utf8.h"
@@ -190,6 +191,13 @@ Pipeline::RecognizedPage Pipeline::recognize(const PipelineJob& job, std::stop_t
             dropEdgeBlocks(blocks, SizeI{job.frame.width, job.frame.height}, options_.edgeMargin);
     }
     markSoundEffects(blocks, recognized.bubbles);
+    if (job.skipAdPages && looksLikeAdPage(pageTextStats(job.frame, blocks))) {
+        // 雜誌廣告頁（core/page_kind.h）：不翻，也不蓋
+        result.adPage = true;
+        result.notice = "有幾頁像雜誌廣告，沒有翻譯";
+        result.timings.layoutMs = millisecondsSince(layoutStart);
+        return page;
+    }
     if (!job.soundEffects) {
         std::erase_if(blocks, [](const TextBlock& block) { return block.soundEffect; });
     }

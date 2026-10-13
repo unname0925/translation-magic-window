@@ -207,6 +207,7 @@ void WebService::submitNext() {
     job.pageIndex = next.request->order;  // 上下文照頁序
     job.chapter = next.request->chapter;
     job.urgent = next.request->urgent;
+    job.skipAdPages = true;  // 使用者：廣告不需要翻譯
     job.overlayOnly = true;  // 沒有結果視窗：蓋不上去的段落不必翻譯
     running_[job.generation] =
         Running{next.connection, std::move(next.id), std::move(next.cacheKey)};
@@ -227,7 +228,10 @@ void WebService::onResult(const core::PipelineResult& result) {
     }
     const Running done = std::move(found->second);
     running_.erase(found);
-    if (callbacks_.log) {
+    if (callbacks_.log && result.adPage) {
+        callbacks_.log("網頁：像雜誌廣告頁，不翻（OCR " +
+                       std::to_string(static_cast<int>(result.timings.ocrMs)) + " ms）");
+    } else if (callbacks_.log) {
         const core::PipelineTimings& t = result.timings;
         callbacks_.log("網頁：" + std::to_string(result.groups.size()) + " 段，OCR " +
                        std::to_string(static_cast<int>(t.ocrMs)) + " ms（manga-ocr " +

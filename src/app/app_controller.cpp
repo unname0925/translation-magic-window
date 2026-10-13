@@ -47,6 +47,10 @@ constexpr UINT kTrayCallbackMessage = WM_APP + 1;
 // 主程式每次重開）：同時 4 頁 18.6～19.7 秒、第一頁 2.5 秒；一次 1 頁 22.8～27.6 秒、第一頁 8.3
 // 秒。 Ollama 沒開平行處理時請求會在那邊排隊，和一頁一頁送差不多，不會更慢
 constexpr int kWebTranslators = 4;
+// 網頁漫畫結果的處理方式：改了會讓同一張圖翻出不同結果的處理（譯文整理、不翻廣告頁…）時加一，
+// 硬碟快取裡舊的結果就不再用。版本號沒變時開發中的改動也要算
+// 2：第四～六輪（假名、刪節號、英文照抄不蓋、雜誌廣告頁不翻）
+constexpr int kWebResultRevision = 2;
 
 constexpr int kHotkeyCapture = 1;
 constexpr int kHotkeyTranslate = 2;
@@ -1060,7 +1064,7 @@ void AppController::setUpWeb() {
     };
     // 硬碟快取的鍵：換了翻譯引擎、程式版本、辨識語言或專有名詞表，同一張圖的結果就不同
     callbacks.cacheTag = [this] {
-        std::string tag = TMW_VERSION;
+        std::string tag = std::string(TMW_VERSION) + "|r" + std::to_string(kWebResultRevision);
         for (const core::EngineSettings& engine : settings_.engines) {
             tag += "|" + core::engineLabel(engine);
         }

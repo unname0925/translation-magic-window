@@ -41,6 +41,8 @@ add_library(tmw_core STATIC
     overlay_item.h
     overlay_plan.cpp
     overlay_plan.h
+    page_kind.cpp
+    page_kind.h
     perf_stats.cpp
     perf_stats.h
     pipeline.cpp

@@ -14,6 +14,7 @@ add_executable(tmw_unit_tests
     core/hotkey_test.cpp
     core/language_test.cpp
     core/overlay_plan_test.cpp
+    core/page_kind_test.cpp
     core/lens_layout_test.cpp
     core/opencc_converter_test.cpp
     core/perf_stats_test.cpp

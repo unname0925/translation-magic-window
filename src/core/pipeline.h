@@ -69,6 +69,8 @@ struct PipelineJob {
     std::string chapter;
     // 網頁漫畫：這張圖送來時就在畫面上。排在還沒開始的頁前面（core/web_pipeline_worker.h）
     bool urgent = false;
+    // 網頁漫畫：雜誌廣告頁不翻（core/page_kind.h）
+    bool skipAdPages = false;
 };
 
 struct PipelineTimings {
@@ -107,6 +109,8 @@ struct PipelineResult {
     PipelineTimings timings;
     // 和上一次的結果一模一樣（畫面閃了一下又回到原樣）。不必新增歷史卡片。
     bool unchanged = false;
+    // 看起來是雜誌廣告頁，沒有翻（PipelineJob::skipAdPages）
+    bool adPage = false;
     // 非空代表翻譯失敗。原文仍然在 groups 裡，譯文是空的。
     std::string error;
     // 翻譯成功，但不是首選引擎翻的：原因寫在這裡（「改用 google（…：連不上…）」）。
